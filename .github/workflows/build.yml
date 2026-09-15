@@ -42,21 +42,20 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.1
-          name: TT Client v1.0.1
+          tag_name: v1.0.2
+          name: TT Client v1.0.2
           body: |
-            ## TT Client 1.0.1
+            ## TT Client 1.0.2
 
-            Built for **NeoForge 26.2.0.75+** / **Minecraft 26.2**.
+            ### Fix
+            - Fixed crash: `TTClient has no @SubscribeEvent methods, but register was called`
 
-            ### Fixes
-            - Requires NeoForge **26.2.0.75** or above (was 26.2.0.87)
-            - 20 new modules (55+ total)
+            Requires NeoForge **26.2.0.75+** / Minecraft 26.2.
 
             ### Install
-            1. Install NeoForge 26.2 (0.75 or newer)
-            2. Put `ttclient-1.0.1.jar` in your `mods` folder
-            3. Press **Right Shift** in-game for ClickGUI
+            1. Remove old ttclient JAR
+            2. Put `ttclient-1.0.2.jar` in `mods`
+            3. Press **Right Shift** for ClickGUI
           files: build/libs/*.jar
           fail_on_unmatched_files: true
         env:
