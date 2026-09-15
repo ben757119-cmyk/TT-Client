@@ -16,10 +16,13 @@ public class ModuleManager {
     private final List<Module> modules = new ArrayList<>();
 
     public void init() {
+        // Client
         register(new ClickGUIModule());
         register(new HUD());
         register(new CustomMainMenu());
         register(new Notifications());
+
+        // Render
         register(new Fullbright());
         register(new Zoom());
         register(new NameTags());
@@ -33,6 +36,11 @@ public class ModuleManager {
         register(new CustomSky());
         register(new Breadcrumbs());
         register(new ChinaHat());
+        register(new BlockHighlight());
+        register(new PopChams());
+        register(new Search());
+
+        // Movement
         register(new Sprint());
         register(new AutoWalk());
         register(new InventoryMove());
@@ -41,6 +49,12 @@ public class ModuleManager {
         register(new Step());
         register(new Speed());
         register(new Velocity());
+        register(new Fly());
+        register(new NoClip());
+        register(new ElytraFly());
+        register(new LongJump());
+
+        // Player
         register(new AutoTool());
         register(new AutoArmor());
         register(new FastPlace());
@@ -49,16 +63,32 @@ public class ModuleManager {
         register(new AutoEat());
         register(new InventoryCleaner());
         register(new MiddleClickPearl());
+        register(new AutoFish());
+        register(new ChestStealer());
+        register(new AutoGapple());
+        register(new Freecam());
+
+        // World
         register(new XRay());
         register(new Nuker());
         register(new Scaffold());
         register(new Timer());
         register(new FakePlayer());
+        register(new AutoFarm());
+        register(new LiquidPlace());
+
+        // Combat
         register(new KillAura());
         register(new Criticals());
         register(new AutoClicker());
         register(new AimAssist());
         register(new Reach());
+        register(new AutoTotem());
+        register(new AutoCrystal());
+        register(new Surround());
+        register(new Offhand());
+
+        // Misc
         register(new FPSBoost());
         register(new AntiAFK());
         register(new Spammer());
@@ -66,6 +96,10 @@ public class ModuleManager {
         register(new Announcer());
         register(new AutoReconnect());
         register(new PortalGodMode());
+        register(new MiddleClickFriend());
+        register(new NoRotate());
+        register(new AutoRespawn());
+        register(new ChatSuffix());
     }
 
     private void register(Module module) { modules.add(module); }

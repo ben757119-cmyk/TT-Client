@@ -42,21 +42,21 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: TT Client v1.0.0
+          tag_name: v1.0.1
+          name: TT Client v1.0.1
           body: |
-            ## TT Client 1.0.0
+            ## TT Client 1.0.1
 
-            Built for **NeoForge 26.2** / **Minecraft 26.2**.
+            Built for **NeoForge 26.2.0.75+** / **Minecraft 26.2**.
+
+            ### Fixes
+            - Requires NeoForge **26.2.0.75** or above (was 26.2.0.87)
+            - 20 new modules (55+ total)
 
             ### Install
-            1. Install NeoForge 26.2
-            2. Put `ttclient-1.0.0.jar` in your `mods` folder
+            1. Install NeoForge 26.2 (0.75 or newer)
+            2. Put `ttclient-1.0.1.jar` in your `mods` folder
             3. Press **Right Shift** in-game for ClickGUI
-
-            ### Notes
-            - Client-side utility client with 35+ modules
-            - Compiled against Minecraft 26.2 APIs
           files: build/libs/*.jar
           fail_on_unmatched_files: true
         env:
