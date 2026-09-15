@@ -1,0 +1,27 @@
+# gradle
+.gradle/
+build/
+out/
+
+# eclipse
+.bin/
+.settings/
+.project
+.classpath
+
+# idea
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# vscode
+.vscode/
+
+# minecraft
+run/
+runs/
+
+# os
+.DS_Store
+Thumbs.db
