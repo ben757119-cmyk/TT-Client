@@ -6,6 +6,7 @@ import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
 import com.ttclient.settings.ColorSetting;
 import com.ttclient.settings.ModeSetting;
+import net.minecraft.client.Minecraft;
 import org.lwjgl.glfw.GLFW;
 
 public class ClickGUIModule extends Module {
@@ -21,8 +22,9 @@ public class ClickGUIModule extends Module {
 
     @Override
     public void onEnable() {
-        if (mc.screen == null) {
-            mc.setScreen(new ClickGUIScreen());
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.gui.screen() == null) {
+            mc.gui.setScreen(new ClickGUIScreen());
         }
         setEnabled(false);
     }

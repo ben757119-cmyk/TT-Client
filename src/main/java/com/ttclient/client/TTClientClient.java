@@ -12,7 +12,6 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
-import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import org.lwjgl.glfw.GLFW;
 
@@ -42,13 +41,17 @@ public class TTClientClient {
     public void onKey(InputEvent.Key event) {
         if (TTClient.modules == null) return;
         Minecraft mc = Minecraft.getInstance();
-        if (mc.screen != null && !(mc.screen instanceof ClickGUIScreen)) return;
+        var screen = mc.gui.screen();
+        if (screen != null && !(screen instanceof ClickGUIScreen)) return;
 
         if (event.getAction() == GLFW.GLFW_PRESS) {
             ClickGUIModule gui = TTClient.modules.getModule(ClickGUIModule.class);
             if (gui != null && event.getKey() == gui.getKeyBind()) {
-                if (mc.screen instanceof ClickGUIScreen) mc.setScreen(null);
-                else if (mc.screen == null) mc.setScreen(new ClickGUIScreen());
+                if (screen instanceof ClickGUIScreen) {
+                    mc.gui.setScreen(null);
+                } else if (screen == null) {
+                    mc.gui.setScreen(new ClickGUIScreen());
+                }
                 return;
             }
             for (Module mod : TTClient.modules.getModules()) {
@@ -57,11 +60,5 @@ public class TTClientClient {
                 }
             }
         }
-    }
-
-    @SubscribeEvent
-    public void onRenderGui(RenderGuiEvent.Post event) {
-        if (TTClient.modules == null) return;
-        TTClient.modules.onRender2D(event.getGuiGraphics(), event.getPartialTick().getGameTimeDeltaPartialTick(false));
     }
 }

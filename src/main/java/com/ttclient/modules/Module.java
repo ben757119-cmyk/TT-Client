@@ -48,6 +48,4 @@ public abstract class Module {
     public void onEnable() {}
     public void onDisable() {}
     public void onTick() {}
-    public void onRender2D(net.minecraft.client.gui.GuiGraphics graphics, float partialTick) {}
-    public void onRender3D(float partialTick) {}
 }

@@ -7,7 +7,7 @@ import org.lwjgl.glfw.GLFW;
 
 public class Zoom extends Module {
     public final NumberSetting zoomFactor = addSetting(new NumberSetting("Factor", "Zoom strength", 0.3, 0.05, 0.8, 0.05));
-    private double oldFov = -1;
+    private int oldFov = -1;
     private boolean zooming = false;
 
     public Zoom() {
@@ -18,7 +18,8 @@ public class Zoom extends Module {
 
     @Override
     public void onTick() {
-        boolean keyDown = getKeyBind() != -1 && GLFW.glfwGetKey(mc.getWindow().getWindow(), getKeyBind()) == GLFW.GLFW_PRESS;
+        long window = mc.getWindow().handle();
+        boolean keyDown = getKeyBind() != -1 && GLFW.glfwGetKey(window, getKeyBind()) == GLFW.GLFW_PRESS;
         if (keyDown && !zooming) {
             oldFov = mc.options.fov().get();
             zooming = true;
@@ -28,7 +29,8 @@ public class Zoom extends Module {
             oldFov = -1;
         }
         if (zooming && oldFov > 0) {
-            mc.options.fov().set(Math.max(1.0, oldFov * zoomFactor.get()));
+            int zoomed = Math.max(1, (int) Math.round(oldFov * zoomFactor.get()));
+            mc.options.fov().set(zoomed);
         }
     }
 }

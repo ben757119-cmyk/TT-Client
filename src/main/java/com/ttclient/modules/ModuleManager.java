@@ -82,7 +82,4 @@ public class ModuleManager {
     public void onTick() {
         for (Module m : modules) if (m.isEnabled()) m.onTick();
     }
-    public void onRender2D(net.minecraft.client.gui.GuiGraphics graphics, float partialTick) {
-        for (Module m : modules) if (m.isEnabled()) m.onRender2D(graphics, partialTick);
-    }
 }
