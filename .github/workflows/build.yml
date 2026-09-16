@@ -42,21 +42,22 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.3.2
-          name: TT Client v1.3.2
+          tag_name: v1.3.3
+          name: TT Client v1.3.3
           body: |
-            ## TT Client 1.3.2
+            ## TT Client 1.3.3
 
-            ### Fix
-            - Fixed NPE: `AutoWalk.mc` / static `Minecraft.getInstance()` was null during mod construct
-            - All modules now use lazy `mc()` and null-check before touching options/player
+            ### ClickGUI fix
+            - Disabled 26.2 menu blur (`extractBlurredBackground` no-op, solid fill only)
+            - `isInGameUi()` forced true so vanilla never takes the blur path
+            - **Actually draws** category panels again (previous builds only showed a blank/blur overlay)
 
             Requires NeoForge **26.2.0.75+**.
 
             ### Install
             1. Remove older ttclient JARs
-            2. Put `ttclient-1.3.2.jar` in `mods`
-            3. Press **Right Shift** for ClickGUI
+            2. Put `ttclient-1.3.3.jar` in `mods`
+            3. Press **Right Shift** — you should see neon panels, not just blur
           files: build/libs/*.jar
           fail_on_unmatched_files: true
         env:

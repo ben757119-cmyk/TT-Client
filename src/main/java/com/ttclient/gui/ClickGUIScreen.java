@@ -1,9 +1,13 @@
 package com.ttclient.gui;
 
 import com.ttclient.TTClient;
+import com.ttclient.client.TTClientClient;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
-import com.ttclient.settings.*;
+import com.ttclient.settings.BoolSetting;
+import com.ttclient.settings.ModeSetting;
+import com.ttclient.settings.NumberSetting;
+import com.ttclient.settings.Setting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
@@ -16,42 +20,87 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * ClickGUI for TT Client.
- * Minecraft 26.2 applies menu blur in Screen.extractBackground / extractBlurredBackground.
- * We override those so Right Shift never opens a smeared/blurry overlay.
+ * In-game ClickGUI.
+ *
+ * Minecraft 26.2 Screen.extractBackground() applies menu blur via
+ * extractBlurredBackground() when isInGameUi() is false. We never call that path.
+ * Panels are drawn in extractRenderState (26.2 element stratum).
  */
 public class ClickGUIScreen extends Screen {
     private final Map<Category, Panel> panels = new HashMap<>();
     private final List<Panel> panelList = new ArrayList<>();
     private Module bindingModule = null;
-    private String searchQuery = "";
+
+    private static final int BG = 0xCC0A0B0F;
+    private static final int PANEL_BG = 0xF010131A;
+    private static final int HEADER_BG = 0xFF16201C;
+    private static final int ACCENT = 0xFF00E8A0;
+    private static final int TEXT = 0xFFE8EAED;
+    private static final int TEXT_DIM = 0xFF8B95A8;
+    private static final int ROW_ON = 0xFF00E8A0;
+    private static final int ROW_OFF = 0xFF8B95A8;
 
     public ClickGUIScreen() {
         super(Component.literal("TT Client"));
-        int x = 20;
+        int x = 12;
         for (Category cat : Category.values()) {
-            Panel p = new Panel(cat, x, 20);
+            Panel p = new Panel(cat, x, 28);
             panels.put(cat, p);
             panelList.add(p);
-            x += 120;
+            x += 118;
         }
     }
 
-    /** No vanilla menu blur — solid dim only. */
+    /**
+     * Force the "in-game UI" path so vanilla never runs extractBlurredBackground
+     * even if something calls super.extractBackground.
+     */
     @Override
-    public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-        this.extractTransparentBackground(graphics);
+    public boolean isInGameUi() {
+        return true;
     }
 
-    /** Disable the 26.2 blurred background path entirely. */
+    @Override
+    public boolean isPauseScreen() {
+        return false;
+    }
+
+    /**
+     * Solid dim overlay only — no extractTransparentBackground, no blur, no menu texture.
+     */
+    @Override
+    public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+        graphics.fill(0, 0, this.width, this.height, BG);
+    }
+
     @Override
     protected void extractBlurredBackground(GuiGraphicsExtractor graphics) {
-        // intentionally empty
+        // no-op: never apply menu background blurriness
     }
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+        String header = "TT Client v" + TTClient.VERSION + "  |  Right Shift close  |  LMB toggle  RMB settings";
+        graphics.drawString(this.font, header, 12, 8, TEXT_DIM, false);
+
+        for (Panel panel : panelList) {
+            panel.render(graphics, mouseX, mouseY);
+        }
+
+        if (bindingModule != null) {
+            String msg = "Binding: " + bindingModule.getName() + "  (ESC clear)";
+            int tw = this.font.width(msg);
+            graphics.fill(this.width / 2 - tw / 2 - 8, this.height - 28, this.width / 2 + tw / 2 + 8, this.height - 12, 0xEE000000);
+            graphics.drawString(this.font, msg, this.width / 2 - tw / 2, this.height - 24, ACCENT, false);
+        }
+
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
+    }
+
+    @Override
+    public void onClose() {
+        super.onClose();
+        if (TTClientClient.config != null) TTClientClient.config.save();
     }
 
     @Override
@@ -59,8 +108,8 @@ public class ClickGUIScreen extends Screen {
         double mouseX = event.x();
         double mouseY = event.y();
         int button = event.button();
-        for (Panel panel : panelList) {
-            if (panel.mouseClicked(mouseX, mouseY, button)) return true;
+        for (int i = panelList.size() - 1; i >= 0; i--) {
+            if (panelList.get(i).mouseClicked(mouseX, mouseY, button)) return true;
         }
         return super.mouseClicked(event, doubleClick);
     }
@@ -90,20 +139,12 @@ public class ClickGUIScreen extends Screen {
             bindingModule = null;
             return true;
         }
+        // ESC or Right Shift close
         if (keyCode == 256 || keyCode == 344) {
             onClose();
             return true;
         }
-        if (keyCode == 259 && !searchQuery.isEmpty()) {
-            searchQuery = searchQuery.substring(0, searchQuery.length() - 1);
-            return true;
-        }
         return super.keyPressed(event);
-    }
-
-    @Override
-    public boolean isPauseScreen() {
-        return false;
     }
 
     public void startBinding(Module module) {
@@ -126,6 +167,51 @@ public class ClickGUIScreen extends Screen {
             this.y = y;
         }
 
+        public void render(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+            int ix = (int) x;
+            int iy = (int) y;
+
+            int bodyH = headerHeight;
+            List<Module> mods = TTClient.modules != null
+                    ? TTClient.modules.getModulesByCategory(category)
+                    : List.of();
+            if (open) {
+                for (Module mod : mods) {
+                    bodyH += 14;
+                    if (expanded == mod) bodyH += mod.getSettings().size() * 13;
+                }
+            }
+
+            g.fill(ix, iy, ix + width, iy + bodyH, PANEL_BG);
+            g.fill(ix, iy, ix + width, iy + headerHeight, HEADER_BG);
+            g.fill(ix, iy, ix + 2, iy + bodyH, ACCENT);
+            g.drawString(font, category.name, ix + 6, iy + 4, ACCENT, false);
+
+            if (!open) return;
+
+            int my = iy + headerHeight;
+            for (Module mod : mods) {
+                boolean on = mod.isEnabled();
+                int color = on ? ROW_ON : ROW_OFF;
+                if (mouseX >= ix && mouseX <= ix + width && mouseY >= my && mouseY <= my + 14) {
+                    g.fill(ix + 2, my, ix + width, my + 14, 0x22FFFFFF);
+                }
+                g.drawString(font, mod.getName(), ix + 6, my + 3, color, false);
+                if (on) {
+                    g.fill(ix + width - 10, my + 5, ix + width - 5, my + 10, ACCENT);
+                }
+                my += 14;
+
+                if (expanded == mod) {
+                    for (Setting<?> s : mod.getSettings()) {
+                        String label = s.getName() + ": " + String.valueOf(s.get());
+                        g.drawString(font, label, ix + 10, my + 2, TEXT_DIM, false);
+                        my += 13;
+                    }
+                }
+            }
+        }
+
         public boolean mouseClicked(double mouseX, double mouseY, int button) {
             if (mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + headerHeight) {
                 if (button == 0) {
@@ -143,8 +229,7 @@ public class ClickGUIScreen extends Screen {
             List<Module> mods = TTClient.modules.getModulesByCategory(category);
             int my = (int) y + headerHeight;
             for (Module mod : mods) {
-                int h = 14;
-                if (mouseX >= x && mouseX <= x + width && mouseY >= my && mouseY <= my + h) {
+                if (mouseX >= x && mouseX <= x + width && mouseY >= my && mouseY <= my + 14) {
                     if (button == 0) {
                         mod.toggle();
                         return true;
@@ -158,11 +243,10 @@ public class ClickGUIScreen extends Screen {
                         return true;
                     }
                 }
-                my += h;
+                my += 14;
                 if (expanded == mod) {
                     for (Setting<?> s : mod.getSettings()) {
-                        int sh = 13;
-                        if (mouseX >= x + 2 && mouseX <= x + width - 2 && mouseY >= my && mouseY <= my + sh) {
+                        if (mouseX >= x + 2 && mouseX <= x + width - 2 && mouseY >= my && mouseY <= my + 13) {
                             if (s instanceof BoolSetting bs) {
                                 bs.toggle();
                                 return true;
@@ -176,7 +260,7 @@ public class ClickGUIScreen extends Screen {
                                 return true;
                             }
                         }
-                        my += sh;
+                        my += 13;
                     }
                 }
             }
