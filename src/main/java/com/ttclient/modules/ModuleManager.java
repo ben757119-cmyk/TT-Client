@@ -66,6 +66,7 @@ public class ModuleManager {
         register(new Strafe());
 
         register(new AutoTool());
+        register(new AttributeSwapper());
         register(new AutoArmor());
         register(new FastPlace());
         register(new FastBreak());

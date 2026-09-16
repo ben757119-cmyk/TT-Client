@@ -30,13 +30,13 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.6.0
-          name: TT Client v1.6.0
+          tag_name: v1.6.1
+          name: TT Client v1.6.1
           body: |
-            ## TT Client 1.6.0
-            - ClickGUI hover tooltips (module description)
-            - 20+ additional working module implementations
-            - Crosshair overlay, AirJump, Strafe, AutoTotem, etc.
+            ## TT Client 1.6.1
+            - Working **AttributeSwapper** (weapon/armor by attributes)
+            - Working **AutoArmorSwap** (elytra ↔ chestplate)
+            - Modes: Weapon / Armor / Both
           files: build/libs/*.jar
           fail_on_unmatched_files: true
         env:
