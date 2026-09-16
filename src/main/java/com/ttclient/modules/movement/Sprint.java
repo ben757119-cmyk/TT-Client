@@ -16,8 +16,13 @@ public class Sprint extends Module {
     @Override
     public void onTick() {
         if (mc.player == null) return;
-        if (mc.player.input.getMoveVector().y > 0 || (omni.get() && mc.player.input.getMoveVector().lengthSquared() > 0)) {
-            if (!mc.player.isShiftKeyDown() && !mc.player.isUsingItem()) {
+        boolean forward = mc.options.keyUp.isDown();
+        boolean any = forward
+                || mc.options.keyDown.isDown()
+                || mc.options.keyLeft.isDown()
+                || mc.options.keyRight.isDown();
+        if (forward || (omni.get() && any)) {
+            if (!mc.player.isShiftKeyDown() && mc.player.getFoodData().getFoodLevel() > 6) {
                 mc.player.setSprinting(true);
             }
         }
