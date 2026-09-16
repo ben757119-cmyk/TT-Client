@@ -17,9 +17,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/**
- * Draws client HUD overlays after vanilla HUD (RenderGuiEvent.Post).
- */
 public class HudRenderer {
 
     private static final int ACCENT = 0xFF00E8A0;
@@ -30,8 +27,8 @@ public class HudRenderer {
     @SubscribeEvent
     public void onRenderGui(RenderGuiEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.options.hideGui) return;
-        if (mc.gui.screen() != null) return; // don't draw over menus
+        if (mc.player == null) return;
+        if (mc.gui.screen() != null) return;
 
         GuiGraphicsExtractor g = event.getGuiGraphics();
         Font font = mc.font;
@@ -40,12 +37,12 @@ public class HudRenderer {
 
         HUD hud = TTClient.modules != null ? TTClient.modules.getModule(HUD.class) : null;
         if (hud != null && hud.isEnabled()) {
-            drawHud(g, font, mc, hud, sw, sh);
+            drawHud(g, font, mc, hud);
         }
 
         ArrayListMod array = TTClient.modules != null ? TTClient.modules.getModule(ArrayListMod.class) : null;
         if (array != null && array.isEnabled()) {
-            drawArrayList(g, font, mc, array, sw);
+            drawArrayList(g, font, array, sw);
         }
 
         Keystrokes keys = TTClient.modules != null ? TTClient.modules.getModule(Keystrokes.class) : null;
@@ -59,7 +56,7 @@ public class HudRenderer {
         }
     }
 
-    private void drawHud(GuiGraphicsExtractor g, Font font, Minecraft mc, HUD hud, int sw, int sh) {
+    private void drawHud(GuiGraphicsExtractor g, Font font, Minecraft mc, HUD hud) {
         int y = 4;
         if (hud.watermark.get()) {
             String w = "TT Client " + TTClient.VERSION;
@@ -68,8 +65,7 @@ public class HudRenderer {
             y += 12;
         }
         if (hud.fps.get()) {
-            String s = mc.getFps() + " FPS";
-            g.text(font, s, 4, y, TEXT, false);
+            g.text(font, mc.getFps() + " FPS", 4, y, TEXT, false);
             y += 10;
         }
         if (hud.coords.get() && mc.player != null) {
@@ -78,12 +74,11 @@ public class HudRenderer {
             y += 10;
         }
         if (hud.direction.get() && mc.player != null) {
-            String s = "Facing " + mc.player.getDirection().getSerializedName();
-            g.text(font, s, 4, y, DIM, false);
+            g.text(font, "Facing " + mc.player.getDirection().getSerializedName(), 4, y, DIM, false);
         }
     }
 
-    private void drawArrayList(GuiGraphicsExtractor g, Font font, Minecraft mc, ArrayListMod mod, int sw) {
+    private void drawArrayList(GuiGraphicsExtractor g, Font font, ArrayListMod mod, int sw) {
         if (TTClient.modules == null) return;
         List<Module> enabled = new ArrayList<>();
         for (Module m : TTClient.modules.getModules()) {

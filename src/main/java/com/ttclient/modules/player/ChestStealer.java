@@ -5,7 +5,7 @@ import com.ttclient.modules.Module;
 import com.ttclient.settings.NumberSetting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.ContainerScreen;
-import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 
 public class ChestStealer extends Module {
@@ -23,12 +23,22 @@ public class ChestStealer extends Module {
         if (!(mc.gui.screen() instanceof ContainerScreen screen)) return;
         if (timer > 0) { timer--; return; }
 
-        var menu = screen.getMenu();
-        int chestSlots = menu.slots.size() - 36;
+        AbstractContainerMenu menu = screen.getMenu();
+        int chestSlots = Math.max(0, menu.slots.size() - 36);
         for (int i = 0; i < chestSlots; i++) {
             Slot slot = menu.slots.get(i);
             if (slot != null && slot.hasItem()) {
-                mc.gameMode.handleInventoryMouseClick(menu.containerId, i, 0, ClickType.QUICK_MOVE, mc.player);
+                try {
+                    mc.gameMode.handleInventoryMouseClick(
+                            menu.containerId,
+                            i,
+                            0,
+                            net.minecraft.world.inventory.ClickType.QUICK_MOVE,
+                            mc.player
+                    );
+                } catch (Exception ignored) {
+                    return;
+                }
                 timer = delay.getInt();
                 return;
             }
