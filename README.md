@@ -1,42 +1,30 @@
 # TT Client — NeoForge 26.2
 
-**Advanced utility / client mod** with a full **ClickGUI**, **35+ modules**, custom main menu support, performance optimisations, and a clean neon aesthetic.
+Client-side utility mod with a ClickGUI, HUD, movement/player helpers, and FPS-focused options.
 
-## Features
+**Version 1.1.0**
 
-### ClickGUI
-- Open with **Right Shift**
-- Category panels (Combat, Movement, Player, Render, World, Misc, Client)
-- Left-click modules to toggle
-- Right-click modules to expand settings
-- Middle-click to bind keys
-- Drag panels around
+## What changed in 1.1.0
+- Modules initialize on the **client only**. Dedicated servers can load the jar without touching `Minecraft.getInstance()`.
+- Config now saves when you close the ClickGUI, toggle a bind, or disconnect.
+- ClickGUI **search**: type while the GUI is open, Backspace to clear characters.
+- HUD: nether/overworld converted coords, biome name, ping.
+- New modules: **Keystrokes**, **AutoFish**, **Waypoints** (death point), **ChatTimestamps**.
+- **AutoEat** actually uses the held food item when hunger is low.
+- Removed gimmick stubs that did nothing useful: ChinaHat, PortalGodMode, Spammer, DiscordRPC, Announcer, FakePlayer.
 
-### Modules (35+)
-**Client:** ClickGUI, HUD, CustomMainMenu, Notifications  
-**Render:** Fullbright, Zoom, NameTags, Tracers, ESP, StorageESP, HoleESP, ViewModel, NoRender, Ambience, CustomSky, Breadcrumbs, ChinaHat  
-**Movement:** Sprint, AutoWalk, InventoryMove, NoSlow, Jesus, Step, Speed, Velocity  
-**Player:** AutoTool, AutoArmor, FastPlace, FastBreak, NoFall, AutoEat, InventoryCleaner, MiddleClickPearl  
-**World:** XRay, Nuker, Scaffold, Timer, FakePlayer  
-**Combat:** KillAura, Criticals, AutoClicker, AimAssist, Reach  
-**Misc:** FPSBoost, AntiAFK, Spammer, DiscordRPC, Announcer, AutoReconnect, PortalGodMode
+## How to use
+1. Java 25 + NeoForge 26.2
+2. `./gradlew build` → `build/libs/ttclient-1.1.0.jar`
+3. Put the jar in `mods/`
+4. In-game: **Right Shift** opens ClickGUI
+5. Left click toggle · Right click settings · Middle click bind · Type to search
 
-## Build
+## Default binds
+- Right Shift — ClickGUI
+- C — Zoom (hold), if left at default
 
-Requires **Java 25**.
-
-```bash
-./gradlew build
-```
-
-JAR output: `build/libs/ttclient-1.0.0.jar`
-
-## Install
-
-1. Install NeoForge 26.2 for Minecraft 26.2
-2. Put the JAR in your `mods` folder
-3. Press **Right Shift** in-game for the ClickGUI
+Config: `config/ttclient/config.properties`
 
 ## License
-
 MIT
