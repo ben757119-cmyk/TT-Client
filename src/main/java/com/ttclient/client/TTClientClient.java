@@ -7,26 +7,18 @@ import com.ttclient.modules.client.ClickGUIModule;
 import net.minecraft.client.Minecraft;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import org.lwjgl.glfw.GLFW;
 
 @Mod(value = TTClient.MOD_ID, dist = Dist.CLIENT)
-@EventBusSubscriber(modid = TTClient.MOD_ID, value = Dist.CLIENT)
 public class TTClientClient {
 
     public TTClientClient() {
         NeoForge.EVENT_BUS.register(this);
         TTClient.LOGGER.info("TT Client client-side ready");
-    }
-
-    @SubscribeEvent
-    public static void onClientSetup(FMLClientSetupEvent event) {
-        TTClient.LOGGER.info("TT Client setup complete");
     }
 
     @SubscribeEvent
