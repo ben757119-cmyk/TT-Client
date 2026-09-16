@@ -3,13 +3,32 @@ package com.ttclient.modules.combat;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.NumberSetting;
-import com.ttclient.settings.BoolSetting;
+import net.minecraft.client.Minecraft;
 
 public class AutoClicker extends Module {
-    public final NumberSetting cps = addSetting(new NumberSetting("CPS", "Clicks per second", 12, 1, 20, 1));
-    public final BoolSetting onlyWeapon = addSetting(new BoolSetting("Only Weapon", "Only when holding weapon", true));
+    public final NumberSetting cps = addSetting(new NumberSetting("CPS", "Clicks per second", 10, 1, 20, 1));
+    private int timer;
 
     public AutoClicker() {
-        super("AutoClicker", "Automatically click", Category.COMBAT);
+        super("AutoClicker", "Hold attack to auto-click", Category.COMBAT);
+    }
+
+    @Override
+    public void onTick() {
+        Minecraft mc = mc();
+        if (mc == null || mc.player == null || mc.options == null || mc.gameMode == null) return;
+        if (!mc.options.keyAttack.isDown()) { timer = 0; return; }
+        int interval = Math.max(1, (int) Math.round(20.0 / cps.get()));
+        if (timer++ % interval != 0) return;
+        mc.gameMode.startDestroyBlock(
+                mc.player.blockPosition().relative(mc.player.getDirection()),
+                mc.player.getDirection());
+        // Prefer entity attack when available
+        if (mc.hitResult instanceof net.minecraft.world.phys.EntityHitResult ehr) {
+            mc.gameMode.attack(mc.player, ehr.getEntity());
+            mc.player.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
+        } else {
+            mc.player.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
+        }
     }
 }

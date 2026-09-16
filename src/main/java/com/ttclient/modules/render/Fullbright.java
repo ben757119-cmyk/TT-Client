@@ -2,17 +2,15 @@ package com.ttclient.modules.render;
 
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
-import com.ttclient.settings.ModeSetting;
 import com.ttclient.settings.NumberSetting;
 import net.minecraft.client.Minecraft;
 
 public class Fullbright extends Module {
-    public final ModeSetting mode = addSetting(new ModeSetting("Mode", "Fullbright mode", "Gamma", "Gamma", "Potion"));
-    public final NumberSetting gamma = addSetting(new NumberSetting("Gamma", "Gamma value", 16.0, 1.0, 16.0, 0.5));
-    private double oldGamma = -1;
+    public final NumberSetting gamma = addSetting(new NumberSetting("Gamma", "Brightness gamma", 16.0, 1.0, 16.0, 0.5));
+    private double oldGamma = 1.0;
 
     public Fullbright() {
-        super("Fullbright", "See in the dark", Category.RENDER);
+        super("Fullbright", "Brighten the world", Category.RENDER);
     }
 
     @Override
@@ -21,12 +19,27 @@ public class Fullbright extends Module {
         if (mc == null || mc.options == null) return;
         try {
             oldGamma = mc.options.gamma().get();
+            mc.options.gamma().set(gamma.get());
         } catch (Exception ignored) {}
     }
 
     @Override
-    public void onDisable() {}
+    public void onTick() {
+        Minecraft mc = mc();
+        if (mc == null || mc.options == null) return;
+        try {
+            if (mc.options.gamma().get() != gamma.get()) {
+                mc.options.gamma().set(gamma.get());
+            }
+        } catch (Exception ignored) {}
+    }
 
     @Override
-    public void onTick() {}
+    public void onDisable() {
+        Minecraft mc = mc();
+        if (mc == null || mc.options == null) return;
+        try {
+            mc.options.gamma().set(oldGamma);
+        } catch (Exception ignored) {}
+    }
 }

@@ -6,7 +6,7 @@ import net.minecraft.client.Minecraft;
 
 public class NoFall extends Module {
     public NoFall() {
-        super("NoFall", "Reset fall distance to avoid fall damage", Category.PLAYER);
+        super("NoFall", "Cancel fall damage (client fallDistance)", Category.PLAYER);
     }
 
     @Override

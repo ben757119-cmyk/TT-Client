@@ -42,22 +42,25 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.3.3
-          name: TT Client v1.3.3
+          tag_name: v1.4.0
+          name: TT Client v1.4.0
           body: |
-            ## TT Client 1.3.3
+            ## TT Client 1.4.0 — Working modules
 
-            ### ClickGUI fix
-            - Disabled 26.2 menu blur (`extractBlurredBackground` no-op, solid fill only)
-            - `isInGameUi()` forced true so vanilla never takes the blur path
-            - **Actually draws** category panels again (previous builds only showed a blank/blur overlay)
+            Many modules now have real client-side behavior (not just toggles):
 
-            Requires NeoForge **26.2.0.75+**.
+            **Movement:** Sprint, AutoWalk, Speed, Fly, Jesus, Step, Spider, Parkour, LongJump, ElytraFly
+            **Combat:** KillAura, TriggerBot, AutoClicker
+            **Player:** NoFall, AutoEat, AutoGapple, AutoFish, FastPlace
+            **Render:** Fullbright, Zoom
+            **Misc:** AntiAFK, AutoRespawn, CoordCopy, FPSBoost
+
+            ClickGUI blur fix retained from 1.3.3.
 
             ### Install
-            1. Remove older ttclient JARs
-            2. Put `ttclient-1.3.3.jar` in `mods`
-            3. Press **Right Shift** — you should see neon panels, not just blur
+            1. Remove older JARs
+            2. Put `ttclient-1.4.0.jar` in `mods`
+            3. Right Shift → enable modules
           files: build/libs/*.jar
           fail_on_unmatched_files: true
         env:

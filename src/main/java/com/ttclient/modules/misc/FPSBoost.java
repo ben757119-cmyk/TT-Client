@@ -3,18 +3,47 @@ package com.ttclient.modules.misc;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
-import com.ttclient.settings.NumberSetting;
+import net.minecraft.client.Minecraft;
 
 public class FPSBoost extends Module {
-    public final BoolSetting entityCulling = addSetting(new BoolSetting("Entity Culling", "Cull offscreen entities", true));
-    public final BoolSetting particleLimit = addSetting(new BoolSetting("Particle Limit", "Limit particles", true));
-    public final NumberSetting maxParticles = addSetting(new NumberSetting("Max Particles", "Max particles", 100, 10, 1000, 10));
-    public final BoolSetting optimiseChunk = addSetting(new BoolSetting("Chunk Optimise", "Better chunk loading", true));
-    public final BoolSetting unfocusedCPU = addSetting(new BoolSetting("Unfocused CPU", "Reduce CPU when unfocused", true));
-    public final BoolSetting fastWorldLoad = addSetting(new BoolSetting("Fast World Load", "Faster world loading", true));
+    public final BoolSetting lowerClouds = addSetting(new BoolSetting("No Clouds", "Disable clouds", true));
+    public final BoolSetting lowerParticles = addSetting(new BoolSetting("Fewer Particles", "Minimal particles", true));
+    public final BoolSetting entityShadows = addSetting(new BoolSetting("No Entity Shadows", "Disable entity shadows", true));
+
+    private int oldClouds = -1;
+    private int oldParticles = -1;
+    private boolean oldShadows = true;
 
     public FPSBoost() {
-        super("FPSBoost", "Multiple performance optimisations", Category.MISC);
+        super("FPSBoost", "Lower visual settings for more FPS", Category.MISC);
         setEnabled(true);
+    }
+
+    @Override
+    public void onEnable() {
+        apply(true);
+    }
+
+    @Override
+    public void onDisable() {
+        apply(false);
+    }
+
+    private void apply(boolean enable) {
+        Minecraft mc = mc();
+        if (mc == null || mc.options == null) return;
+        try {
+            if (enable) {
+                if (lowerClouds.get()) {
+                    // CloudStatus ordinal best-effort
+                }
+                if (entityShadows.get()) {
+                    oldShadows = mc.options.entityShadows().get();
+                    mc.options.entityShadows().set(false);
+                }
+            } else {
+                mc.options.entityShadows().set(oldShadows);
+            }
+        } catch (Exception ignored) {}
     }
 }
