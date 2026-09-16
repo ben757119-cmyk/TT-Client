@@ -16,10 +16,6 @@ import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import org.lwjgl.glfw.GLFW;
 
-/**
- * Client-only entry. Instance is registered on the game bus.
- * Do NOT use @EventBusSubscriber here — that path requires static @SubscribeEvent methods.
- */
 @Mod(value = TTClient.MOD_ID, dist = Dist.CLIENT)
 public class TTClientClient {
 
@@ -34,6 +30,7 @@ public class TTClientClient {
         TTClient.modules = modules;
         TTClient.config = config;
         NeoForge.EVENT_BUS.register(this);
+        NeoForge.EVENT_BUS.register(new HudRenderer());
         TTClient.LOGGER.info("TT Client {} ready with {} modules", TTClient.VERSION, modules.getModules().size());
     }
 

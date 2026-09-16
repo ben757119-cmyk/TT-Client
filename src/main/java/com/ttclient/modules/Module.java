@@ -1,15 +1,12 @@
 package com.ttclient.modules;
 
+import com.ttclient.client.NotificationManager;
 import com.ttclient.settings.Setting;
 import net.minecraft.client.Minecraft;
 
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Base module. Never cache Minecraft.getInstance() in a static field —
- * during mod construction the client instance is still null.
- */
 public abstract class Module {
     private final String name;
     private final String description;
@@ -24,7 +21,6 @@ public abstract class Module {
         this.category = category;
     }
 
-    /** Lazy client accessor — safe after client is up; null-check callers. */
     protected static Minecraft mc() {
         return Minecraft.getInstance();
     }
@@ -38,6 +34,9 @@ public abstract class Module {
         this.enabled = enabled;
         if (enabled) onEnable();
         else onDisable();
+        try {
+            NotificationManager.pushToggle(name, enabled);
+        } catch (Exception ignored) {}
     }
 
     public boolean isEnabled() { return enabled; }
