@@ -83,7 +83,7 @@ public class ModuleManager {
         register(new AutoMine());
         register(new AntiHunger());
         register(new AutoSprintReset());
-        register(new AutoTotem());
+        register(new com.ttclient.modules.player.AutoTotem());
 
         register(new XRay());
         register(new Nuker());
