@@ -1,23 +1,33 @@
 package com.ttclient;
 
 import com.mojang.logging.LogUtils;
+import com.ttclient.config.ConfigManager;
+import com.ttclient.modules.ModuleManager;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import org.slf4j.Logger;
 
-/**
- * Common entry point. All gameplay/module state is client-only so a dedicated
- * server can load this jar without touching Minecraft.getInstance().
- */
 @Mod(TTClient.MOD_ID)
 public class TTClient {
     public static final String MOD_ID = "ttclient";
     public static final String NAME = "TT Client";
-    public static final String VERSION = "1.2.0";
+    public static final String VERSION = "1.3.0";
     public static final Logger LOGGER = LogUtils.getLogger();
 
+    public static ModuleManager modules;
+    public static ConfigManager config;
+
     public TTClient(IEventBus modEventBus, ModContainer modContainer) {
-        LOGGER.info("{} v{} common load (client features initialize on Dist.CLIENT)", NAME, VERSION);
+        modEventBus.addListener(this::commonSetup);
+        LOGGER.info("{} v{} initializing...", NAME, VERSION);
+    }
+
+    private void commonSetup(FMLCommonSetupEvent event) {
+        modules = new ModuleManager();
+        config = new ConfigManager();
+        modules.init();
+        LOGGER.info("{} loaded with {} modules", NAME, modules.getModules().size());
     }
 }
