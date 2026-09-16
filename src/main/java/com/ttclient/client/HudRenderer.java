@@ -6,6 +6,7 @@ import com.ttclient.modules.client.ArrayListMod;
 import com.ttclient.modules.client.HUD;
 import com.ttclient.modules.client.Keystrokes;
 import com.ttclient.modules.client.Notifications;
+import com.ttclient.modules.render.Crosshair;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -50,9 +51,28 @@ public class HudRenderer {
             drawKeystrokes(g, font, mc, keys, sw, sh);
         }
 
+        Crosshair ch = TTClient.modules != null ? TTClient.modules.getModule(Crosshair.class) : null;
+        if (ch != null && ch.isEnabled()) {
+            drawCrosshair(g, sw, sh, ch);
+        }
+
         Notifications notifMod = TTClient.modules != null ? TTClient.modules.getModule(Notifications.class) : null;
         if (notifMod != null && notifMod.isEnabled()) {
             NotificationManager.render(g, font, sw, sh);
+        }
+    }
+
+    private void drawCrosshair(GuiGraphicsExtractor g, int sw, int sh, Crosshair ch) {
+        int cx = sw / 2;
+        int cy = sh / 2;
+        int gap = 3;
+        int len = 6;
+        g.fill(cx - gap - len, cy - 1, cx - gap, cy + 1, ACCENT);
+        g.fill(cx + gap, cy - 1, cx + gap + len, cy + 1, ACCENT);
+        g.fill(cx - 1, cy - gap - len, cx + 1, cy - gap, ACCENT);
+        g.fill(cx - 1, cy + gap, cx + 1, cy + gap + len, ACCENT);
+        if (ch.dot.get()) {
+            g.fill(cx - 1, cy - 1, cx + 1, cy + 1, ACCENT);
         }
     }
 

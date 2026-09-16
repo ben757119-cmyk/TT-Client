@@ -26,6 +26,8 @@ public class ModuleManager {
 
         register(new Fullbright());
         register(new Zoom());
+        register(new Brightness());
+        register(new Crosshair());
         register(new NameTags());
         register(new Tracers());
         register(new ESP());
@@ -42,9 +44,7 @@ public class ModuleManager {
         register(new ChinaHat());
         register(new Trajectories());
         register(new Radar());
-        register(new Crosshair());
         register(new NoFog());
-        register(new Brightness());
 
         register(new Sprint());
         register(new AutoWalk());
@@ -62,6 +62,8 @@ public class ModuleManager {
         register(new SafeWalk());
         register(new Parkour());
         register(new BoatFly());
+        register(new AirJump());
+        register(new Strafe());
 
         register(new AutoTool());
         register(new AutoArmor());
@@ -81,6 +83,7 @@ public class ModuleManager {
         register(new AutoMine());
         register(new AntiHunger());
         register(new AutoSprintReset());
+        register(new AutoTotem());
 
         register(new XRay());
         register(new Nuker());
@@ -99,7 +102,6 @@ public class ModuleManager {
         register(new AutoClicker());
         register(new AimAssist());
         register(new Reach());
-        register(new AutoTotem());
         register(new AutoCrystal());
         register(new Surround());
         register(new Offhand());

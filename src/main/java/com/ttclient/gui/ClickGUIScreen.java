@@ -23,6 +23,7 @@ public class ClickGUIScreen extends Screen {
     private final Map<Category, Panel> panels = new HashMap<>();
     private final List<Panel> panelList = new ArrayList<>();
     private Module bindingModule = null;
+    private Module hoveredModule = null;
     private long openTime = System.currentTimeMillis();
 
     private static final int BG = 0xB00A0B0F;
@@ -44,22 +45,14 @@ public class ClickGUIScreen extends Screen {
         }
     }
 
-    @Override
-    public boolean isInGameUi() {
-        return true;
-    }
-
-    @Override
-    public boolean isPauseScreen() {
-        return false;
-    }
+    @Override public boolean isInGameUi() { return true; }
+    @Override public boolean isPauseScreen() { return false; }
 
     @Override
     public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         float t = Math.min(1f, (System.currentTimeMillis() - openTime) / 180f);
         int a = (int) (0xB0 * t);
-        int bg = (a << 24) | 0x0A0B0F;
-        graphics.fill(0, 0, this.width, this.height, bg);
+        graphics.fill(0, 0, this.width, this.height, (a << 24) | 0x0A0B0F);
     }
 
     @Override
@@ -70,11 +63,26 @@ public class ClickGUIScreen extends Screen {
         float t = Math.min(1f, (System.currentTimeMillis() - openTime) / 220f);
         int yOff = (int) ((1f - t) * -12);
 
-        String header = "TT Client v" + TTClient.VERSION + "   LMB toggle · RMB settings · drag headers";
-        graphics.text(this.font, header, 14, 10 + yOff, TEXT_DIM, false);
+        hoveredModule = null;
+        graphics.text(this.font, "TT Client v" + TTClient.VERSION + "   hover for description · LMB toggle · RMB settings", 14, 10 + yOff, TEXT_DIM, false);
 
         for (Panel panel : panelList) {
-            panel.render(graphics, mouseX, mouseY, yOff, t);
+            panel.render(graphics, mouseX, mouseY, yOff);
+        }
+
+        if (hoveredModule != null) {
+            String title = hoveredModule.getName();
+            String desc = hoveredModule.getDescription();
+            int pad = 8;
+            int tw = Math.max(font.width(title), font.width(desc));
+            int boxW = tw + pad * 2;
+            int boxH = 28;
+            int tx = Math.min(mouseX + 12, this.width - boxW - 4);
+            int ty = Math.min(mouseY + 12, this.height - boxH - 4);
+            graphics.fill(tx, ty, tx + boxW, ty + boxH, 0xF0000000);
+            graphics.fill(tx, ty, tx + 2, ty + boxH, ACCENT);
+            graphics.text(font, title, tx + pad, ty + 4, ACCENT, false);
+            graphics.text(font, desc, tx + pad, ty + 15, TEXT_DIM, false);
         }
 
         if (bindingModule != null) {
@@ -156,7 +164,7 @@ public class ClickGUIScreen extends Screen {
             this.y = y;
         }
 
-        public void render(GuiGraphicsExtractor g, int mouseX, int mouseY, int yOff, float anim) {
+        public void render(GuiGraphicsExtractor g, int mouseX, int mouseY, int yOff) {
             int ix = (int) x;
             int iy = (int) y + yOff;
 
@@ -171,7 +179,6 @@ public class ClickGUIScreen extends Screen {
                 }
             }
 
-            // shadow + body
             g.fill(ix + 2, iy + 2, ix + width + 2, iy + bodyH + 2, 0x44000000);
             g.fill(ix, iy, ix + width, iy + bodyH, PANEL_BG);
             g.fill(ix, iy, ix + width, iy + headerHeight, HEADER_BG);
@@ -184,13 +191,13 @@ public class ClickGUIScreen extends Screen {
             for (Module mod : mods) {
                 boolean on = mod.isEnabled();
                 int color = on ? ROW_ON : ROW_OFF;
-                if (mouseX >= ix && mouseX <= ix + width && mouseY >= my && mouseY <= my + 15) {
+                boolean hover = mouseX >= ix && mouseX <= ix + width && mouseY >= my && mouseY <= my + 15;
+                if (hover) {
                     g.fill(ix + 2, my, ix + width, my + 15, 0x18FFFFFF);
+                    hoveredModule = mod;
                 }
                 g.text(font, mod.getName(), ix + 8, my + 4, color, false);
-                if (on) {
-                    g.fill(ix + width - 11, my + 5, ix + width - 5, my + 11, ACCENT);
-                }
+                if (on) g.fill(ix + width - 11, my + 5, ix + width - 5, my + 11, ACCENT);
                 my += 15;
 
                 if (expanded == mod) {
@@ -221,30 +228,20 @@ public class ClickGUIScreen extends Screen {
             int my = (int) y + headerHeight;
             for (Module mod : mods) {
                 if (mouseX >= x && mouseX <= x + width && mouseY >= my && mouseY <= my + 15) {
-                    if (button == 0) {
-                        mod.toggle();
-                        return true;
-                    } else if (button == 1) {
-                        if (!mod.getSettings().isEmpty()) {
-                            expanded = (expanded == mod) ? null : mod;
-                        }
-                        return true;
-                    } else if (button == 2) {
-                        startBinding(mod);
+                    if (button == 0) { mod.toggle(); return true; }
+                    if (button == 1) {
+                        if (!mod.getSettings().isEmpty()) expanded = (expanded == mod) ? null : mod;
                         return true;
                     }
+                    if (button == 2) { startBinding(mod); return true; }
                 }
                 my += 15;
                 if (expanded == mod) {
                     for (Setting<?> s : mod.getSettings()) {
                         if (mouseX >= x + 2 && mouseX <= x + width - 2 && mouseY >= my && mouseY <= my + 13) {
-                            if (s instanceof BoolSetting bs) {
-                                bs.toggle();
-                                return true;
-                            } else if (s instanceof ModeSetting ms) {
-                                ms.cycle();
-                                return true;
-                            } else if (s instanceof NumberSetting ns) {
+                            if (s instanceof BoolSetting bs) { bs.toggle(); return true; }
+                            if (s instanceof ModeSetting ms) { ms.cycle(); return true; }
+                            if (s instanceof NumberSetting ns) {
                                 double next = ns.get() + ns.getStep();
                                 if (next > ns.getMax()) next = ns.getMin();
                                 ns.set(next);
@@ -258,9 +255,7 @@ public class ClickGUIScreen extends Screen {
             return false;
         }
 
-        public void mouseReleased() {
-            dragging = false;
-        }
+        public void mouseReleased() { dragging = false; }
 
         public boolean mouseDragged(double mouseX, double mouseY) {
             if (dragging) {
