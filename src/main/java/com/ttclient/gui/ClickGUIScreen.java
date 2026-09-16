@@ -3,9 +3,7 @@ package com.ttclient.gui;
 import com.ttclient.TTClient;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
-import com.ttclient.modules.client.ClickGUIModule;
 import com.ttclient.settings.*;
-import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
@@ -17,6 +15,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * ClickGUI for TT Client.
+ * Minecraft 26.2 applies menu blur in Screen.extractBackground / extractBlurredBackground.
+ * We override those so Right Shift never opens a smeared/blurry overlay.
+ */
 public class ClickGUIScreen extends Screen {
     private final Map<Category, Panel> panels = new HashMap<>();
     private final List<Panel> panelList = new ArrayList<>();
@@ -34,13 +37,16 @@ public class ClickGUIScreen extends Screen {
         }
     }
 
-    /**
-     * Vanilla Screen blur is what made Right Shift look smeared.
-     * Override so 26.2 never runs applyBlur for this GUI.
-     */
+    /** No vanilla menu blur — solid dim only. */
     @Override
-    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        graphics.fill(0, 0, this.width, this.height, 0x88000000);
+    public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+        this.extractTransparentBackground(graphics);
+    }
+
+    /** Disable the 26.2 blurred background path entirely. */
+    @Override
+    protected void extractBlurredBackground(GuiGraphicsExtractor graphics) {
+        // intentionally empty
     }
 
     @Override

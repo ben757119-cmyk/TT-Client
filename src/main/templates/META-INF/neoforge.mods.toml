@@ -7,13 +7,13 @@ displayName="${mod_name}"
 authors="TT Client Team"
 description='''
 TT Client — Advanced utility client for NeoForge 26.2.
-ClickGUI, polished modules, custom main menu, performance boosts, and a polished experience.
+ClickGUI, 100+ modules, custom main menu, performance boosts.
 '''
 
 [[dependencies.${mod_id}]]
     modId="neoforge"
     type="required"
-    versionRange="[${neo_version},)"
+    versionRange="[26.2.0.75,)"
     ordering="NONE"
     side="CLIENT"
 
