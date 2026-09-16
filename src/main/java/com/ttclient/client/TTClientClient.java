@@ -9,7 +9,6 @@ import com.ttclient.modules.client.ClickGUIModule;
 import net.minecraft.client.Minecraft;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
@@ -17,8 +16,11 @@ import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import org.lwjgl.glfw.GLFW;
 
+/**
+ * Client-only entry. Instance is registered on the game bus.
+ * Do NOT use @EventBusSubscriber here — that path requires static @SubscribeEvent methods.
+ */
 @Mod(value = TTClient.MOD_ID, dist = Dist.CLIENT)
-@EventBusSubscriber(modid = TTClient.MOD_ID, value = Dist.CLIENT)
 public class TTClientClient {
 
     public static ModuleManager modules;
@@ -29,7 +31,6 @@ public class TTClientClient {
         config = new ConfigManager();
         modules.init();
         config.load();
-        // Keep common entry in sync for GUI/code that still reads TTClient.modules
         TTClient.modules = modules;
         TTClient.config = config;
         NeoForge.EVENT_BUS.register(this);
