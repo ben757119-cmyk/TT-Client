@@ -17,7 +17,6 @@ public class ModuleManager {
     private final List<Module> modules = new ArrayList<>();
 
     public void init() {
-        // Client
         register(new ClickGUIModule());
         register(new HUD());
         register(new CustomMainMenu());
@@ -25,7 +24,6 @@ public class ModuleManager {
         register(new Keystrokes());
         register(new ArrayListMod());
 
-        // Render
         register(new Fullbright());
         register(new Zoom());
         register(new NameTags());
@@ -48,7 +46,6 @@ public class ModuleManager {
         register(new NoFog());
         register(new Brightness());
 
-        // Movement
         register(new Sprint());
         register(new AutoWalk());
         register(new InventoryMove());
@@ -66,7 +63,6 @@ public class ModuleManager {
         register(new Parkour());
         register(new BoatFly());
 
-        // Player
         register(new AutoTool());
         register(new AutoArmor());
         register(new FastPlace());
@@ -86,7 +82,6 @@ public class ModuleManager {
         register(new AntiHunger());
         register(new AutoSprintReset());
 
-        // World
         register(new XRay());
         register(new Nuker());
         register(new Scaffold());
@@ -99,7 +94,6 @@ public class ModuleManager {
         register(new NewChunks());
         register(new StashFinder());
 
-        // Combat
         register(new KillAura());
         register(new Criticals());
         register(new AutoClicker());
@@ -114,7 +108,6 @@ public class ModuleManager {
         register(new AutoArmorSwap());
         register(new Hitboxes());
 
-        // Misc
         register(new FPSBoost());
         register(new AntiAFK());
         register(new AutoReconnect());
@@ -154,8 +147,5 @@ public class ModuleManager {
     }
     public void onTick() {
         for (Module m : modules) if (m.isEnabled()) m.onTick();
-    }
-    public void onRender2D(net.minecraft.client.gui.GuiGraphics graphics, float partialTick) {
-        for (Module m : modules) if (m.isEnabled()) m.onRender2D(graphics, partialTick);
     }
 }

@@ -14,7 +14,6 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
-import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import org.lwjgl.glfw.GLFW;
 
@@ -30,6 +29,9 @@ public class TTClientClient {
         config = new ConfigManager();
         modules.init();
         config.load();
+        // Keep common entry in sync for GUI/code that still reads TTClient.modules
+        TTClient.modules = modules;
+        TTClient.config = config;
         NeoForge.EVENT_BUS.register(this);
         TTClient.LOGGER.info("TT Client {} ready with {} modules", TTClient.VERSION, modules.getModules().size());
     }
@@ -51,16 +53,17 @@ public class TTClientClient {
     public void onKey(InputEvent.Key event) {
         if (modules == null) return;
         Minecraft mc = Minecraft.getInstance();
-        if (mc.screen != null && !(mc.screen instanceof ClickGUIScreen)) return;
+        var screen = mc.gui.screen();
+        if (screen != null && !(screen instanceof ClickGUIScreen)) return;
 
         if (event.getAction() == GLFW.GLFW_PRESS) {
             ClickGUIModule gui = modules.getModule(ClickGUIModule.class);
             if (gui != null && event.getKey() == gui.getKeyBind()) {
-                if (mc.screen instanceof ClickGUIScreen) {
-                    mc.setScreen(null);
+                if (screen instanceof ClickGUIScreen) {
+                    mc.gui.setScreen(null);
                     if (config != null) config.save();
-                } else if (mc.screen == null) {
-                    mc.setScreen(new ClickGUIScreen());
+                } else if (screen == null) {
+                    mc.gui.setScreen(new ClickGUIScreen());
                 }
                 return;
             }
@@ -72,11 +75,5 @@ public class TTClientClient {
                 }
             }
         }
-    }
-
-    @SubscribeEvent
-    public void onRenderGui(RenderGuiEvent.Post event) {
-        if (modules == null) return;
-        modules.onRender2D(event.getGuiGraphics(), event.getPartialTick().getGameTimeDeltaPartialTick(false));
     }
 }
