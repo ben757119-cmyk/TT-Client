@@ -6,6 +6,7 @@ import com.ttclient.settings.BoolSetting;
 import com.ttclient.settings.NumberSetting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.Monster;
@@ -50,8 +51,8 @@ public class KillAura extends Module {
 
         if (best != null) {
             mc.gameMode.attack(p, best);
-            p.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
-            timer = (int) cooldown.get();
+            p.swing(InteractionHand.MAIN_HAND);
+            timer = cooldown.getInt();
         }
     }
 }

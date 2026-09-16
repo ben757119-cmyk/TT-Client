@@ -5,7 +5,6 @@ import com.ttclient.modules.Module;
 import com.ttclient.settings.NumberSetting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.world.phys.Vec3;
 
 public class Speed extends Module {
     public final NumberSetting multiplier = addSetting(new NumberSetting("Multiplier", "Speed multiplier", 1.3, 1.0, 3.0, 0.05));
@@ -17,13 +16,18 @@ public class Speed extends Module {
     @Override
     public void onTick() {
         Minecraft mc = mc();
-        if (mc == null || mc.player == null) return;
+        if (mc == null || mc.player == null || mc.options == null) return;
         LocalPlayer p = mc.player;
         if (!p.onGround() || p.isInWater() || p.isInLava() || p.isFallFlying()) return;
-        if (p.input == null) return;
-        float fwd = p.input.forwardImpulse;
-        float str = p.input.leftImpulse;
-        if (fwd == 0 && str == 0) return;
+
+        boolean forward = mc.options.keyUp.isDown();
+        boolean back = mc.options.keyDown.isDown();
+        boolean left = mc.options.keyLeft.isDown();
+        boolean right = mc.options.keyRight.isDown();
+        if (!forward && !back && !left && !right) return;
+
+        float fwd = (forward ? 1 : 0) - (back ? 1 : 0);
+        float str = (left ? 1 : 0) - (right ? 1 : 0);
         double yaw = Math.toRadians(p.getYRot());
         double speed = 0.26 * multiplier.get();
         double mx = -Math.sin(yaw) * fwd + Math.cos(yaw) * str;

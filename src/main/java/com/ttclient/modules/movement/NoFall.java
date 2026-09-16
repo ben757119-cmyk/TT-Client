@@ -1,20 +1,14 @@
-package com.ttclient.modules.player;
+package com.ttclient.modules.movement;
 
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
-import net.minecraft.client.Minecraft;
 
-public class NoFall extends Module {
-    public NoFall() {
-        super("NoFall", "Cancel fall damage (client fallDistance)", Category.PLAYER);
-    }
-
-    @Override
-    public void onTick() {
-        Minecraft mc = mc();
-        if (mc == null || mc.player == null) return;
-        if (mc.player.fallDistance > 2.0f) {
-            mc.player.fallDistance = 0;
-        }
+/**
+ * Placeholder removed — NoFall lives in modules.player.NoFall.
+ * This file kept only to avoid stale path issues; class renamed out of player package.
+ */
+public class NoFallPlaceholderRemoved extends Module {
+    public NoFallPlaceholderRemoved() {
+        super("NoFallRemoved", "unused", Category.MOVEMENT);
     }
 }

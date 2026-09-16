@@ -4,6 +4,7 @@ import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.NumberSetting;
 import net.minecraft.client.Minecraft;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.EntityHitResult;
@@ -27,7 +28,7 @@ public class TriggerBot extends Module {
         Entity e = ((EntityHitResult) hit).getEntity();
         if (!(e instanceof LivingEntity living) || !living.isAlive()) return;
         mc.gameMode.attack(mc.player, living);
-        mc.player.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
-        timer = (int) delay.get();
+        mc.player.swing(InteractionHand.MAIN_HAND);
+        timer = delay.getInt();
     }
 }

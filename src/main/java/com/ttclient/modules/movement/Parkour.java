@@ -14,9 +14,9 @@ public class Parkour extends Module {
     @Override
     public void onTick() {
         Minecraft mc = mc();
-        if (mc == null || mc.player == null || mc.level == null) return;
+        if (mc == null || mc.player == null || mc.level == null || mc.options == null) return;
         LocalPlayer p = mc.player;
-        if (!p.onGround() || p.input == null || p.input.forwardImpulse <= 0) return;
+        if (!p.onGround() || !mc.options.keyUp.isDown()) return;
         AABB box = p.getBoundingBox();
         AABB ahead = box.move(p.getDeltaMovement().x, -0.5, p.getDeltaMovement().z);
         if (mc.level.noCollision(p, ahead.inflate(-0.05, 0, -0.05))) {
