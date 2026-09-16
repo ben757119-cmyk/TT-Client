@@ -6,9 +6,11 @@ import net.minecraft.client.Minecraft;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Base module. Never cache Minecraft.getInstance() in a static field —
+ * during mod construction the client instance is still null.
+ */
 public abstract class Module {
-    protected static final Minecraft mc = Minecraft.getInstance();
-
     private final String name;
     private final String description;
     private final Category category;
@@ -22,11 +24,17 @@ public abstract class Module {
         this.category = category;
     }
 
+    /** Lazy client accessor — safe after client is up; null-check callers. */
+    protected static Minecraft mc() {
+        return Minecraft.getInstance();
+    }
+
     public void toggle() {
         setEnabled(!enabled);
     }
 
     public void setEnabled(boolean enabled) {
+        if (this.enabled == enabled) return;
         this.enabled = enabled;
         if (enabled) onEnable();
         else onDisable();

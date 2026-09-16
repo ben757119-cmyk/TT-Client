@@ -2,6 +2,7 @@ package com.ttclient.modules.movement;
 
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
+import net.minecraft.client.Minecraft;
 
 public class AutoWalk extends Module {
     public AutoWalk() {
@@ -10,13 +11,15 @@ public class AutoWalk extends Module {
 
     @Override
     public void onTick() {
-        if (mc.player != null) {
-            mc.options.keyUp.setDown(true);
-        }
+        Minecraft mc = mc();
+        if (mc == null || mc.player == null || mc.options == null) return;
+        mc.options.keyUp.setDown(true);
     }
 
     @Override
     public void onDisable() {
-        if (mc.options != null) mc.options.keyUp.setDown(false);
+        Minecraft mc = mc();
+        if (mc == null || mc.options == null) return;
+        mc.options.keyUp.setDown(false);
     }
 }

@@ -3,6 +3,7 @@ package com.ttclient.modules.render;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.NumberSetting;
+import net.minecraft.client.Minecraft;
 import org.lwjgl.glfw.GLFW;
 
 public class Zoom extends Module {
@@ -18,6 +19,8 @@ public class Zoom extends Module {
 
     @Override
     public void onTick() {
+        Minecraft mc = mc();
+        if (mc == null || mc.options == null || mc.getWindow() == null) return;
         long window = mc.getWindow().handle();
         boolean keyDown = getKeyBind() != -1 && GLFW.glfwGetKey(window, getKeyBind()) == GLFW.GLFW_PRESS;
         if (keyDown && !zooming) {

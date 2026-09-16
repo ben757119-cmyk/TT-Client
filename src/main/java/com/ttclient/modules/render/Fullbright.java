@@ -4,6 +4,7 @@ import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.ModeSetting;
 import com.ttclient.settings.NumberSetting;
+import net.minecraft.client.Minecraft;
 
 public class Fullbright extends Module {
     public final ModeSetting mode = addSetting(new ModeSetting("Mode", "Fullbright mode", "Gamma", "Gamma", "Potion"));
@@ -16,20 +17,16 @@ public class Fullbright extends Module {
 
     @Override
     public void onEnable() {
-        if (mc.options != null) {
-            try {
-                oldGamma = mc.options.gamma().get();
-            } catch (Exception ignored) {}
-        }
+        Minecraft mc = mc();
+        if (mc == null || mc.options == null) return;
+        try {
+            oldGamma = mc.options.gamma().get();
+        } catch (Exception ignored) {}
     }
 
     @Override
-    public void onDisable() {
-        // Gamma restore best-effort for 26.2 option types
-    }
+    public void onDisable() {}
 
     @Override
-    public void onTick() {
-        // Gamma application depends on Options API shape in 26.2
-    }
+    public void onTick() {}
 }
