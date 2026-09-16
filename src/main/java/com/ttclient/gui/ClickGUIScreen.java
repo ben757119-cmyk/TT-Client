@@ -20,11 +20,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * In-game ClickGUI.
+ * In-game ClickGUI for Minecraft 26.2.
  *
- * Minecraft 26.2 Screen.extractBackground() applies menu blur via
- * extractBlurredBackground() when isInGameUi() is false. We never call that path.
- * Panels are drawn in extractRenderState (26.2 element stratum).
+ * Blur fix: never call extractBlurredBackground; solid fill only in extractBackground.
+ * isInGameUi() true so vanilla background path cannot re-enable blur.
+ * Drawing uses GuiGraphicsExtractor.fill / .text (not legacy drawString).
  */
 public class ClickGUIScreen extends Screen {
     private final Map<Category, Panel> panels = new HashMap<>();
@@ -35,7 +35,6 @@ public class ClickGUIScreen extends Screen {
     private static final int PANEL_BG = 0xF010131A;
     private static final int HEADER_BG = 0xFF16201C;
     private static final int ACCENT = 0xFF00E8A0;
-    private static final int TEXT = 0xFFE8EAED;
     private static final int TEXT_DIM = 0xFF8B95A8;
     private static final int ROW_ON = 0xFF00E8A0;
     private static final int ROW_OFF = 0xFF8B95A8;
@@ -51,10 +50,6 @@ public class ClickGUIScreen extends Screen {
         }
     }
 
-    /**
-     * Force the "in-game UI" path so vanilla never runs extractBlurredBackground
-     * even if something calls super.extractBackground.
-     */
     @Override
     public boolean isInGameUi() {
         return true;
@@ -65,23 +60,21 @@ public class ClickGUIScreen extends Screen {
         return false;
     }
 
-    /**
-     * Solid dim overlay only — no extractTransparentBackground, no blur, no menu texture.
-     */
     @Override
     public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+        // Solid dim only — no extractTransparentBackground, no blur
         graphics.fill(0, 0, this.width, this.height, BG);
     }
 
     @Override
     protected void extractBlurredBackground(GuiGraphicsExtractor graphics) {
-        // no-op: never apply menu background blurriness
+        // intentionally empty
     }
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         String header = "TT Client v" + TTClient.VERSION + "  |  Right Shift close  |  LMB toggle  RMB settings";
-        graphics.drawString(this.font, header, 12, 8, TEXT_DIM, false);
+        graphics.text(this.font, header, 12, 8, TEXT_DIM, false);
 
         for (Panel panel : panelList) {
             panel.render(graphics, mouseX, mouseY);
@@ -91,7 +84,7 @@ public class ClickGUIScreen extends Screen {
             String msg = "Binding: " + bindingModule.getName() + "  (ESC clear)";
             int tw = this.font.width(msg);
             graphics.fill(this.width / 2 - tw / 2 - 8, this.height - 28, this.width / 2 + tw / 2 + 8, this.height - 12, 0xEE000000);
-            graphics.drawString(this.font, msg, this.width / 2 - tw / 2, this.height - 24, ACCENT, false);
+            graphics.text(this.font, msg, this.width / 2 - tw / 2, this.height - 24, ACCENT, false);
         }
 
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
@@ -139,7 +132,6 @@ public class ClickGUIScreen extends Screen {
             bindingModule = null;
             return true;
         }
-        // ESC or Right Shift close
         if (keyCode == 256 || keyCode == 344) {
             onClose();
             return true;
@@ -185,7 +177,7 @@ public class ClickGUIScreen extends Screen {
             g.fill(ix, iy, ix + width, iy + bodyH, PANEL_BG);
             g.fill(ix, iy, ix + width, iy + headerHeight, HEADER_BG);
             g.fill(ix, iy, ix + 2, iy + bodyH, ACCENT);
-            g.drawString(font, category.name, ix + 6, iy + 4, ACCENT, false);
+            g.text(font, category.name, ix + 6, iy + 4, ACCENT, false);
 
             if (!open) return;
 
@@ -196,7 +188,7 @@ public class ClickGUIScreen extends Screen {
                 if (mouseX >= ix && mouseX <= ix + width && mouseY >= my && mouseY <= my + 14) {
                     g.fill(ix + 2, my, ix + width, my + 14, 0x22FFFFFF);
                 }
-                g.drawString(font, mod.getName(), ix + 6, my + 3, color, false);
+                g.text(font, mod.getName(), ix + 6, my + 3, color, false);
                 if (on) {
                     g.fill(ix + width - 10, my + 5, ix + width - 5, my + 10, ACCENT);
                 }
@@ -205,7 +197,7 @@ public class ClickGUIScreen extends Screen {
                 if (expanded == mod) {
                     for (Setting<?> s : mod.getSettings()) {
                         String label = s.getName() + ": " + String.valueOf(s.get());
-                        g.drawString(font, label, ix + 10, my + 2, TEXT_DIM, false);
+                        g.text(font, label, ix + 10, my + 2, TEXT_DIM, false);
                         my += 13;
                     }
                 }
