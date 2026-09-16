@@ -35,9 +35,6 @@ public class ModuleManager {
         register(new Ambience());
         register(new CustomSky());
         register(new Breadcrumbs());
-        register(new BlockHighlight());
-        register(new PopChams());
-        register(new Search());
 
         register(new Sprint());
         register(new AutoWalk());
@@ -47,10 +44,6 @@ public class ModuleManager {
         register(new Step());
         register(new Speed());
         register(new Velocity());
-        register(new Fly());
-        register(new NoClip());
-        register(new ElytraFly());
-        register(new LongJump());
 
         register(new AutoTool());
         register(new AutoArmor());
@@ -61,36 +54,25 @@ public class ModuleManager {
         register(new InventoryCleaner());
         register(new MiddleClickPearl());
         register(new AutoFish());
-        register(new ChestStealer());
-        register(new AutoGapple());
-        register(new Freecam());
+        register(new AutoRespawn());
 
         register(new XRay());
         register(new Nuker());
         register(new Scaffold());
         register(new Timer());
         register(new Waypoints());
-        register(new AutoFarm());
-        register(new LiquidPlace());
 
         register(new KillAura());
         register(new Criticals());
         register(new AutoClicker());
         register(new AimAssist());
         register(new Reach());
-        register(new AutoTotem());
-        register(new AutoCrystal());
-        register(new Surround());
-        register(new Offhand());
 
         register(new FPSBoost());
         register(new AntiAFK());
         register(new AutoReconnect());
-        register(new MiddleClickFriend());
-        register(new NoRotate());
-        register(new AutoRespawn());
-        register(new ChatSuffix());
         register(new ChatTimestamps());
+        register(new CoordCopy());
     }
 
     private void register(Module module) {
