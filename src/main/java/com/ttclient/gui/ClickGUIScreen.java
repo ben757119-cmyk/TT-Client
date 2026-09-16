@@ -5,6 +5,7 @@ import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.modules.client.ClickGUIModule;
 import com.ttclient.settings.*;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
@@ -20,6 +21,7 @@ public class ClickGUIScreen extends Screen {
     private final Map<Category, Panel> panels = new HashMap<>();
     private final List<Panel> panelList = new ArrayList<>();
     private Module bindingModule = null;
+    private String searchQuery = "";
 
     public ClickGUIScreen() {
         super(Component.literal("TT Client"));
@@ -32,10 +34,18 @@ public class ClickGUIScreen extends Screen {
         }
     }
 
+    /**
+     * Vanilla Screen blur is what made Right Shift look smeared.
+     * Override so 26.2 never runs applyBlur for this GUI.
+     */
+    @Override
+    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        graphics.fill(0, 0, this.width, this.height, 0x88000000);
+    }
+
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
-        // Panels drawn via extract path; full neon UI to be expanded on next pass
     }
 
     @Override
@@ -76,6 +86,10 @@ public class ClickGUIScreen extends Screen {
         }
         if (keyCode == 256 || keyCode == 344) {
             onClose();
+            return true;
+        }
+        if (keyCode == 259 && !searchQuery.isEmpty()) {
+            searchQuery = searchQuery.substring(0, searchQuery.length() - 1);
             return true;
         }
         return super.keyPressed(event);
