@@ -1,6 +1,7 @@
 package com.ttclient.config;
 
 import com.ttclient.TTClient;
+import com.ttclient.client.TTClientClient;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.*;
 
@@ -23,9 +24,9 @@ public class ConfigManager {
     }
 
     public void save() {
-        if (TTClient.modules == null) return;
+        if (TTClientClient.modules == null) return;
         Properties props = new Properties();
-        for (Module mod : TTClient.modules.getModules()) {
+        for (Module mod : TTClientClient.modules.getModules()) {
             String prefix = mod.getName().replace(" ", "_") + ".";
             props.setProperty(prefix + "enabled", String.valueOf(mod.isEnabled()));
             props.setProperty(prefix + "key", String.valueOf(mod.getKeyBind()));
@@ -41,7 +42,7 @@ public class ConfigManager {
     }
 
     public void load() {
-        if (!Files.exists(configFile) || TTClient.modules == null) return;
+        if (!Files.exists(configFile) || TTClientClient.modules == null) return;
         Properties props = new Properties();
         try (InputStream in = Files.newInputStream(configFile)) {
             props.load(in);
@@ -49,7 +50,7 @@ public class ConfigManager {
             TTClient.LOGGER.error("Failed to load config", e);
             return;
         }
-        for (Module mod : TTClient.modules.getModules()) {
+        for (Module mod : TTClientClient.modules.getModules()) {
             String prefix = mod.getName().replace(" ", "_") + ".";
             String enabled = props.getProperty(prefix + "enabled");
             if (enabled != null) mod.setEnabled(Boolean.parseBoolean(enabled));
