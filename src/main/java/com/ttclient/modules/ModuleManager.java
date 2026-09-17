@@ -39,12 +39,6 @@ public class ModuleManager {
         register(new CustomSky());
         register(new Breadcrumbs());
         register(new BlockHighlight());
-        register(new PopChams());
-        register(new Search());
-        register(new ChinaHat());
-        register(new Trajectories());
-        register(new Radar());
-        register(new NoFog());
 
         register(new Sprint());
         register(new AutoWalk());
@@ -64,6 +58,7 @@ public class ModuleManager {
         register(new BoatFly());
         register(new AirJump());
         register(new Strafe());
+        register(new AutoJump());
 
         register(new AutoTool());
         register(new AttributeSwapper());
@@ -78,8 +73,6 @@ public class ModuleManager {
         register(new AutoRespawn());
         register(new ChestStealer());
         register(new AutoGapple());
-        register(new Freecam());
-        register(new AutoPotion());
         register(new NoBreakDelay());
         register(new AutoMine());
         register(new AntiHunger());
@@ -92,39 +85,23 @@ public class ModuleManager {
         register(new Timer());
         register(new Waypoints());
         register(new AutoFarm());
-        register(new LiquidPlace());
-        register(new FakePlayer());
-        register(new AutoTorch());
-        register(new NewChunks());
-        register(new StashFinder());
 
         register(new KillAura());
         register(new Criticals());
         register(new AutoClicker());
         register(new AimAssist());
         register(new Reach());
-        register(new AutoCrystal());
-        register(new Surround());
-        register(new Offhand());
         register(new TriggerBot());
         register(new WTap());
         register(new AutoArmorSwap());
-        register(new Hitboxes());
 
         register(new FPSBoost());
         register(new AntiAFK());
         register(new AutoReconnect());
         register(new ChatTimestamps());
         register(new CoordCopy());
-        register(new MiddleClickFriend());
-        register(new NoRotate());
-        register(new ChatSuffix());
-        register(new Spammer());
-        register(new DiscordRPC());
-        register(new PortalGodMode());
-        register(new Announcer());
+        register(new DeathCoords());
         register(new AutoGG());
-        register(new NameProtect());
         register(new SoundVolume());
     }
 
