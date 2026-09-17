@@ -4,6 +4,7 @@ import com.ttclient.TTClient;
 import com.ttclient.client.TTClientClient;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
+import com.ttclient.modules.client.ClickGUIModule;
 import com.ttclient.settings.BoolSetting;
 import com.ttclient.settings.ModeSetting;
 import com.ttclient.settings.NumberSetting;
@@ -24,9 +25,8 @@ public class ClickGUIScreen extends Screen {
     private final List<Panel> panelList = new ArrayList<>();
     private Module bindingModule = null;
     private Module hoveredModule = null;
-    private long openTime = System.currentTimeMillis();
+    private String searchQuery = "";
 
-    private static final int BG = 0xB00A0B0F;
     private static final int PANEL_BG = 0xF0121620;
     private static final int HEADER_BG = 0xFF0E1A16;
     private static final int ACCENT = 0xFF00E8A0;
@@ -50,26 +50,29 @@ public class ClickGUIScreen extends Screen {
 
     @Override
     public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-        float t = Math.min(1f, (System.currentTimeMillis() - openTime) / 180f);
-        int a = (int) (0xB0 * t);
-        graphics.fill(0, 0, this.width, this.height, (a << 24) | 0x0A0B0F);
+        int overlay = 0x660A0B0F;
+        ClickGUIModule guiMod = TTClientClient.modules != null
+                ? TTClientClient.modules.getModule(ClickGUIModule.class) : null;
+        if (guiMod != null && guiMod.blur.get()) {
+            overlay = 0x990A0B0F;
+        }
+        graphics.fill(0, 0, this.width, this.height, overlay);
     }
 
     @Override
-    protected void extractBlurredBackground(GuiGraphicsExtractor graphics) {}
+    protected void extractBlurredBackground(GuiGraphicsExtractor graphics) {
+    }
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-        float t = Math.min(1f, (System.currentTimeMillis() - openTime) / 220f);
-        int yOff = (int) ((1f - t) * -12);
-
         hoveredModule = null;
-        graphics.text(this.font, "TT Client v" + TTClient.VERSION + "   hover for description · LMB toggle · RMB settings", 14, 10 + yOff, TEXT_DIM, false);
-
+        String searchLabel = searchQuery.isEmpty() ? "type to search" : "search: " + searchQuery;
+        graphics.text(this.font,
+                "TT Client v" + TTClient.VERSION + "  ·  LMB toggle  ·  RMB settings  ·  MMB bind  ·  " + searchLabel,
+                14, 10, TEXT_DIM, false);
         for (Panel panel : panelList) {
-            panel.render(graphics, mouseX, mouseY, yOff);
+            panel.render(graphics, mouseX, mouseY);
         }
-
         if (hoveredModule != null) {
             String title = hoveredModule.getName();
             String desc = hoveredModule.getDescription();
@@ -84,15 +87,12 @@ public class ClickGUIScreen extends Screen {
             graphics.text(font, title, tx + pad, ty + 4, ACCENT, false);
             graphics.text(font, desc, tx + pad, ty + 15, TEXT_DIM, false);
         }
-
         if (bindingModule != null) {
             String msg = "Bind: " + bindingModule.getName() + "  (ESC clear)";
             int tw = this.font.width(msg);
             graphics.fill(this.width / 2 - tw / 2 - 10, this.height - 30, this.width / 2 + tw / 2 + 10, this.height - 12, 0xEE000000);
             graphics.text(this.font, msg, this.width / 2 - tw / 2, this.height - 25, ACCENT, false);
         }
-
-        super.extractRenderState(graphics, mouseX, mouseY, partialTick);
     }
 
     @Override
@@ -141,6 +141,24 @@ public class ClickGUIScreen extends Screen {
             onClose();
             return true;
         }
+        if (keyCode == 259 && !searchQuery.isEmpty()) {
+            searchQuery = searchQuery.substring(0, searchQuery.length() - 1);
+            return true;
+        }
+        if (searchQuery.length() < 24) {
+            if (keyCode >= 65 && keyCode <= 90) {
+                searchQuery += (char) ('a' + (keyCode - 65));
+                return true;
+            }
+            if (keyCode >= 48 && keyCode <= 57) {
+                searchQuery += (char) ('0' + (keyCode - 48));
+                return true;
+            }
+            if (keyCode == 32) {
+                searchQuery += ' ';
+                return true;
+            }
+        }
         return super.keyPressed(event);
     }
 
@@ -164,29 +182,38 @@ public class ClickGUIScreen extends Screen {
             this.y = y;
         }
 
-        public void render(GuiGraphicsExtractor g, int mouseX, int mouseY, int yOff) {
-            int ix = (int) x;
-            int iy = (int) y + yOff;
-
-            int bodyH = headerHeight;
-            List<Module> mods = TTClient.modules != null
+        private List<Module> filteredModules() {
+            List<Module> base = TTClient.modules != null
                     ? TTClient.modules.getModulesByCategory(category)
                     : List.of();
+            if (searchQuery == null || searchQuery.isBlank()) return base;
+            String q = searchQuery.toLowerCase();
+            List<Module> out = new ArrayList<>();
+            for (Module m : base) {
+                if (m.getName().toLowerCase().contains(q) || m.getDescription().toLowerCase().contains(q)) {
+                    out.add(m);
+                }
+            }
+            return out;
+        }
+
+        public void render(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+            int ix = (int) x;
+            int iy = (int) y;
+            List<Module> mods = filteredModules();
+            int bodyH = headerHeight;
             if (open) {
                 for (Module mod : mods) {
                     bodyH += 15;
                     if (expanded == mod) bodyH += mod.getSettings().size() * 13;
                 }
             }
-
             g.fill(ix + 2, iy + 2, ix + width + 2, iy + bodyH + 2, 0x44000000);
             g.fill(ix, iy, ix + width, iy + bodyH, PANEL_BG);
             g.fill(ix, iy, ix + width, iy + headerHeight, HEADER_BG);
             g.fill(ix, iy, ix + 2, iy + bodyH, ACCENT);
             g.text(font, category.name, ix + 8, iy + 5, ACCENT, false);
-
             if (!open) return;
-
             int my = iy + headerHeight;
             for (Module mod : mods) {
                 boolean on = mod.isEnabled();
@@ -199,7 +226,6 @@ public class ClickGUIScreen extends Screen {
                 g.text(font, mod.getName(), ix + 8, my + 4, color, false);
                 if (on) g.fill(ix + width - 11, my + 5, ix + width - 5, my + 11, ACCENT);
                 my += 15;
-
                 if (expanded == mod) {
                     for (Setting<?> s : mod.getSettings()) {
                         String label = s.getName() + ": " + String.valueOf(s.get());
@@ -223,8 +249,7 @@ public class ClickGUIScreen extends Screen {
                 }
             }
             if (!open || TTClient.modules == null) return false;
-
-            List<Module> mods = TTClient.modules.getModulesByCategory(category);
+            List<Module> mods = filteredModules();
             int my = (int) y + headerHeight;
             for (Module mod : mods) {
                 if (mouseX >= x && mouseX <= x + width && mouseY >= my && mouseY <= my + 15) {
