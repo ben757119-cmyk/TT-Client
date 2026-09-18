@@ -185,8 +185,8 @@ public class ClickGUIScreen extends Screen {
         }
 
         private List<Module> filteredModules() {
-            List<Module> base = TTClient.modules != null
-                    ? TTClient.modules.getModulesByCategory(category)
+            List<Module> base = TTClientClient.modules != null
+                    ? TTClientClient.modules.getModulesByCategory(category)
                     : List.of();
             if (searchQuery == null || searchQuery.isBlank()) return base;
             String q = searchQuery.toLowerCase();
@@ -250,7 +250,7 @@ public class ClickGUIScreen extends Screen {
                     return true;
                 }
             }
-            if (!open || TTClient.modules == null) return false;
+            if (!open || TTClientClient.modules == null) return false;
             List<Module> mods = filteredModules();
             int my = (int) y + headerHeight;
             for (Module mod : mods) {
