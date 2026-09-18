@@ -1,7 +1,6 @@
 package com.ttclient.modules;
 
 import com.ttclient.modules.client.*;
-import com.ttclient.modules.combat.*;
 import com.ttclient.modules.misc.*;
 import com.ttclient.modules.movement.*;
 import com.ttclient.modules.player.*;
@@ -22,87 +21,29 @@ public class ModuleManager {
         register(new CustomMainMenu());
         register(new Notifications());
         register(new Keystrokes());
-        register(new ArrayListMod());
 
         register(new Fullbright());
         register(new Zoom());
-        register(new Brightness());
-        register(new Crosshair());
-        register(new NameTags());
-        register(new Tracers());
-        register(new ESP());
-        register(new StorageESP());
-        register(new HoleESP());
-        register(new ViewModel());
-        register(new NoRender());
-        register(new Ambience());
-        register(new CustomSky());
-        register(new Breadcrumbs());
-        register(new BlockHighlight());
+        register(new LightLevel());
+        register(new TargetInfo());
 
         register(new Sprint());
         register(new AutoWalk());
-        register(new InventoryMove());
-        register(new NoSlow());
-        register(new Jesus());
-        register(new Step());
-        register(new Speed());
-        register(new Velocity());
-        register(new Fly());
-        register(new NoClip());
-        register(new ElytraFly());
-        register(new LongJump());
-        register(new Spider());
-        register(new SafeWalk());
-        register(new Parkour());
-        register(new BoatFly());
-        register(new AirJump());
-        register(new Strafe());
         register(new AutoJump());
+        register(new ToggleSneak());
 
-        register(new AutoTool());
-        register(new AttributeSwapper());
-        register(new AutoArmor());
-        register(new FastPlace());
-        register(new FastBreak());
-        register(new NoFall());
         register(new AutoEat());
-        register(new InventoryCleaner());
-        register(new MiddleClickPearl());
         register(new AutoFish());
         register(new AutoRespawn());
-        register(new ChestStealer());
-        register(new AutoGapple());
-        register(new NoBreakDelay());
-        register(new AutoMine());
-        register(new AntiHunger());
-        register(new AutoSprintReset());
-        register(new com.ttclient.modules.player.AutoTotem());
 
-        register(new XRay());
-        register(new Nuker());
-        register(new Scaffold());
-        register(new Timer());
         register(new Waypoints());
-        register(new AutoFarm());
-
-        register(new KillAura());
-        register(new Criticals());
-        register(new AutoClicker());
-        register(new AimAssist());
-        register(new Reach());
-        register(new TriggerBot());
-        register(new WTap());
-        register(new AutoArmorSwap());
 
         register(new FPSBoost());
         register(new AntiAFK());
-        register(new AutoReconnect());
         register(new ChatTimestamps());
         register(new CoordCopy());
         register(new DeathCoords());
-        register(new AutoGG());
-        register(new SoundVolume());
+        register(new SessionTimer());
     }
 
     private void register(Module module) { modules.add(module); }
@@ -127,5 +68,8 @@ public class ModuleManager {
     }
     public void onTick() {
         for (Module m : modules) if (m.isEnabled()) m.onTick();
+    }
+    public void onRender2D(net.minecraft.client.gui.GuiGraphics graphics, float partialTick) {
+        for (Module m : modules) if (m.isEnabled()) m.onRender2D(graphics, partialTick);
     }
 }

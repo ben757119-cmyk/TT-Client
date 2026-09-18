@@ -1,24 +1,23 @@
 # TT Client — NeoForge 26.2
 
-Client-side utility mod with a ClickGUI, HUD, movement/player helpers, and FPS-focused options.
+Client-side utility mod with a sharp ClickGUI, HUD, movement/player helpers.
 
-**Version 1.7.0**
+**Version 1.8.0**
 
-## What changed in 1.7.0
-- **Right Shift is sharp again**: ClickGUI no longer calls `super.extractRenderState` (that reapplied vanilla 26.2 menu blur). `extractBlurredBackground` stays a no-op. Overlay is a flat dim only.
-- ClickGUI search is back (type while the GUI is open).
-- New working modules: **AutoJump**, **DeathCoords** (chat + clipboard).
-- Removed stub / empty modules that did nothing: ChinaHat, PopChams, Trajectories, Radar, Search, NoFog, FakePlayer, LiquidPlace, AutoTorch, NewChunks, StashFinder, AutoCrystal, Surround, Offhand, Hitboxes, MiddleClickFriend, NoRotate, ChatSuffix, Spammer, DiscordRPC, PortalGodMode, Announcer, NameProtect, AutoPotion, Freecam.
+## What changed in 1.8.0
+- Right Shift ClickGUI: no vanilla menu blur (`isInGameUi`, empty `extractBlurredBackground`, no `super.extractRenderState`). Blur toggle removed; optional **Dim** overlay only.
+- HUD potions actually draw. Search + binds unchanged.
+- New working modules: **LightLevel**, **TargetInfo**, **ToggleSneak**, **SessionTimer**.
+- **FPSBoost** only does what it can without mixins: unfocused FPS cap.
+- Removed stub modules that did nothing and broke the compile (ESP/XRay/NoRender/KillAura/Reach/Fly/Nuker/Scaffold/Timer and other empty registrations).
+- Fixed `ModuleManager.onRender2D` and `DeathCoords`/`AutoJump` calling a nonexistent `mc()`.
 
 ## How to use
 1. Java 25 + NeoForge 26.2
-2. `./gradlew build` → `build/libs/ttclient-1.7.0.jar`
+2. `./gradlew build` → `build/libs/ttclient-1.8.0.jar`
 3. Put the jar in `mods/`
 4. In-game: **Right Shift** opens ClickGUI
 5. Left click toggle · Right click settings · Middle click bind · Type to search
-
-## Default binds
-- Right Shift — ClickGUI
 
 Config: `config/ttclient/config.properties`
 

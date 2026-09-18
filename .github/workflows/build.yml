@@ -5,6 +5,8 @@ on:
     branches: [ main, master ]
   pull_request:
   workflow_dispatch:
+  release:
+    types: [ created ]
 
 jobs:
   build:
@@ -12,34 +14,57 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '25'
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '9.2.1'
-      - run: gradle build --no-daemon
-      - uses: actions/upload-artifact@v4
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Read version
+        id: ver
+        run: |
+          VER=$(grep '^mod_version=' gradle.properties | cut -d= -f2 | tr -d '[:space:]')
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+      - name: Build with Gradle
+        run: ./gradlew build --no-daemon
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
         with:
           name: ttclient-jar
           path: build/libs/*.jar
           if-no-files-found: error
-      - name: Release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+      - name: Publish GitHub Release
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.7.0
-          name: TT Client v1.7.0
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: TT Client v${{ steps.ver.outputs.version }}
           body: |
-            ## TT Client 1.7.0
-            - **Right Shift ClickGUI is sharp** — no vanilla 26.2 menu blur (`extractBlurredBackground` no-op, no `super.extractRenderState`)
-            - ClickGUI search restored
-            - New: AutoJump, DeathCoords
-            - Removed empty stub modules (ChinaHat, Spammer, DiscordRPC, FakePlayer, etc.)
-            - AttributeSwapper / AutoArmorSwap retained from 1.6.1
+            ## TT Client ${{ steps.ver.outputs.version }}
+            NeoForge / Minecraft 26.2 utility client.
+
+            - Sharp Right Shift ClickGUI (no vanilla menu blur)
+            - HUD, LightLevel, TargetInfo, SessionTimer, ToggleSneak
+            - Stub modules removed
           files: build/libs/*.jar
-          fail_on_unmatched_files: true
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload to existing Release event
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/libs/*.jar
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
