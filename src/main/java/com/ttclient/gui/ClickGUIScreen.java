@@ -50,13 +50,15 @@ public class ClickGUIScreen extends Screen {
 
     @Override
     public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-        int overlay = 0x660A0B0F;
+        int overlay = 0x00000000;
         ClickGUIModule guiMod = TTClientClient.modules != null
                 ? TTClientClient.modules.getModule(ClickGUIModule.class) : null;
-        if (guiMod != null && guiMod.blur.get()) {
-            overlay = 0x990A0B0F;
+        if (guiMod == null || guiMod.dim.get()) {
+            overlay = 0x660A0B0F;
         }
-        graphics.fill(0, 0, this.width, this.height, overlay);
+        if (overlay != 0) {
+            graphics.fill(0, 0, this.width, this.height, overlay);
+        }
     }
 
     @Override
