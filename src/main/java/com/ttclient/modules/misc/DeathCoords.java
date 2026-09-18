@@ -2,7 +2,6 @@ package com.ttclient.modules.misc;
 
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
 public class DeathCoords extends Module {
@@ -15,8 +14,7 @@ public class DeathCoords extends Module {
 
     @Override
     public void onTick() {
-        Minecraft mc = mc();
-        if (mc == null || mc.player == null) return;
+        if (mc.player == null) return;
         if (mc.player.isDeadOrDying()) {
             if (!announced) {
                 int x = (int) Math.floor(mc.player.getX());

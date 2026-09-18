@@ -2,7 +2,6 @@ package com.ttclient.modules.movement;
 
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 
 public class AutoJump extends Module {
@@ -12,8 +11,7 @@ public class AutoJump extends Module {
 
     @Override
     public void onTick() {
-        Minecraft mc = mc();
-        if (mc == null || mc.player == null || mc.options == null) return;
+        if (mc.player == null || mc.options == null) return;
         LocalPlayer p = mc.player;
         if (!p.onGround()) return;
         boolean moving = mc.options.keyUp.isDown()

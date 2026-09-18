@@ -3,47 +3,47 @@ package com.ttclient.modules.misc;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
-import net.minecraft.client.Minecraft;
+import com.ttclient.settings.NumberSetting;
 
 public class FPSBoost extends Module {
-    public final BoolSetting lowerClouds = addSetting(new BoolSetting("No Clouds", "Disable clouds", true));
-    public final BoolSetting lowerParticles = addSetting(new BoolSetting("Fewer Particles", "Minimal particles", true));
-    public final BoolSetting entityShadows = addSetting(new BoolSetting("No Entity Shadows", "Disable entity shadows", true));
+    public final BoolSetting unfocusedCPU = addSetting(new BoolSetting("Unfocused CPU", "Drop FPS cap when the window is unfocused", true));
+    public final NumberSetting unfocusedLimit = addSetting(new NumberSetting("Unfocused FPS", "FPS cap while unfocused", 10, 5, 60, 1));
+    public final BoolSetting particleLimit = addSetting(new BoolSetting("Particle Limit note", "Reminder only — vanilla particles are not patched yet", false));
 
-    private int oldClouds = -1;
-    private int oldParticles = -1;
-    private boolean oldShadows = true;
+    private int savedLimit = -1;
 
     public FPSBoost() {
-        super("FPSBoost", "Lower visual settings for more FPS", Category.MISC);
+        super("FPSBoost", "Lower FPS when unfocused to save CPU", Category.MISC);
         setEnabled(true);
     }
 
     @Override
-    public void onEnable() {
-        apply(true);
+    public void onTick() {
+        if (mc.options == null) return;
+        if (!unfocusedCPU.get()) {
+            restore();
+            return;
+        }
+        boolean focused = mc.isWindowActive();
+        if (!focused) {
+            if (savedLimit < 0) {
+                savedLimit = mc.options.framerateLimit().get();
+            }
+            mc.options.framerateLimit().set(unfocusedLimit.getInt());
+        } else {
+            restore();
+        }
     }
 
     @Override
     public void onDisable() {
-        apply(false);
+        restore();
     }
 
-    private void apply(boolean enable) {
-        Minecraft mc = mc();
-        if (mc == null || mc.options == null) return;
-        try {
-            if (enable) {
-                if (lowerClouds.get()) {
-                    // CloudStatus ordinal best-effort
-                }
-                if (entityShadows.get()) {
-                    oldShadows = mc.options.entityShadows().get();
-                    mc.options.entityShadows().set(false);
-                }
-            } else {
-                mc.options.entityShadows().set(oldShadows);
-            }
-        } catch (Exception ignored) {}
+    private void restore() {
+        if (savedLimit >= 0 && mc.options != null) {
+            mc.options.framerateLimit().set(savedLimit);
+            savedLimit = -1;
+        }
     }
 }
