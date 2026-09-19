@@ -34,10 +34,16 @@ public class ClickGUIScreen extends Screen {
     private static final int ROW_ON = 0xFF00E8A0;
     private static final int ROW_OFF = 0xFF9AA3B5;
 
+    private static com.ttclient.modules.ModuleManager manager() {
+        if (TTClientClient.modules != null) return TTClientClient.modules;
+        return TTClient.modules;
+    }
+
     public ClickGUIScreen() {
         super(Component.literal("TT Client"));
         int x = 14;
         for (Category cat : Category.values()) {
+            if (manager() != null && manager().getModulesByCategory(cat).isEmpty()) continue;
             Panel p = new Panel(cat, x, 36);
             panels.put(cat, p);
             panelList.add(p);
@@ -45,8 +51,15 @@ public class ClickGUIScreen extends Screen {
         }
     }
 
-    @Override public boolean isInGameUi() { return true; }
-    @Override public boolean isPauseScreen() { return false; }
+    @Override
+    public boolean isInGameUi() {
+        return true;
+    }
+
+    @Override
+    public boolean isPauseScreen() {
+        return false;
+    }
 
     @Override
     public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
@@ -185,8 +198,8 @@ public class ClickGUIScreen extends Screen {
         }
 
         private List<Module> filteredModules() {
-            List<Module> base = TTClientClient.modules != null
-                    ? TTClientClient.modules.getModulesByCategory(category)
+            List<Module> base = manager() != null
+                    ? manager().getModulesByCategory(category)
                     : List.of();
             if (searchQuery == null || searchQuery.isBlank()) return base;
             String q = searchQuery.toLowerCase();
@@ -250,7 +263,7 @@ public class ClickGUIScreen extends Screen {
                     return true;
                 }
             }
-            if (!open || TTClientClient.modules == null) return false;
+            if (!open || manager() == null) return false;
             List<Module> mods = filteredModules();
             int my = (int) y + headerHeight;
             for (Module mod : mods) {
