@@ -18,7 +18,6 @@ public class ModuleManager {
     public void init() {
         register(new ClickGUIModule());
         register(new HUD());
-        register(new CustomMainMenu());
         register(new Notifications());
         register(new Keystrokes());
 
@@ -26,6 +25,7 @@ public class ModuleManager {
         register(new Zoom());
         register(new LightLevel());
         register(new TargetInfo());
+        register(new SpeedHud());
 
         register(new Sprint());
         register(new AutoWalk());
@@ -35,10 +35,12 @@ public class ModuleManager {
         register(new AutoEat());
         register(new AutoFish());
         register(new AutoRespawn());
+        register(new AutoTool());
 
         register(new Waypoints());
 
         register(new FPSBoost());
+        register(new WorldClock());
         register(new AntiAFK());
         register(new ChatTimestamps());
         register(new CoordCopy());
