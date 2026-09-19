@@ -9,14 +9,17 @@ import com.ttclient.modules.client.ClickGUIModule;
 import net.minecraft.client.Minecraft;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
+import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import org.lwjgl.glfw.GLFW;
 
 @Mod(value = TTClient.MOD_ID, dist = Dist.CLIENT)
+@EventBusSubscriber(modid = TTClient.MOD_ID, value = Dist.CLIENT)
 public class TTClientClient {
 
     public static ModuleManager modules;
@@ -24,13 +27,12 @@ public class TTClientClient {
 
     public TTClientClient() {
         modules = new ModuleManager();
+        TTClient.modules = modules;
         config = new ConfigManager();
+        TTClient.config = config;
         modules.init();
         config.load();
-        TTClient.modules = modules;
-        TTClient.config = config;
         NeoForge.EVENT_BUS.register(this);
-        NeoForge.EVENT_BUS.register(new HudRenderer());
         TTClient.LOGGER.info("TT Client {} ready with {} modules", TTClient.VERSION, modules.getModules().size());
     }
 
@@ -51,17 +53,16 @@ public class TTClientClient {
     public void onKey(InputEvent.Key event) {
         if (modules == null) return;
         Minecraft mc = Minecraft.getInstance();
-        var screen = mc.gui.screen();
-        if (screen != null && !(screen instanceof ClickGUIScreen)) return;
+        if (mc.screen != null && !(mc.screen instanceof ClickGUIScreen)) return;
 
         if (event.getAction() == GLFW.GLFW_PRESS) {
             ClickGUIModule gui = modules.getModule(ClickGUIModule.class);
             if (gui != null && event.getKey() == gui.getKeyBind()) {
-                if (screen instanceof ClickGUIScreen) {
-                    mc.gui.setScreen(null);
+                if (mc.screen instanceof ClickGUIScreen) {
+                    mc.setScreen(null);
                     if (config != null) config.save();
-                } else if (screen == null) {
-                    mc.gui.setScreen(new ClickGUIScreen());
+                } else if (mc.screen == null) {
+                    mc.setScreen(new ClickGUIScreen());
                 }
                 return;
             }
@@ -73,5 +74,11 @@ public class TTClientClient {
                 }
             }
         }
+    }
+
+    @SubscribeEvent
+    public void onRenderGui(RenderGuiEvent.Post event) {
+        if (modules == null) return;
+        modules.onRender2D(event.getGuiGraphics(), event.getPartialTick().getGameTimeDeltaPartialTick(false));
     }
 }

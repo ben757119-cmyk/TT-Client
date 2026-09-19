@@ -53,9 +53,10 @@ jobs:
             ## TT Client ${{ steps.ver.outputs.version }}
             NeoForge / Minecraft 26.2 utility client.
 
-            - Sharp Right Shift ClickGUI (no vanilla menu blur)
-            - HUD, LightLevel, TargetInfo, SessionTimer, ToggleSneak
-            - Stub modules removed
+            - ClickGUI actually lists modules (TTClientClient.modules)
+            - No vanilla menu blur; optional dim only
+            - AutoTool, SpeedHud, WorldClock
+            - Empty stub modules removed from the live list
           files: build/libs/*.jar
           make_latest: true
         env:
