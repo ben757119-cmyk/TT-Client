@@ -1,6 +1,7 @@
 package com.ttclient.modules;
 
 public enum Category {
+    COMBAT("Combat", 0xFF5555),
     MOVEMENT("Movement", 0x55FF55),
     PLAYER("Player", 0x5555FF),
     RENDER("Render", 0xFF55FF),
