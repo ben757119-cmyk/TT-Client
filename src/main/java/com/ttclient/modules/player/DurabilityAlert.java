@@ -11,7 +11,6 @@ import java.util.Set;
 
 public class DurabilityAlert extends Module {
     public final NumberSetting percent = addSetting(new NumberSetting("Percent", "Warn when remaining durability is at or below this %", 10, 1, 50, 1));
-
     private final Set<Integer> warned = new HashSet<>();
 
     public DurabilityAlert() {
@@ -21,6 +20,7 @@ public class DurabilityAlert extends Module {
 
     @Override
     public void onTick() {
+        var mc = mc();
         if (mc.player == null) return;
         check(mc.player.getMainHandItem());
         check(mc.player.getOffhandItem());
@@ -37,8 +37,8 @@ public class DurabilityAlert extends Module {
         float pct = rem * 100f / max;
         int id = System.identityHashCode(stack) ^ stack.getItem().hashCode();
         if (pct <= percent.get()) {
-            if (warned.add(id) && mc.player != null) {
-                mc.player.displayClientMessage(
+            if (warned.add(id) && mc().player != null) {
+                mc().player.displayClientMessage(
                         Component.literal("[TT] " + stack.getHoverName().getString() + " at " + (int) pct + "%"),
                         false);
             }

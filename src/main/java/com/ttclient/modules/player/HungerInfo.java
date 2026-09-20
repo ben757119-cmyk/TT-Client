@@ -13,6 +13,7 @@ public class HungerInfo extends Module {
 
     @Override
     public void onRender2D(GuiGraphics g, float partialTick) {
+        var mc = mc();
         if (mc.player == null || mc.options.hideGui) return;
         FoodData food = mc.player.getFoodData();
         String text = String.format("Food %d  Sat %.1f", food.getFoodLevel(), food.getSaturationLevel());

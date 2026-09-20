@@ -20,6 +20,7 @@ public class ClickGUIModule extends Module {
 
     @Override
     public void onEnable() {
+        var mc = mc();
         if (mc.screen == null) {
             mc.setScreen(new ClickGUIScreen());
         }

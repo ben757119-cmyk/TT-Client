@@ -13,6 +13,7 @@ public class BreakProgress extends Module {
 
     @Override
     public void onRender2D(GuiGraphics g, float partialTick) {
+        var mc = mc();
         if (mc.player == null || mc.options.hideGui) return;
         MultiPlayerGameMode gm = mc.gameMode;
         if (gm == null) return;

@@ -13,6 +13,7 @@ public class Compass extends Module {
 
     @Override
     public void onRender2D(GuiGraphics g, float partialTick) {
+        var mc = mc();
         if (mc.player == null || mc.options.hideGui) return;
         int w = mc.getWindow().getGuiScaledWidth();
         int cx = w / 2;
@@ -21,7 +22,7 @@ public class Compass extends Module {
         float[] angles = {180, 225, -90, -45, 0, 45, 90, 135};
 
         g.fill(cx - 70, 2, cx + 70, 16, 0x88000000);
-        g.drawString(mc.font, "▲", cx - 3, 3, 0xFF00E8A0, false);
+        g.drawString(mc.font, "^", cx - 3, 3, 0xFF00E8A0, false);
 
         for (int i = 0; i < marks.length; i++) {
             float diff = Mth.wrapDegrees(angles[i] - yaw);
