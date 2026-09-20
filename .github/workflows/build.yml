@@ -53,10 +53,10 @@ jobs:
             ## TT Client ${{ steps.ver.outputs.version }}
             NeoForge / Minecraft 26.2 utility client.
 
-            - ClickGUI actually lists modules (TTClientClient.modules)
-            - No vanilla menu blur; optional dim only
-            - AutoTool, SpeedHud, WorldClock
-            - Empty stub modules removed from the live list
+            - Right Shift is sharp: no vanilla menu blur, dim off by default
+            - Compass, BreakProgress, DurabilityAlert, HungerInfo
+            - Combat stub category removed
+            - ClickGUI uses TTClientClient.modules
           files: build/libs/*.jar
           make_latest: true
         env:

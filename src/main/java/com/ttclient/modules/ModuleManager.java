@@ -25,7 +25,6 @@ public class ModuleManager {
         register(new Zoom());
         register(new LightLevel());
         register(new TargetInfo());
-        register(new SpeedHud());
 
         register(new Sprint());
         register(new AutoWalk());
@@ -37,7 +36,12 @@ public class ModuleManager {
         register(new AutoRespawn());
         register(new AutoTool());
 
+        register(new SpeedHud());
+        register(new Compass());
+        register(new BreakProgress());
         register(new Waypoints());
+        register(new DurabilityAlert());
+        register(new HungerInfo());
 
         register(new FPSBoost());
         register(new WorldClock());
