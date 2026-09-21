@@ -20,6 +20,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Right Shift GUI. 26.2 Screen.extractBackground blurs when isInGameUi is false
+ * and draws fillGradient via extractTransparentBackground when it is true.
+ * Both paths are disabled. Never call blurBeforeThisStratum or super.extractRenderState.
+ */
 public class ClickGUIScreen extends Screen {
     private final Map<Category, Panel> panels = new HashMap<>();
     private final List<Panel> panelList = new ArrayList<>();
@@ -29,10 +34,15 @@ public class ClickGUIScreen extends Screen {
 
     private static final int PANEL_BG = 0xF0121620;
     private static final int HEADER_BG = 0xFF0E1A16;
-    private static final int ACCENT = 0xFF00E8A0;
     private static final int TEXT_DIM = 0xFF8B95A8;
-    private static final int ROW_ON = 0xFF00E8A0;
     private static final int ROW_OFF = 0xFF9AA3B5;
+
+    private int accent() {
+        ClickGUIModule guiMod = TTClientClient.modules != null
+                ? TTClientClient.modules.getModule(ClickGUIModule.class) : null;
+        if (guiMod != null) return guiMod.accent.get();
+        return 0xFF00E8A0;
+    }
 
     private static com.ttclient.modules.ModuleManager manager() {
         if (TTClientClient.modules != null) return TTClientClient.modules;
@@ -63,14 +73,10 @@ public class ClickGUIScreen extends Screen {
 
     @Override
     public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-        int overlay = 0x00000000;
         ClickGUIModule guiMod = TTClientClient.modules != null
                 ? TTClientClient.modules.getModule(ClickGUIModule.class) : null;
-        if (guiMod == null || guiMod.dim.get()) {
-            overlay = 0x660A0B0F;
-        }
-        if (overlay != 0) {
-            graphics.fill(0, 0, this.width, this.height, overlay);
+        if (guiMod != null && guiMod.dim.get()) {
+            graphics.fill(0, 0, this.width, this.height, 0x660A0B0F);
         }
     }
 
@@ -79,12 +85,20 @@ public class ClickGUIScreen extends Screen {
     }
 
     @Override
+    public void extractTransparentBackground(GuiGraphicsExtractor graphics) {
+    }
+
+    @Override
+    protected void extractMenuBackground(GuiGraphicsExtractor graphics) {
+    }
+
+    @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         hoveredModule = null;
         String searchLabel = searchQuery.isEmpty() ? "type to search" : "search: " + searchQuery;
         graphics.text(this.font,
                 "TT Client v" + TTClient.VERSION + "  ·  LMB toggle  ·  RMB settings  ·  MMB bind  ·  " + searchLabel,
-                14, 10, TEXT_DIM, false);
+                14, 10, accent(), false);
         for (Panel panel : panelList) {
             panel.render(graphics, mouseX, mouseY);
         }
@@ -98,15 +112,15 @@ public class ClickGUIScreen extends Screen {
             int tx = Math.min(mouseX + 12, this.width - boxW - 4);
             int ty = Math.min(mouseY + 12, this.height - boxH - 4);
             graphics.fill(tx, ty, tx + boxW, ty + boxH, 0xF0000000);
-            graphics.fill(tx, ty, tx + 2, ty + boxH, ACCENT);
-            graphics.text(font, title, tx + pad, ty + 4, ACCENT, false);
+            graphics.fill(tx, ty, tx + 2, ty + boxH, accent());
+            graphics.text(font, title, tx + pad, ty + 4, accent(), false);
             graphics.text(font, desc, tx + pad, ty + 15, TEXT_DIM, false);
         }
         if (bindingModule != null) {
             String msg = "Bind: " + bindingModule.getName() + "  (ESC clear)";
             int tw = this.font.width(msg);
             graphics.fill(this.width / 2 - tw / 2 - 10, this.height - 30, this.width / 2 + tw / 2 + 10, this.height - 12, 0xEE000000);
-            graphics.text(this.font, msg, this.width / 2 - tw / 2, this.height - 25, ACCENT, false);
+            graphics.text(this.font, msg, this.width / 2 - tw / 2, this.height - 25, accent(), false);
         }
     }
 
@@ -226,20 +240,20 @@ public class ClickGUIScreen extends Screen {
             g.fill(ix + 2, iy + 2, ix + width + 2, iy + bodyH + 2, 0x44000000);
             g.fill(ix, iy, ix + width, iy + bodyH, PANEL_BG);
             g.fill(ix, iy, ix + width, iy + headerHeight, HEADER_BG);
-            g.fill(ix, iy, ix + 2, iy + bodyH, ACCENT);
-            g.text(font, category.name, ix + 8, iy + 5, ACCENT, false);
+            g.fill(ix, iy, ix + 2, iy + bodyH, accent());
+            g.text(font, category.name, ix + 8, iy + 5, accent(), false);
             if (!open) return;
             int my = iy + headerHeight;
             for (Module mod : mods) {
                 boolean on = mod.isEnabled();
-                int color = on ? ROW_ON : ROW_OFF;
+                int color = on ? accent() : ROW_OFF;
                 boolean hover = mouseX >= ix && mouseX <= ix + width && mouseY >= my && mouseY <= my + 15;
                 if (hover) {
                     g.fill(ix + 2, my, ix + width, my + 15, 0x18FFFFFF);
                     hoveredModule = mod;
                 }
                 g.text(font, mod.getName(), ix + 8, my + 4, color, false);
-                if (on) g.fill(ix + width - 11, my + 5, ix + width - 5, my + 11, ACCENT);
+                if (on) g.fill(ix + width - 11, my + 5, ix + width - 5, my + 11, accent());
                 my += 15;
                 if (expanded == mod) {
                     for (Setting<?> s : mod.getSettings()) {

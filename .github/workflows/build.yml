@@ -54,10 +54,10 @@ jobs:
             ## TT Client ${{ steps.ver.outputs.version }}
             NeoForge / Minecraft 26.2 utility client.
 
-            - Right Shift is sharp: no vanilla menu blur, SolidDim off by default
-            - Compass, BreakProgress, DurabilityAlert, HungerInfo
-            - Combat stub category removed
-            - ClickGUI uses TTClientClient.modules
+            - Right Shift: no menu blur, no fillGradient sheet, SolidDim off
+            - DayCounter, WeatherHud, MemoryInfo
+            - Accent color applies to panels
+            - Unused ClickGUI Style modes removed
           files: build/libs/*.jar
           make_latest: true
         env:
