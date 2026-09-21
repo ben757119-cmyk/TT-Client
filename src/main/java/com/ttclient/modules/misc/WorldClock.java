@@ -18,7 +18,7 @@ public class WorldClock extends Module {
     @Override
     public void onRender2D(GuiGraphics g, float partialTick) {
         if (mc.level == null || mc.options.hideGui) return;
-        long dayTime = mc.level.getDayTime() % 24000L;
+        long dayTime = mc.level.getGameTime() % 24000L;
         int hours = (int) ((dayTime / 1000L + 6) % 24);
         int minutes = (int) ((dayTime % 1000L) * 60 / 1000);
         String world = String.format("World §f%02d:%02d", hours, minutes);
