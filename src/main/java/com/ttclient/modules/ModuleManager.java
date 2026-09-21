@@ -39,11 +39,14 @@ public class ModuleManager {
         register(new SpeedHud());
         register(new Compass());
         register(new BreakProgress());
+        register(new DayCounter());
+        register(new WeatherHud());
         register(new Waypoints());
         register(new DurabilityAlert());
         register(new HungerInfo());
 
         register(new FPSBoost());
+        register(new MemoryInfo());
         register(new WorldClock());
         register(new AntiAFK());
         register(new ChatTimestamps());
