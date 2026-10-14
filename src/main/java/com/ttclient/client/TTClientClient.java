@@ -22,9 +22,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import org.lwjgl.glfw.GLFW;
 
 /**
- * Client entry. Event handlers are instance methods registered via
- * NeoForge.EVENT_BUS.register(this). Do NOT use @EventBusSubscriber here —
- * that path requires static @SubscribeEvent methods.
+ * Client entry. Instance event handlers via NeoForge.EVENT_BUS.register(this).
  */
 @Mod(value = TTClient.MOD_ID, dist = Dist.CLIENT)
 public class TTClientClient {
@@ -77,27 +75,41 @@ public class TTClientClient {
     @SubscribeEvent
     public void onKey(InputEvent.Key event) {
         if (modules == null) return;
+        if (event.getAction() != GLFW.GLFW_PRESS) return;
+
+        int key = event.getKey();
+        // Media / volume / unknown keys often report as -1 or 0.
+        // Unbound modules also use -1 — matching them toggles EVERYTHING.
+        if (key <= 0 || key == GLFW.GLFW_KEY_UNKNOWN) return;
+
         Minecraft mc = Minecraft.getInstance();
         Screen screen = currentScreen(mc);
-        if (screen != null && !(screen instanceof ClickGUIScreen)) return;
 
-        if (event.getAction() == GLFW.GLFW_PRESS) {
-            ClickGUIModule gui = modules.getModule(ClickGUIModule.class);
-            if (gui != null && event.getKey() == gui.getKeyBind()) {
-                if (screen instanceof ClickGUIScreen) {
-                    openScreen(mc, null);
-                    if (config != null) config.save();
-                } else if (screen == null) {
-                    openScreen(mc, new ClickGUIScreen());
-                }
-                return;
+        // Don't fire module binds while any screen is open (chat, inventory, GUI…)
+        // Only allow ClickGUI open/close from Right Shift.
+        ClickGUIModule gui = modules.getModule(ClickGUIModule.class);
+        int guiKey = gui != null ? gui.getKeyBind() : GLFW.GLFW_KEY_RIGHT_SHIFT;
+        if (guiKey <= 0) guiKey = GLFW.GLFW_KEY_RIGHT_SHIFT;
+
+        if (key == guiKey) {
+            if (screen instanceof ClickGUIScreen) {
+                openScreen(mc, null);
+                if (config != null) config.save();
+            } else if (screen == null) {
+                openScreen(mc, new ClickGUIScreen());
             }
+            return;
+        }
 
-            for (Module mod : modules.getModules()) {
-                if (mod.getKeyBind() == event.getKey() && !(mod instanceof ClickGUIModule)) {
-                    mod.toggle();
-                    if (config != null) config.save();
-                }
+        if (screen != null) return;
+
+        for (Module mod : modules.getModules()) {
+            if (mod instanceof ClickGUIModule) continue;
+            int bind = mod.getKeyBind();
+            // Only real binds — never match unbound (-1) or zero
+            if (bind > 0 && bind == key) {
+                mod.toggle();
+                if (config != null) config.save();
             }
         }
     }

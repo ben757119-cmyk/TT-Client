@@ -24,6 +24,7 @@ import java.util.Map;
 
 /**
  * Right Shift GUI. Number settings: drag slider + click value to type.
+ * Search bar filters modules across all panels.
  */
 public class ClickGUIScreen extends Screen {
     private final Map<Category, Panel> panels = new HashMap<>();
@@ -31,13 +32,12 @@ public class ClickGUIScreen extends Screen {
     private Module bindingModule = null;
     private Module hoveredModule = null;
     private String searchQuery = "";
+    private boolean searchFocused = true;
 
-    /** Active number slider drag. */
     private NumberSetting sliding = null;
     private int sliderTrackX;
     private int sliderTrackW;
 
-    /** Active number text edit. */
     private NumberSetting typing = null;
     private String typingBuffer = "";
 
@@ -47,10 +47,16 @@ public class ClickGUIScreen extends Screen {
     private static final int ROW_OFF = 0xFF9AA3B5;
     private static final int SLIDER_BG = 0xFF1A2030;
     private static final int SLIDER_FILL = 0xFF0A3D32;
+    private static final int SEARCH_BG = 0xF00A0E14;
 
     private static final int ROW_H = 15;
     private static final int SETTING_H = 13;
     private static final int NUMBER_H = 28;
+
+    private static final int SEARCH_X = 14;
+    private static final int SEARCH_Y = 8;
+    private static final int SEARCH_W = 220;
+    private static final int SEARCH_H = 16;
 
     private int accent() {
         ClickGUIModule guiMod = TTClientClient.modules != null
@@ -69,7 +75,7 @@ public class ClickGUIScreen extends Screen {
         int x = 14;
         for (Category cat : Category.values()) {
             if (manager() != null && manager().getModulesByCategory(cat).isEmpty()) continue;
-            Panel p = new Panel(cat, x, 36);
+            Panel p = new Panel(cat, x, 48);
             panels.put(cat, p);
             panelList.add(p);
             x += 138;
@@ -110,11 +116,21 @@ public class ClickGUIScreen extends Screen {
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         hoveredModule = null;
-        String searchLabel = searchQuery.isEmpty() ? "type to search" : "search: " + searchQuery;
+
+        // Search bar
+        graphics.fill(SEARCH_X, SEARCH_Y, SEARCH_X + SEARCH_W, SEARCH_Y + SEARCH_H, SEARCH_BG);
+        graphics.fill(SEARCH_X, SEARCH_Y, SEARCH_X + 2, SEARCH_Y + SEARCH_H, accent());
+        String shown = searchQuery.isEmpty()
+                ? (searchFocused ? "Search modules…" : "Click to search modules")
+                : searchQuery + (searchFocused ? "_" : "");
+        int searchColor = searchQuery.isEmpty() ? TEXT_DIM : 0xFFE8EAED;
+        graphics.text(this.font, shown, SEARCH_X + 8, SEARCH_Y + 4, searchColor, false);
+
         String tip = typing != null
-                ? "Typing " + typing.getName() + ": " + typingBuffer + "_  (Enter apply · Esc cancel)"
-                : "LMB toggle · RMB settings · drag sliders · click number to type · " + searchLabel;
-        graphics.text(this.font, "TT Client v" + TTClient.VERSION + "  ·  " + tip, 14, 10, accent(), false);
+                ? "Typing " + typing.getName() + ": " + typingBuffer + "_  (Enter · Esc)"
+                : "LMB toggle · RMB settings · drag sliders · click value to type";
+        graphics.text(this.font, "TT Client v" + TTClient.VERSION + "  ·  " + tip,
+                SEARCH_X + SEARCH_W + 12, SEARCH_Y + 4, accent(), false);
 
         for (Panel panel : panelList) {
             panel.render(graphics, mouseX, mouseY);
@@ -156,15 +172,22 @@ public class ClickGUIScreen extends Screen {
         double mouseY = event.y();
         int button = event.button();
 
-        // Click outside finishes typing
+        if (button == 0
+                && mouseX >= SEARCH_X && mouseX <= SEARCH_X + SEARCH_W
+                && mouseY >= SEARCH_Y && mouseY <= SEARCH_Y + SEARCH_H) {
+            searchFocused = true;
+            commitTyping(true);
+            return true;
+        }
+
+        if (button == 0) searchFocused = false;
+
         if (typing != null && button == 0) {
             boolean onPanel = false;
             for (Panel p : panelList) {
                 if (p.contains(mouseX, mouseY)) { onPanel = true; break; }
             }
-            if (!onPanel) {
-                commitTyping(true);
-            }
+            if (!onPanel) commitTyping(true);
         }
 
         for (int i = panelList.size() - 1; i >= 0; i--) {
@@ -183,15 +206,12 @@ public class ClickGUIScreen extends Screen {
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
         double mouseX = event.x();
-        double mouseY = event.y();
-
         if (sliding != null && sliderTrackW > 0) {
             applySlider(sliding, mouseX, sliderTrackX, sliderTrackW);
             return true;
         }
-
         for (Panel panel : panelList) {
-            if (panel.mouseDragged(mouseX, mouseY)) return true;
+            if (panel.mouseDragged(mouseX, event.y())) return true;
         }
         return super.mouseDragged(event, dragX, dragY);
     }
@@ -199,8 +219,7 @@ public class ClickGUIScreen extends Screen {
     private void applySlider(NumberSetting ns, double mouseX, int trackX, int trackW) {
         double t = (mouseX - trackX) / (double) trackW;
         t = Math.max(0, Math.min(1, t));
-        double val = ns.getMin() + t * (ns.getMax() - ns.getMin());
-        ns.set(val);
+        ns.set(ns.getMin() + t * (ns.getMax() - ns.getMin()));
     }
 
     private void startTyping(NumberSetting ns) {
@@ -208,6 +227,7 @@ public class ClickGUIScreen extends Screen {
         typing = ns;
         typingBuffer = ns.getDisplay();
         sliding = null;
+        searchFocused = false;
     }
 
     private void commitTyping(boolean apply) {
@@ -215,13 +235,8 @@ public class ClickGUIScreen extends Screen {
         if (apply) {
             try {
                 String raw = typingBuffer.trim().replace(',', '.');
-                if (!raw.isEmpty()) {
-                    double v = Double.parseDouble(raw);
-                    typing.set(v);
-                }
-            } catch (NumberFormatException ignored) {
-                // keep previous value
-            }
+                if (!raw.isEmpty()) typing.set(Double.parseDouble(raw));
+            } catch (NumberFormatException ignored) {}
         }
         typing = null;
         typingBuffer = "";
@@ -246,7 +261,6 @@ public class ClickGUIScreen extends Screen {
                 }
                 return true;
             }
-            // digits / decimal / minus
             if (keyCode >= GLFW.GLFW_KEY_0 && keyCode <= GLFW.GLFW_KEY_9) {
                 typingBuffer += (char) ('0' + (keyCode - GLFW.GLFW_KEY_0));
                 return true;
@@ -263,47 +277,62 @@ public class ClickGUIScreen extends Screen {
                 if (typingBuffer.isEmpty()) typingBuffer = "-";
                 return true;
             }
-            return true; // swallow other keys while typing
+            return true;
         }
 
         if (bindingModule != null) {
-            if (keyCode == 256) bindingModule.setKeyBind(-1);
-            else bindingModule.setKeyBind(keyCode);
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) bindingModule.setKeyBind(-1);
+            else if (keyCode > 0) bindingModule.setKeyBind(keyCode);
             bindingModule = null;
             return true;
         }
-        if (keyCode == 256 || keyCode == 344) {
+
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE || keyCode == GLFW.GLFW_KEY_RIGHT_SHIFT) {
             onClose();
             return true;
         }
-        if (keyCode == 259 && !searchQuery.isEmpty()) {
-            searchQuery = searchQuery.substring(0, searchQuery.length() - 1);
-            return true;
+
+        // Search box input (always when focused, or when not typing a number)
+        if (searchFocused || typing == null) {
+            if (keyCode == GLFW.GLFW_KEY_BACKSPACE && !searchQuery.isEmpty()) {
+                searchQuery = searchQuery.substring(0, searchQuery.length() - 1);
+                searchFocused = true;
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_ENTER) {
+                searchFocused = false;
+                return true;
+            }
+            if (searchQuery.length() < 32) {
+                if (keyCode >= GLFW.GLFW_KEY_A && keyCode <= GLFW.GLFW_KEY_Z) {
+                    searchQuery += (char) ('a' + (keyCode - GLFW.GLFW_KEY_A));
+                    searchFocused = true;
+                    return true;
+                }
+                if (keyCode >= GLFW.GLFW_KEY_0 && keyCode <= GLFW.GLFW_KEY_9) {
+                    searchQuery += (char) ('0' + (keyCode - GLFW.GLFW_KEY_0));
+                    searchFocused = true;
+                    return true;
+                }
+                if (keyCode == GLFW.GLFW_KEY_SPACE) {
+                    searchQuery += ' ';
+                    searchFocused = true;
+                    return true;
+                }
+            }
         }
-        if (searchQuery.length() < 24) {
-            if (keyCode >= 65 && keyCode <= 90) {
-                searchQuery += (char) ('a' + (keyCode - 65));
-                return true;
-            }
-            if (keyCode >= 48 && keyCode <= 57) {
-                searchQuery += (char) ('0' + (keyCode - 48));
-                return true;
-            }
-            if (keyCode == 32) {
-                searchQuery += ' ';
-                return true;
-            }
-        }
+
         return super.keyPressed(event);
     }
 
     public void startBinding(Module module) {
         commitTyping(true);
         this.bindingModule = module;
+        searchFocused = false;
     }
 
     private static String keyName(int key) {
-        if (key < 0) return "NONE";
+        if (key <= 0) return "NONE";
         if (key == GLFW.GLFW_KEY_RIGHT_SHIFT) return "RSHIFT";
         if (key == GLFW.GLFW_KEY_LEFT_SHIFT) return "LSHIFT";
         if (key >= GLFW.GLFW_KEY_A && key <= GLFW.GLFW_KEY_Z) {
@@ -364,7 +393,7 @@ public class ClickGUIScreen extends Screen {
                     for (Setting<?> s : mod.getSettings()) {
                         bodyH += settingRowHeight(s);
                     }
-                    bodyH += SETTING_H; // bind
+                    bodyH += SETTING_H;
                 }
             }
             return bodyH;
@@ -380,7 +409,8 @@ public class ClickGUIScreen extends Screen {
             g.fill(ix, iy, ix + width, iy + bodyH, PANEL_BG);
             g.fill(ix, iy, ix + width, iy + headerHeight, HEADER_BG);
             g.fill(ix, iy, ix + 2, iy + bodyH, accent());
-            g.text(font, category.name, ix + 8, iy + 5, accent(), false);
+            String header = category.name + (searchQuery.isBlank() ? "" : " (" + mods.size() + ")");
+            g.text(font, header, ix + 8, iy + 5, accent(), false);
             if (!open) return;
 
             int my = iy + headerHeight;
@@ -399,32 +429,26 @@ public class ClickGUIScreen extends Screen {
                 if (expanded == mod) {
                     for (Setting<?> s : mod.getSettings()) {
                         if (s instanceof NumberSetting ns) {
-                            renderNumberSetting(g, ns, ix, my, mouseX, mouseY);
+                            renderNumberSetting(g, ns, ix, my);
                             my += NUMBER_H;
                         } else {
-                            String label = s.getName() + ": " + String.valueOf(s.get());
-                            g.text(font, label, ix + 10, my + 2, TEXT_DIM, false);
+                            g.text(font, s.getName() + ": " + String.valueOf(s.get()), ix + 10, my + 2, TEXT_DIM, false);
                             my += SETTING_H;
                         }
                     }
-                    String bindLabel = "Bind: " + keyName(mod.getKeyBind()) + "  (click)";
-                    g.text(font, bindLabel, ix + 10, my + 2, accent(), false);
+                    g.text(font, "Bind: " + keyName(mod.getKeyBind()) + "  (click)", ix + 10, my + 2, accent(), false);
                     my += SETTING_H;
                 }
             }
         }
 
-        private void renderNumberSetting(GuiGraphicsExtractor g, NumberSetting ns, int ix, int my, int mouseX, int mouseY) {
-            // Name
+        private void renderNumberSetting(GuiGraphicsExtractor g, NumberSetting ns, int ix, int my) {
             g.text(font, ns.getName(), ix + 10, my + 2, TEXT_DIM, false);
-
-            // Value (right) — highlight if typing this one
             String valText = (typing == ns) ? typingBuffer + "_" : ns.getDisplay();
             int vw = font.width(valText);
             int valueColor = (typing == ns) ? accent() : 0xFFE8EAED;
             g.text(font, valText, ix + width - 8 - vw, my + 2, valueColor, false);
 
-            // Slider track
             int trackX = ix + 10;
             int trackW = width - 20;
             int trackY = my + 15;
@@ -439,12 +463,8 @@ public class ClickGUIScreen extends Screen {
                 g.fill(trackX, trackY, trackX + fillW, trackY + trackH, SLIDER_FILL);
                 g.fill(trackX, trackY, trackX + fillW, trackY + trackH, (accent() & 0x00FFFFFF) | 0x99000000);
             }
-            // Knob
             int knobX = trackX + fillW - 2;
             g.fill(knobX, trackY - 2, knobX + 4, trackY + trackH + 2, accent());
-
-            // Min / max hints (tiny)
-            // skipped to keep clean
         }
 
         public boolean mouseClicked(double mouseX, double mouseY, int button) {
@@ -501,8 +521,6 @@ public class ClickGUIScreen extends Screen {
                             if (s instanceof NumberSetting ns && button == 0) {
                                 int trackX = ix + 10;
                                 int trackW = width - 20;
-                                int trackY = my + 15;
-                                // Click on value text area (top-right) → type
                                 String val = ns.getDisplay();
                                 int vw = font.width(val) + 8;
                                 boolean onValue = mouseY < my + 14 && mouseX >= x + width - vw - 10;
@@ -510,7 +528,6 @@ public class ClickGUIScreen extends Screen {
                                     startTyping(ns);
                                     return true;
                                 }
-                                // Otherwise start slider drag (also click sets value)
                                 commitTyping(true);
                                 sliding = ns;
                                 sliderTrackX = trackX;
