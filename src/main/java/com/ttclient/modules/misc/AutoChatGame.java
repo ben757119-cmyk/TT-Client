@@ -33,13 +33,14 @@ public class AutoChatGame extends Module {
     private long lastAnswerAt;
     private String lastAnswer = "";
 
+    // Hyphen kept at end of char classes to avoid illegal Java escapes
     private static final Pattern WORD_LINE = Pattern.compile(
             "(?i)(?:word|scramble|unscramble|scrambled(?:\\s+word)?)\\s*[:=-]\\s*([a-z0-9]+)");
     private static final Pattern MATH_LINE = Pattern.compile(
-            "(?i)(?:what\\s+is|solve|calculate|math|compute)[^0-9-]*(-?\\d+\\s*[+\\-*/x]\\s*\\d+(?:\\s*[+\\-*/x]\\s*\\d+)*)");
+            "(?i)(?:what\\s+is|solve|calculate|math|compute)[^0-9-]*(-?\\d+\\s*[+*/x-]\\s*\\d+(?:\\s*[+*/x-]\\s*\\d+)*)");
     private static final Pattern MATH_BARE = Pattern.compile(
-            "(?i)(?:^|\\s)(-?\\d+\\s*[+\\-*/x]\\s*\\d+(?:\\s*[+\\-*/x]\\s*\\d+)*)\\s*\\??\\s*$");
-    private static final Pattern MATH_ANY = Pattern.compile("(-?\\d+\\s*[+\\-*/x]\\s*\\d+)");
+            "(?i)(?:^|\\s)(-?\\d+\\s*[+*/x-]\\s*\\d+(?:\\s*[+*/x-]\\s*\\d+)*)\\s*\\??\\s*$");
+    private static final Pattern MATH_ANY = Pattern.compile("(-?\\d+\\s*[+*/x-]\\s*\\d+)");
     private static final Pattern SAY_LINE = Pattern.compile(
             "(?i)(?:say\\s+this|type\\s+this|repeat|type|say)\\s*[:=-]?\\s*[\"']?([^\"'\\n]{1,40})[\"']?");
     private static final Pattern FILL_LINE = Pattern.compile(
