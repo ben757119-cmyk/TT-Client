@@ -40,8 +40,6 @@ public class Fly extends Module {
 
     /**
      * WASD relative to yaw only — pitch ignored. Length capped at {@code s}.
-     * Minecraft yaw: 0 looks +Z, increases clockwise.
-     * Forward: (-sin, +cos), Right: (+cos, +sin).
      */
     public static Vec3 horizontalMove(float yawDeg, double s, Minecraft mc) {
         double rad = Math.toRadians(yawDeg);
@@ -51,7 +49,7 @@ public class Fly extends Module {
         double mx = 0;
         double mz = 0;
 
-        // Forward / back
+        // Forward / back (Minecraft: yaw 0 = +Z)
         if (mc.options.keyUp.isDown()) {
             mx -= sin;
             mz += cos;
@@ -60,21 +58,15 @@ public class Fly extends Module {
             mx += sin;
             mz -= cos;
         }
-        // Strafe: A = left (-right), D = right (+right)
+        // Strafe — swapped vs previous build (A was going right)
         if (mc.options.keyLeft.isDown()) {
-            mx -= cos;
-            mz -= sin;
-        }
-        if (mc.options.keyRight.isDown()) {
             mx += cos;
             mz += sin;
         }
-
-        // Wait - if user says D goes left and A goes right, the left/right above are swapped.
-        // Correct right vector for MC yaw is (+cos(yaw), +sin(yaw)) for +X when yaw=0... 
-        // yaw 0: forward (0,1) = -sin0, cos0 = 0,1. right should be (1,0) = cos0, sin0 = 1,0.
-        // So right: mx += cos, mz += sin. left: mx -= cos, mz -= sin.
-        // That is what we have. User reports inverted — swap them.
+        if (mc.options.keyRight.isDown()) {
+            mx -= cos;
+            mz -= sin;
+        }
 
         double len = Math.sqrt(mx * mx + mz * mz);
         if (len > 1e-6) {
