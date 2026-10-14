@@ -36,8 +36,15 @@ public class NumberSetting extends Setting<Double> {
         if (decimals <= 0) {
             return String.valueOf((long) Math.round(v));
         }
-        String fmt = "%.” + decimals + "f";
-        return String.format(Locale.ROOT, fmt, v);
+        double scale = Math.pow(10, decimals);
+        long scaled = Math.round(v * scale);
+        long whole = scaled / (long) scale;
+        long frac = Math.abs(scaled % (long) scale);
+        String fracStr = String.valueOf(frac);
+        while (fracStr.length() < decimals) {
+            fracStr = "0" + fracStr;
+        }
+        return whole + "." + fracStr;
     }
 
     private static int decimalPlaces(double step) {
