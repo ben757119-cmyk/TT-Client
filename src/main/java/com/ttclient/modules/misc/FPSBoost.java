@@ -15,6 +15,7 @@ public class FPSBoost extends Module {
 
     public FPSBoost() {
         super("FPSBoost", "Lower FPS when unfocused to save CPU", Category.MISC);
+        // off by default — avoid touching options during early load / unwanted config restore
     }
 
     @Override
@@ -28,9 +29,15 @@ public class FPSBoost extends Module {
         boolean focused = minecraft.isWindowActive();
         if (!focused) {
             if (savedLimit < 0) {
-                savedLimit = minecraft.options.framerateLimit().get();
+                try {
+                    savedLimit = minecraft.options.framerateLimit().get();
+                } catch (Throwable t) {
+                    return;
+                }
             }
-            minecraft.options.framerateLimit().set(unfocusedLimit.getInt());
+            try {
+                minecraft.options.framerateLimit().set(unfocusedLimit.getInt());
+            } catch (Throwable ignored) {}
         } else {
             restore();
         }
@@ -44,7 +51,9 @@ public class FPSBoost extends Module {
     private void restore() {
         Minecraft minecraft = mc();
         if (savedLimit >= 0 && minecraft != null && minecraft.options != null) {
-            minecraft.options.framerateLimit().set(savedLimit);
+            try {
+                minecraft.options.framerateLimit().set(savedLimit);
+            } catch (Throwable ignored) {}
             savedLimit = -1;
         }
     }

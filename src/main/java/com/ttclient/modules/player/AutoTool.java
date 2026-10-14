@@ -3,6 +3,7 @@ package com.ttclient.modules.player;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
@@ -20,7 +21,8 @@ public class AutoTool extends Module {
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.level == null || mc.hitResult == null) return;
+        Minecraft mc = mc();
+        if (mc == null || mc.player == null || mc.level == null || mc.hitResult == null || mc.options == null) return;
         if (mc.hitResult.getType() != HitResult.Type.BLOCK) {
             if (switchBack.get() && previousSlot >= 0) {
                 mc.player.getInventory().setSelectedSlot(previousSlot);
@@ -54,7 +56,8 @@ public class AutoTool extends Module {
 
     @Override
     public void onDisable() {
-        if (switchBack.get() && previousSlot >= 0 && mc.player != null) {
+        Minecraft mc = mc();
+        if (switchBack.get() && previousSlot >= 0 && mc != null && mc.player != null) {
             mc.player.getInventory().setSelectedSlot(previousSlot);
         }
         previousSlot = -1;

@@ -22,7 +22,10 @@ public abstract class Module {
         this.category = category;
     }
 
-    /** Always resolve lazily — never cache Minecraft during class/mod init. */
+    /**
+     * Resolve Minecraft every call. Never cache in a static field during class/mod init
+     * (that is what caused FPSBoost NPE: mc.options on a null static mc).
+     */
     protected static Minecraft mc() {
         return Minecraft.getInstance();
     }
