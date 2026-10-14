@@ -9,8 +9,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 public abstract class Module {
-    protected static final Minecraft mc = Minecraft.getInstance();
-
     private final String name;
     private final String description;
     private final Category category;
@@ -24,6 +22,7 @@ public abstract class Module {
         this.category = category;
     }
 
+    /** Always resolve lazily — never cache Minecraft during class/mod init. */
     protected static Minecraft mc() {
         return Minecraft.getInstance();
     }

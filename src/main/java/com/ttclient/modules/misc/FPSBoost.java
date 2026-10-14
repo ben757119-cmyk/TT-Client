@@ -4,6 +4,7 @@ import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
 import com.ttclient.settings.NumberSetting;
+import net.minecraft.client.Minecraft;
 
 public class FPSBoost extends Module {
     public final BoolSetting unfocusedCPU = addSetting(new BoolSetting("Unfocused CPU", "Drop FPS cap when the window is unfocused", true));
@@ -14,22 +15,22 @@ public class FPSBoost extends Module {
 
     public FPSBoost() {
         super("FPSBoost", "Lower FPS when unfocused to save CPU", Category.MISC);
-        setEnabled(true);
     }
 
     @Override
     public void onTick() {
-        if (mc.options == null) return;
+        Minecraft minecraft = mc();
+        if (minecraft == null || minecraft.options == null) return;
         if (!unfocusedCPU.get()) {
             restore();
             return;
         }
-        boolean focused = mc.isWindowActive();
+        boolean focused = minecraft.isWindowActive();
         if (!focused) {
             if (savedLimit < 0) {
-                savedLimit = mc.options.framerateLimit().get();
+                savedLimit = minecraft.options.framerateLimit().get();
             }
-            mc.options.framerateLimit().set(unfocusedLimit.getInt());
+            minecraft.options.framerateLimit().set(unfocusedLimit.getInt());
         } else {
             restore();
         }
@@ -41,8 +42,9 @@ public class FPSBoost extends Module {
     }
 
     private void restore() {
-        if (savedLimit >= 0 && mc.options != null) {
-            mc.options.framerateLimit().set(savedLimit);
+        Minecraft minecraft = mc();
+        if (savedLimit >= 0 && minecraft != null && minecraft.options != null) {
+            minecraft.options.framerateLimit().set(savedLimit);
             savedLimit = -1;
         }
     }
