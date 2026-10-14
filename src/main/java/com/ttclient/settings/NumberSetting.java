@@ -11,7 +11,6 @@ public class NumberSetting extends Setting<Double> {
         this.min = min;
         this.max = max;
         this.step = step <= 0 ? 0.01 : step;
-        // Normalize default immediately so UI never shows binary float junk
         set(defaultValue);
     }
 
@@ -23,18 +22,14 @@ public class NumberSetting extends Setting<Double> {
     public void set(Double value) {
         double v = value == null ? min : value;
         v = Math.max(min, Math.min(max, v));
-        // Snap to step
         v = Math.round(v / step) * step;
-        // Kill floating-point residue (e.g. 2.5000000000000004)
         int decimals = decimalPlaces(step);
         double scale = Math.pow(10, decimals);
         v = Math.round(v * scale) / scale;
-        // Final clamp after rounding
         v = Math.max(min, Math.min(max, v));
         this.value = v;
     }
 
-    /** Clean string for ClickGUI / HUD (no long float tails). */
     public String getDisplay() {
         double v = get();
         int decimals = decimalPlaces(step);
