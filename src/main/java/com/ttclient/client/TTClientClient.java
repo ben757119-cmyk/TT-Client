@@ -12,8 +12,8 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.client.event.ClientChatReceivedEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
@@ -21,8 +21,12 @@ import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import org.lwjgl.glfw.GLFW;
 
+/**
+ * Client entry. Event handlers are instance methods registered via
+ * NeoForge.EVENT_BUS.register(this). Do NOT use @EventBusSubscriber here —
+ * that path requires static @SubscribeEvent methods.
+ */
 @Mod(value = TTClient.MOD_ID, dist = Dist.CLIENT)
-@EventBusSubscriber(modid = TTClient.MOD_ID, value = Dist.CLIENT)
 public class TTClientClient {
 
     public static ModuleManager modules;
@@ -104,12 +108,8 @@ public class TTClientClient {
         modules.onRender2D(event.getGuiGraphics(), event.getPartialTick().getGameTimeDeltaPartialTick(false));
     }
 
-    /**
-     * NeoForge chat receive. Method name kept generic; if the event type is missing
-     * at compile time we also provide a reflective hook below via Object signature.
-     */
     @SubscribeEvent
-    public void onClientChat(net.neoforged.neoforge.client.event.ClientChatReceivedEvent event) {
+    public void onClientChat(ClientChatReceivedEvent event) {
         if (modules == null) return;
         AutoChatGame game = modules.getModule(AutoChatGame.class);
         if (game == null || !game.isEnabled()) return;
