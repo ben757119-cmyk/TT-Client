@@ -16,38 +16,38 @@ public class Fly extends Module {
 
     @Override
     public void onTick() {
-        Minecraft mc = mc();
-        if (mc == null || mc.player == null || mc.options == null) return;
-        LocalPlayer p = mc.player;
+        Minecraft minecraft = mc();
+        if (minecraft == null || minecraft.player == null || minecraft.options == null) return;
+        LocalPlayer p = minecraft.player;
         p.getAbilities().flying = true;
         p.getAbilities().mayfly = true;
 
         double s = speed.get() * 0.5;
         Vec3 look = p.getLookAngle();
         double mx = 0, my = 0, mz = 0;
-        if (mc.options.keyUp.isDown()) {
+        if (minecraft.options.keyUp.isDown()) {
             mx += look.x * s;
             my += look.y * s;
             mz += look.z * s;
         }
-        if (mc.options.keyDown.isDown()) {
+        if (minecraft.options.keyDown.isDown()) {
             mx -= look.x * s;
             my -= look.y * s;
             mz -= look.z * s;
         }
-        if (mc.options.keyJump.isDown()) my += s;
-        if (mc.options.keyShift.isDown()) my -= s;
+        if (minecraft.options.keyJump.isDown()) my += s;
+        if (minecraft.options.keyShift.isDown()) my -= s;
         p.setDeltaMovement(mx, my, mz);
         p.fallDistance = 0;
     }
 
     @Override
     public void onDisable() {
-        Minecraft mc = mc();
-        if (mc == null || mc.player == null) return;
-        if (!mc.player.isCreative() && !mc.player.isSpectator()) {
-            mc.player.getAbilities().flying = false;
-            mc.player.getAbilities().mayfly = false;
+        Minecraft minecraft = mc();
+        if (minecraft == null || minecraft.player == null) return;
+        if (!minecraft.player.isCreative() && !minecraft.player.isSpectator()) {
+            minecraft.player.getAbilities().flying = false;
+            minecraft.player.getAbilities().mayfly = false;
         }
     }
 }

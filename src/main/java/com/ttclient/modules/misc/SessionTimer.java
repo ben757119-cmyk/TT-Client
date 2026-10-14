@@ -19,7 +19,7 @@ public class SessionTimer extends Module {
 
     @Override
     public void onRender2D(GuiGraphicsExtractor g, float partialTick) {
-        if (mc.player == null) return;
+        if (mc().player == null) return;
         if (startMs == 0) startMs = System.currentTimeMillis();
         long sec = Math.max(0, (System.currentTimeMillis() - startMs) / 1000);
         long h = sec / 3600;
@@ -28,8 +28,8 @@ public class SessionTimer extends Module {
         String text = h > 0
                 ? String.format("Session %d:%02d:%02d", h, m, s)
                 : String.format("Session %d:%02d", m, s);
-        int w = mc.font.width(text);
-        g.text(mc.font, text, mc.getWindow().getGuiScaledWidth() - w - 4,
-                mc.getWindow().getGuiScaledHeight() - 24, 0xFF00E8A0, false);
+        int w = mc().font.width(text);
+        g.text(mc().font, text, mc().getWindow().getGuiScaledWidth() - w - 4,
+                mc().getWindow().getGuiScaledHeight() - 24, 0xFF00E8A0, false);
     }
 }

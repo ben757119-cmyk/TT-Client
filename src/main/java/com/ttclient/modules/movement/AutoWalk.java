@@ -11,15 +11,15 @@ public class AutoWalk extends Module {
 
     @Override
     public void onTick() {
-        Minecraft mc = mc();
-        if (mc == null || mc.player == null || mc.options == null) return;
-        mc.options.keyUp.setDown(true);
+        Minecraft minecraft = mc();
+        if (minecraft == null || minecraft.player == null || minecraft.options == null) return;
+        minecraft.options.keyUp.setDown(true);
     }
 
     @Override
     public void onDisable() {
-        Minecraft mc = mc();
-        if (mc == null || mc.options == null) return;
-        mc.options.keyUp.setDown(false);
+        Minecraft minecraft = mc();
+        if (minecraft == null || minecraft.options == null) return;
+        minecraft.options.keyUp.setDown(false);
     }
 }
