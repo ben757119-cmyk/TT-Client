@@ -6,10 +6,11 @@ import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.ModeSetting;
 import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 
 /**
  * Master-only: generate single-use timed license keys for beta builds.
- * Toggle ON to mint a key (printed to chat + notification).
+ * Toggle ON to mint a key (logged + notification; copy from latest.log if needed).
  */
 public class KeyGen extends Module {
     public final ModeSetting duration = addSetting(new ModeSetting(
@@ -37,28 +38,27 @@ public class KeyGen extends Module {
         };
 
         String key = LicenseManager.generateKey(ms);
-        Minecraft mc = mc();
-        if (mc != null && mc.player != null) {
-            try {
-                mc.player.displayClientMessage(
-                        net.minecraft.network.chat.Component.literal(
-                                "[TT] Beta key (" + duration.get() + ", one-time):\n" + key),
-                        false);
-            } catch (Throwable t) {
-                try {
-                    mc.gui.getChat().addMessage(
-                            net.minecraft.network.chat.Component.literal("[TT] Key: " + key));
-                } catch (Throwable ignored) {}
-            }
-        }
-        NotificationManager.push("KeyGen", duration.get() + " key copied to chat");
-        TTClientLog(key);
-        setEnabled(false);
-    }
+        com.ttclient.TTClient.LOGGER.info("[TT] Beta key ({} one-time): {}", duration.get(), key);
+        NotificationManager.push("KeyGen", duration.get() + " key — see log");
 
-    private static void TTClientLog(String key) {
-        try {
-            com.ttclient.TTClient.LOGGER.info("Generated license key: {}", key);
-        } catch (Throwable ignored) {}
+        // Best-effort on-screen message (APIs vary by mapping)
+        Minecraft mc = mc();
+        if (mc != null) {
+            Component msg = Component.literal("[TT] Key (" + duration.get() + "): " + key);
+            try {
+                mc.player.connection.sendChat("/tt key ignored");
+            } catch (Throwable ignored) {}
+            try {
+                // Prefer system chat overlay if present
+                var gui = mc.gui;
+                var method = gui.getClass().getMethod("setOverlayMessage", Component.class, boolean.class);
+                method.invoke(gui, msg, false);
+            } catch (Throwable ignored) {}
+            try {
+                NotificationManager.push("TT Key", key.length() > 40 ? key.substring(0, 40) + "…" : key);
+            } catch (Throwable ignored) {}
+        }
+
+        setEnabled(false);
     }
 }
