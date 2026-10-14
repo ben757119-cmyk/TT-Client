@@ -14,6 +14,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -97,7 +98,7 @@ public class ClickGUIScreen extends Screen {
         hoveredModule = null;
         String searchLabel = searchQuery.isEmpty() ? "type to search" : "search: " + searchQuery;
         graphics.text(this.font,
-                "TT Client v" + TTClient.VERSION + "  ·  LMB toggle  ·  RMB settings  ·  MMB bind  ·  " + searchLabel,
+                "TT Client v" + TTClient.VERSION + "  ·  LMB toggle  ·  RMB settings  ·  MMB / Bind row  ·  " + searchLabel,
                 14, 10, accent(), false);
         for (Panel panel : panelList) {
             panel.render(graphics, mouseX, mouseY);
@@ -195,6 +196,24 @@ public class ClickGUIScreen extends Screen {
         this.bindingModule = module;
     }
 
+    private static String keyName(int key) {
+        if (key < 0) return "NONE";
+        if (key == GLFW.GLFW_KEY_RIGHT_SHIFT) return "RSHIFT";
+        if (key == GLFW.GLFW_KEY_LEFT_SHIFT) return "LSHIFT";
+        if (key >= GLFW.GLFW_KEY_A && key <= GLFW.GLFW_KEY_Z) {
+            return String.valueOf((char) ('A' + (key - GLFW.GLFW_KEY_A)));
+        }
+        if (key >= GLFW.GLFW_KEY_0 && key <= GLFW.GLFW_KEY_9) {
+            return String.valueOf((char) ('0' + (key - GLFW.GLFW_KEY_0)));
+        }
+        return "KEY" + key;
+    }
+
+    private static String settingValue(Setting<?> s) {
+        if (s instanceof NumberSetting ns) return ns.getDisplay();
+        return String.valueOf(s.get());
+    }
+
     public class Panel {
         private final Category category;
         private double x, y;
@@ -234,7 +253,10 @@ public class ClickGUIScreen extends Screen {
             if (open) {
                 for (Module mod : mods) {
                     bodyH += 15;
-                    if (expanded == mod) bodyH += mod.getSettings().size() * 13;
+                    if (expanded == mod) {
+                        bodyH += mod.getSettings().size() * 13;
+                        bodyH += 13; // bind row
+                    }
                 }
             }
             g.fill(ix + 2, iy + 2, ix + width + 2, iy + bodyH + 2, 0x44000000);
@@ -257,10 +279,13 @@ public class ClickGUIScreen extends Screen {
                 my += 15;
                 if (expanded == mod) {
                     for (Setting<?> s : mod.getSettings()) {
-                        String label = s.getName() + ": " + String.valueOf(s.get());
+                        String label = s.getName() + ": " + settingValue(s);
                         g.text(font, label, ix + 12, my + 2, TEXT_DIM, false);
                         my += 13;
                     }
+                    String bindLabel = "Bind: " + keyName(mod.getKeyBind());
+                    g.text(font, bindLabel, ix + 12, my + 2, accent(), false);
+                    my += 13;
                 }
             }
         }
@@ -284,7 +309,7 @@ public class ClickGUIScreen extends Screen {
                 if (mouseX >= x && mouseX <= x + width && mouseY >= my && mouseY <= my + 15) {
                     if (button == 0) { mod.toggle(); return true; }
                     if (button == 1) {
-                        if (!mod.getSettings().isEmpty()) expanded = (expanded == mod) ? null : mod;
+                        expanded = (expanded == mod) ? null : mod;
                         return true;
                     }
                     if (button == 2) { startBinding(mod); return true; }
@@ -304,6 +329,12 @@ public class ClickGUIScreen extends Screen {
                         }
                         my += 13;
                     }
+                    // Bind row
+                    if (mouseX >= x + 2 && mouseX <= x + width - 2 && mouseY >= my && mouseY <= my + 13) {
+                        startBinding(mod);
+                        return true;
+                    }
+                    my += 13;
                 }
             }
             return false;

@@ -36,7 +36,8 @@ public class NumberSetting extends Setting<Double> {
         if (decimals <= 0) {
             return String.valueOf((long) Math.round(v));
         }
-        return String.format(Locale.ROOT, "%.” + decimals + "f", v);
+        String fmt = "%.” + decimals + "f";
+        return String.format(Locale.ROOT, fmt, v);
     }
 
     private static int decimalPlaces(double step) {

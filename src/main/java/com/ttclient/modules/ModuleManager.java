@@ -38,6 +38,7 @@ public class ModuleManager {
         register(new AutoRespawn());
         register(new AutoTool());
         register(new Freecam());
+        register(new AutoMace());
 
         register(new SpeedHud());
         register(new Compass());
