@@ -16,10 +16,9 @@ import java.util.Set;
 
 /**
  * Time-limited, single-use license keys for the beta build.
- * Master build is always unlocked and can generate keys.
+ * Master is always unlocked and can generate keys.
  *
- * Honest limit: any offline client DRM can be patched by a determined user.
- * This stops casual sharing / reuse, not a skilled reverse engineer.
+ * Offline DRM cannot be made unbreakable — this blocks casual key sharing/reuse.
  */
 public final class LicenseManager {
     private static final String SECRET = "TT-Client-2026-License-Hmac-Key-v1";
@@ -33,17 +32,7 @@ public final class LicenseManager {
     private LicenseManager() {}
 
     public static boolean isMaster() {
-        // If template wasn't replaced, treat as master for dev
-        if ("@TT_MASTER@".equals(System.getProperty("ttclient.master", "@TT_MASTER@"))
-                && !Boolean.parseBoolean("false")) {
-            // BuildInfo.MASTER may still be true from parse of "@TT_MASTER@" -> false
-        }
-        return BuildInfo.MASTER || isDevMasterFallback();
-    }
-
-    private static boolean isDevMasterFallback() {
-        // When constant failed to rewrite, @TT_MASTER@ parses as false — allow env override
-        return "true".equalsIgnoreCase(System.getenv().getOrDefault("TTCLIENT_MASTER", ""));
+        return BuildInfo.MASTER;
     }
 
     public static boolean isUnlocked() {
@@ -61,7 +50,7 @@ public final class LicenseManager {
     public static String statusText() {
         if (isMaster()) return "MASTER (unlocked)";
         ensureLoaded();
-        if (expiresAtMs <= 0) return "BETA — no key";
+        if (expiresAtMs <= 0) return "BETA — no key (type: TTKEY <key>)";
         long left = expiresAtMs - System.currentTimeMillis();
         if (left <= 0) return "BETA — key expired";
         long mins = left / 60000;
@@ -71,7 +60,6 @@ public final class LicenseManager {
         return "BETA — " + (hours / 24) + "d left";
     }
 
-    /** Generate a single-use key valid for {@code durationMs}. Master only. */
     public static String generateKey(long durationMs) {
         if (!isMaster()) return null;
         long exp = System.currentTimeMillis() + Math.max(60_000L, durationMs);
@@ -83,10 +71,6 @@ public final class LicenseManager {
                 .encodeToString(raw.getBytes(StandardCharsets.UTF_8));
     }
 
-    /**
-     * Redeem a key on beta. Single-use: nonce stored after success.
-     * @return null on success, or error message
-     */
     public static String redeem(String key) {
         if (isMaster()) return "Master build does not need keys";
         if (key == null || key.isBlank()) return "Empty key";
@@ -110,8 +94,7 @@ public final class LicenseManager {
         }
         String nonce = parts[1];
         String sig = parts[2];
-        String payload = exp + ":" + nonce;
-        if (!hmac(payload).equals(sig)) return "Invalid key signature";
+        if (!hmac(exp + ":" + nonce).equals(sig)) return "Invalid key signature";
         if (exp <= System.currentTimeMillis()) return "Key already expired";
 
         Set<String> used = loadUsed();
@@ -127,21 +110,13 @@ public final class LicenseManager {
         return null;
     }
 
-    public static void clear() {
-        activeKey = null;
-        expiresAtMs = 0;
-        try {
-            Files.deleteIfExists(STORE);
-        } catch (Exception ignored) {}
-    }
-
     private static void ensureLoaded() {
         if (loaded) return;
         loaded = true;
         try {
             if (Files.exists(STORE)) {
                 String line = Files.readString(STORE).trim();
-                String[] p = line.split("\|" , 2);
+                String[] p = line.split("\\|", 2);
                 if (p.length == 2) {
                     activeKey = p[0];
                     expiresAtMs = Long.parseLong(p[1]);
@@ -189,9 +164,7 @@ public final class LicenseManager {
             mac.init(new SecretKeySpec(SECRET.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
             byte[] out = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < 8; i++) { // short sig — enough for casual use
-                sb.append(String.format("%02x", out[i]));
-            }
+            for (int i = 0; i < 8; i++) sb.append(String.format("%02x", out[i]));
             return sb.toString();
         } catch (Exception e) {
             throw new RuntimeException(e);

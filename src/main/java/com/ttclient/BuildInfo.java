@@ -1,15 +1,38 @@
 package com.ttclient;
 
+import java.io.InputStream;
+import java.util.Properties;
+
 /**
- * Build flavor. CI/gradle sets MASTER via -PttMaster=true|false by rewriting this file,
- * or defaults to master for local builds.
+ * Edition flag loaded from /ttclient-edition.properties (written by Gradle).
+ * master = full unlock + KeyGen. beta = requires license key.
  */
 public final class BuildInfo {
-    /** true = unlocked master (key generator). false = beta (requires license key). */
-    public static final boolean MASTER = Boolean.parseBoolean(
-            System.getProperty("ttclient.master", "@TT_MASTER@"));
+    public static final boolean MASTER;
+    public static final String EDITION;
 
-    public static final String EDITION = MASTER ? "master" : "beta";
+    static {
+        boolean master = true;
+        try (InputStream in = BuildInfo.class.getResourceAsStream("/ttclient-edition.properties")) {
+            if (in != null) {
+                Properties p = new Properties();
+                p.load(in);
+                String ed = p.getProperty("edition", "master").trim();
+                master = !"beta".equalsIgnoreCase(ed);
+            }
+        } catch (Exception ignored) {}
+        // Runtime override for testing
+        String prop = System.getProperty("ttclient.edition");
+        if (prop != null) {
+            master = !"beta".equalsIgnoreCase(prop.trim());
+        }
+        String env = System.getenv("TTCLIENT_EDITION");
+        if (env != null) {
+            master = !"beta".equalsIgnoreCase(env.trim());
+        }
+        MASTER = master;
+        EDITION = master ? "master" : "beta";
+    }
 
     private BuildInfo() {}
 }

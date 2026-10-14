@@ -8,6 +8,8 @@ import com.ttclient.modules.ModuleManager;
 import com.ttclient.modules.client.ClickGUIModule;
 import com.ttclient.modules.client.StreamerMode;
 import com.ttclient.modules.misc.AutoChatGame;
+import com.ttclient.modules.misc.LicenseModule;
+import com.ttclient.modules.misc.TTLink;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -36,7 +38,8 @@ public class TTClientClient {
         modules.init();
         config.load();
         NeoForge.EVENT_BUS.register(this);
-        TTClient.LOGGER.info("TT Client {} ready with {} modules", TTClient.VERSION, modules.getModules().size());
+        TTClient.LOGGER.info("TT Client {} ({}) ready with {} modules",
+                TTClient.VERSION, com.ttclient.BuildInfo.EDITION, modules.getModules().size());
     }
 
     private static Screen currentScreen(Minecraft mc) {
@@ -81,7 +84,6 @@ public class TTClientClient {
         Minecraft mc = Minecraft.getInstance();
         Screen screen = currentScreen(mc);
 
-        // StreamerMode always toggles even when other visuals are hidden
         StreamerMode streamer = modules.getModule(StreamerMode.class);
         if (streamer != null && streamer.getKeyBind() > 0 && streamer.getKeyBind() == key) {
             if (screen == null || screen instanceof ClickGUIScreen) {
@@ -96,11 +98,7 @@ public class TTClientClient {
         if (guiKey <= 0) guiKey = GLFW.GLFW_KEY_RIGHT_SHIFT;
 
         if (key == guiKey) {
-            // Hide ClickGUI entirely while streaming
-            if (StreamerMode.active()) {
-                if (screen instanceof ClickGUIScreen) openScreen(mc, null);
-                return;
-            }
+            // Always allow ClickGUI for the local user (stream-proof hides it from capture on Windows)
             if (screen instanceof ClickGUIScreen) {
                 openScreen(mc, null);
                 if (config != null) config.save();
@@ -114,7 +112,7 @@ public class TTClientClient {
 
         for (Module mod : modules.getModules()) {
             if (mod instanceof ClickGUIModule) continue;
-            if (mod instanceof StreamerMode) continue; // handled above
+            if (mod instanceof StreamerMode) continue;
             int bind = mod.getKeyBind();
             if (bind > 0 && bind == key) {
                 mod.toggle();
@@ -126,24 +124,42 @@ public class TTClientClient {
     @SubscribeEvent
     public void onRenderGui(RenderGuiEvent.Post event) {
         if (modules == null) return;
-        if (StreamerMode.active()) return;
+        if (StreamerMode.shouldHideLocalUi()) return;
         modules.onRender2D(event.getGuiGraphics(), event.getPartialTick().getGameTimeDeltaPartialTick(false));
     }
 
     @SubscribeEvent
     public void onClientChat(ClientChatReceivedEvent event) {
         if (modules == null) return;
-        AutoChatGame game = modules.getModule(AutoChatGame.class);
-        if (game == null || !game.isEnabled()) return;
+        String text = null;
         try {
             Component msg = event.getMessage();
-            if (msg != null) game.handleChat(msg.getString());
+            if (msg != null) text = msg.getString();
         } catch (Throwable t) {
             try {
                 Object m = event.getClass().getMethod("getMessage").invoke(event);
-                if (m instanceof Component c) game.handleChat(c.getString());
-                else if (m != null) game.handleChat(String.valueOf(m));
+                if (m instanceof Component c) text = c.getString();
+                else if (m != null) text = String.valueOf(m);
             } catch (Throwable ignored) {}
         }
+        if (text == null) return;
+
+        AutoChatGame game = modules.getModule(AutoChatGame.class);
+        if (game != null && game.isEnabled()) game.handleChat(text);
+
+        TTLink link = modules.getModule(TTLink.class);
+        if (link != null && link.isEnabled()) link.handleChat(text);
+    }
+
+    /** Intercept outbound chat for TTKEY redeem (before send). */
+    @SubscribeEvent
+    public void onChatSend(net.neoforged.neoforge.client.event.ClientChatEvent event) {
+        try {
+            String msg = event.getMessage();
+            if (msg != null && msg.trim().toUpperCase().startsWith("TTKEY ")) {
+                LicenseModule.tryRedeemFromChat(msg);
+                event.setCanceled(true);
+            }
+        } catch (Throwable ignored) {}
     }
 }
