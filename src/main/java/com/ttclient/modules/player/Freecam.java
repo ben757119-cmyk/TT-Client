@@ -2,6 +2,7 @@ package com.ttclient.modules.player;
 
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
+import com.ttclient.modules.movement.Fly;
 import com.ttclient.settings.BoolSetting;
 import com.ttclient.settings.NumberSetting;
 import net.minecraft.client.Minecraft;
@@ -9,19 +10,22 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Client freecam: free-fly camera, restores position on disable.
- * Uses noPhysics + local movement (no mixins).
+ * Free-fly through blocks at the player entity (client).
+ * True camera-only freecam needs mixins; this is a solid no-clip fly that restores on disable.
+ * Movement is yaw-based only — same speed every horizontal direction.
  */
 public class Freecam extends Module {
-    public final NumberSetting speed = addSetting(new NumberSetting("Speed", "Fly speed", 1.5, 0.2, 5.0, 0.1));
+    public final NumberSetting speed = addSetting(new NumberSetting("Speed", "Move speed", 1.5, 0.2, 5.0, 0.1));
     public final BoolSetting restore = addSetting(new BoolSetting("Restore", "Teleport back when disabled", true));
 
     private double sx, sy, sz;
     private float syaw, spitch;
     private boolean saved;
+    private boolean wasFlying;
+    private boolean wasMayfly;
 
     public Freecam() {
-        super("Freecam", "Detach and fly the camera freely", Category.PLAYER);
+        super("Freecam", "No-clip free fly; restores position when off", Category.PLAYER);
     }
 
     @Override
@@ -38,9 +42,16 @@ public class Freecam extends Module {
         syaw = p.getYRot();
         spitch = p.getXRot();
         saved = true;
+
+        wasFlying = p.getAbilities().flying;
+        wasMayfly = p.getAbilities().mayfly;
+
+        p.getAbilities().mayfly = true;
+        p.getAbilities().flying = true;
         p.noPhysics = true;
         p.setDeltaMovement(Vec3.ZERO);
         p.fallDistance = 0;
+        p.setOnGround(false);
     }
 
     @Override
@@ -48,13 +59,27 @@ public class Freecam extends Module {
         Minecraft mc = mc();
         if (mc == null || mc.player == null) return;
         LocalPlayer p = mc.player;
+
         p.noPhysics = false;
         p.setDeltaMovement(Vec3.ZERO);
+
+        if (!p.isCreative() && !p.isSpectator()) {
+            p.getAbilities().flying = wasFlying;
+            p.getAbilities().mayfly = wasMayfly;
+        } else {
+            p.getAbilities().flying = wasFlying;
+            p.getAbilities().mayfly = wasMayfly;
+        }
+
         if (restore.get() && saved) {
-            p.snapTo(sx, sy, sz, syaw, spitch);
-            p.setPos(sx, sy, sz);
-            p.setYRot(syaw);
-            p.setXRot(spitch);
+            try {
+                p.snapTo(sx, sy, sz, syaw, spitch);
+            } catch (Throwable t) {
+                p.setPos(sx, sy, sz);
+                p.setYRot(syaw);
+                p.setXRot(spitch);
+            }
+            p.setDeltaMovement(Vec3.ZERO);
         }
         saved = false;
     }
@@ -65,45 +90,21 @@ public class Freecam extends Module {
         if (mc == null || mc.player == null || mc.options == null) return;
         LocalPlayer p = mc.player;
 
+        // Keep state every tick (server/other logic can clear it)
+        p.getAbilities().mayfly = true;
+        p.getAbilities().flying = true;
         p.noPhysics = true;
         p.fallDistance = 0;
         p.setOnGround(false);
 
-        float yaw = p.getYRot();
-        double rad = Math.toRadians(yaw);
-        double s = speed.get();
-
-        double mx = 0;
+        double s = speed.get() * 0.5;
+        Vec3 horiz = Fly.horizontalMove(p.getYRot(), s, mc);
         double my = 0;
-        double mz = 0;
-
-        if (mc.options.keyUp.isDown()) {
-            mx -= Math.sin(rad) * s;
-            mz += Math.cos(rad) * s;
-        }
-        if (mc.options.keyDown.isDown()) {
-            mx += Math.sin(rad) * s;
-            mz -= Math.cos(rad) * s;
-        }
-        if (mc.options.keyLeft.isDown()) {
-            mx -= Math.cos(rad) * s;
-            mz -= Math.sin(rad) * s;
-        }
-        if (mc.options.keyRight.isDown()) {
-            mx += Math.cos(rad) * s;
-            mz += Math.sin(rad) * s;
-        }
         if (mc.options.keyJump.isDown()) my += s;
         if (mc.options.keyShift.isDown()) my -= s;
 
-        // Normalize horizontal if strafing diagonally
-        double h = Math.sqrt(mx * mx + mz * mz);
-        if (h > s && h > 1e-6) {
-            mx = mx / h * s;
-            mz = mz / h * s;
-        }
-
-        p.setDeltaMovement(mx, my, mz);
-        p.setPos(p.getX() + mx, p.getY() + my, p.getZ() + mz);
+        // Apply velocity and force position (helps when noPhysics alone is ignored)
+        p.setDeltaMovement(horiz.x, my, horiz.z);
+        p.setPos(p.getX() + horiz.x, p.getY() + my, p.getZ() + horiz.z);
     }
 }

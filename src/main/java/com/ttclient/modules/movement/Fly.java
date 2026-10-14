@@ -7,47 +7,81 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.phys.Vec3;
 
+/**
+ * Client fly: movement is relative to body yaw only (not look pitch).
+ * Horizontal diagonals are normalized so every direction is the same speed.
+ */
 public class Fly extends Module {
     public final NumberSetting speed = addSetting(new NumberSetting("Speed", "Fly speed", 1.0, 0.2, 5.0, 0.1));
 
     public Fly() {
-        super("Fly", "Creative-style flight (client)", Category.MOVEMENT);
+        super("Fly", "Fly with equal speed in every direction (yaw-based)", Category.MOVEMENT);
     }
 
     @Override
     public void onTick() {
-        Minecraft minecraft = mc();
-        if (minecraft == null || minecraft.player == null || minecraft.options == null) return;
-        LocalPlayer p = minecraft.player;
+        Minecraft mc = mc();
+        if (mc == null || mc.player == null || mc.options == null) return;
+        LocalPlayer p = mc.player;
+
         p.getAbilities().flying = true;
         p.getAbilities().mayfly = true;
+        p.fallDistance = 0;
+        p.setOnGround(false);
 
         double s = speed.get() * 0.5;
-        Vec3 look = p.getLookAngle();
-        double mx = 0, my = 0, mz = 0;
-        if (minecraft.options.keyUp.isDown()) {
-            mx += look.x * s;
-            my += look.y * s;
-            mz += look.z * s;
+        Vec3 move = horizontalMove(p.getYRot(), s, mc);
+        double my = 0;
+        if (mc.options.keyJump.isDown()) my += s;
+        if (mc.options.keyShift.isDown()) my -= s;
+
+        p.setDeltaMovement(move.x, my, move.z);
+    }
+
+    /** WASD relative to yaw only — pitch ignored. Length capped at {@code s}. */
+    static Vec3 horizontalMove(float yawDeg, double s, Minecraft mc) {
+        double rad = Math.toRadians(yawDeg);
+        double sin = Math.sin(rad);
+        double cos = Math.cos(rad);
+
+        double mx = 0;
+        double mz = 0;
+
+        // Forward = -sin(yaw), cos(yaw) in Minecraft
+        if (mc.options.keyUp.isDown()) {
+            mx -= sin;
+            mz += cos;
         }
-        if (minecraft.options.keyDown.isDown()) {
-            mx -= look.x * s;
-            my -= look.y * s;
-            mz -= look.z * s;
+        if (mc.options.keyDown.isDown()) {
+            mx += sin;
+            mz -= cos;
         }
-        if (minecraft.options.keyJump.isDown()) my += s;
-        if (minecraft.options.keyShift.isDown()) my -= s;
-        p.setDeltaMovement(mx, my, mz);
-        p.fallDistance = 0;
+        // Strafe left/right
+        if (mc.options.keyLeft.isDown()) {
+            mx -= cos;
+            mz -= sin;
+        }
+        if (mc.options.keyRight.isDown()) {
+            mx += cos;
+            mz += sin;
+        }
+
+        double len = Math.sqrt(mx * mx + mz * mz);
+        if (len > 1e-6) {
+            mx = mx / len * s;
+            mz = mz / len * s;
+        }
+        return new Vec3(mx, 0, mz);
     }
 
     @Override
     public void onDisable() {
-        Minecraft minecraft = mc();
-        if (minecraft == null || minecraft.player == null) return;
-        if (!minecraft.player.isCreative() && !minecraft.player.isSpectator()) {
-            minecraft.player.getAbilities().flying = false;
-            minecraft.player.getAbilities().mayfly = false;
+        Minecraft mc = mc();
+        if (mc == null || mc.player == null) return;
+        if (!mc.player.isCreative() && !mc.player.isSpectator()) {
+            mc.player.getAbilities().flying = false;
+            mc.player.getAbilities().mayfly = false;
         }
+        mc.player.setDeltaMovement(Vec3.ZERO);
     }
 }
