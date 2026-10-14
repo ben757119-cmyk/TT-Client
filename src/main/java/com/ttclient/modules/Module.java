@@ -3,7 +3,7 @@ package com.ttclient.modules;
 import com.ttclient.client.NotificationManager;
 import com.ttclient.settings.Setting;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -58,6 +58,6 @@ public abstract class Module {
     public void onEnable() {}
     public void onDisable() {}
     public void onTick() {}
-    public void onRender2D(GuiGraphics graphics, float partialTick) {}
+    public void onRender2D(GuiGraphicsExtractor graphics, float partialTick) {}
     public void onRender3D(float partialTick) {}
 }

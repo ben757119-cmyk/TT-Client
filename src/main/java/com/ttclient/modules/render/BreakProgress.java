@@ -3,7 +3,7 @@ package com.ttclient.modules.render;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 public class BreakProgress extends Module {
     public BreakProgress() {
@@ -11,16 +11,15 @@ public class BreakProgress extends Module {
     }
 
     @Override
-    public void onRender2D(GuiGraphics graphics, float partialTick) {
-        Minecraft mc = mc();
-        if (mc == null || mc.player == null || mc.gameMode == null) return;
-        // Best-effort; destroy progress field names vary by mapping
+    public void onRender2D(GuiGraphicsExtractor graphics, float partialTick) {
+        Minecraft minecraft = mc();
+        if (minecraft == null || minecraft.player == null || minecraft.gameMode == null) return;
         try {
-            var f = mc.gameMode.getClass().getDeclaredField("destroyProgress");
+            var f = minecraft.gameMode.getClass().getDeclaredField("destroyProgress");
             f.setAccessible(true);
-            float p = f.getFloat(mc.gameMode);
+            float p = f.getFloat(minecraft.gameMode);
             if (p > 0) {
-                graphics.drawString(mc.font, String.format("Break %.0f%%", p * 100f), 4, 104, 0xFFE8EAED, false);
+                graphics.text(minecraft.font, String.format("Break %.0f%%", p * 100f), 4, 104, 0xFFE8EAED, false);
             }
         } catch (Throwable ignored) {}
     }

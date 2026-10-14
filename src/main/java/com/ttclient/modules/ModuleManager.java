@@ -6,6 +6,7 @@ import com.ttclient.modules.movement.*;
 import com.ttclient.modules.player.*;
 import com.ttclient.modules.render.*;
 import com.ttclient.modules.world.*;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -84,7 +85,7 @@ public class ModuleManager {
     public void onTick() {
         for (Module m : modules) if (m.isEnabled()) m.onTick();
     }
-    public void onRender2D(net.minecraft.client.gui.GuiGraphics graphics, float partialTick) {
+    public void onRender2D(GuiGraphicsExtractor graphics, float partialTick) {
         for (Module m : modules) if (m.isEnabled()) m.onRender2D(graphics, partialTick);
     }
 }

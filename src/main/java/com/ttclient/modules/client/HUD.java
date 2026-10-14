@@ -6,7 +6,7 @@ import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 
@@ -23,10 +23,10 @@ public class HUD extends Module {
     }
 
     @Override
-    public void onRender2D(GuiGraphics graphics, float partialTick) {
-        Minecraft mc = mc();
-        if (mc == null || mc.player == null) return;
-        Font font = mc.font;
+    public void onRender2D(GuiGraphicsExtractor graphics, float partialTick) {
+        Minecraft minecraft = mc();
+        if (minecraft == null || minecraft.player == null) return;
+        Font font = minecraft.font;
         int y = 4;
         int accent = 0xFF00E8A0;
         int text = 0xFFE8EAED;
@@ -35,20 +35,21 @@ public class HUD extends Module {
         if (watermark.get()) {
             String w = "TT Client " + TTClient.VERSION;
             graphics.fill(2, y - 1, 6 + font.width(w), y + 10, 0xAA0A0B0F);
-            graphics.drawString(font, w, 4, y, accent, false);
+            graphics.text(font, w, 4, y, accent, false);
             y += 12;
         }
         if (fps.get()) {
-            graphics.drawString(font, mc.getFps() + " FPS", 4, y, text, false);
+            graphics.text(font, minecraft.getFps() + " FPS", 4, y, text, false);
             y += 10;
         }
         if (coords.get()) {
-            String s = String.format("XYZ %.1f %.1f %.1f", mc.player.getX(), mc.player.getY(), mc.player.getZ());
-            graphics.drawString(font, s, 4, y, text, false);
+            String s = String.format("XYZ %.1f %.1f %.1f",
+                    minecraft.player.getX(), minecraft.player.getY(), minecraft.player.getZ());
+            graphics.text(font, s, 4, y, text, false);
             y += 10;
         }
         if (direction.get()) {
-            graphics.drawString(font, "Facing " + mc.player.getDirection().getSerializedName(), 4, y, dim, false);
+            graphics.text(font, "Facing " + minecraft.player.getDirection().getSerializedName(), 4, y, dim, false);
             y += 10;
         }
         if (armor.get()) {
@@ -56,11 +57,11 @@ public class HUD extends Module {
                     EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET
             };
             for (EquipmentSlot slot : slots) {
-                ItemStack stack = mc.player.getItemBySlot(slot);
+                ItemStack stack = minecraft.player.getItemBySlot(slot);
                 if (stack.isEmpty() || !stack.isDamageableItem()) continue;
                 int max = stack.getMaxDamage();
                 int left = max - stack.getDamageValue();
-                graphics.drawString(font, slot.getName() + ": " + left, 4, y, text, false);
+                graphics.text(font, slot.getName() + ": " + left, 4, y, text, false);
                 y += 10;
             }
         }

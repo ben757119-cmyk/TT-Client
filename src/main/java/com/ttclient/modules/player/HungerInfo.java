@@ -3,7 +3,7 @@ package com.ttclient.modules.player;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 public class HungerInfo extends Module {
     public HungerInfo() {
@@ -11,11 +11,11 @@ public class HungerInfo extends Module {
     }
 
     @Override
-    public void onRender2D(GuiGraphics graphics, float partialTick) {
-        Minecraft mc = mc();
-        if (mc == null || mc.player == null) return;
-        int food = mc.player.getFoodData().getFoodLevel();
-        float sat = mc.player.getFoodData().getSaturationLevel();
-        graphics.drawString(mc.font, String.format("Food %d (%.1f)", food, sat), 4, 164, 0xFFE8EAED, false);
+    public void onRender2D(GuiGraphicsExtractor graphics, float partialTick) {
+        Minecraft minecraft = mc();
+        if (minecraft == null || minecraft.player == null) return;
+        int food = minecraft.player.getFoodData().getFoodLevel();
+        float sat = minecraft.player.getFoodData().getSaturationLevel();
+        graphics.text(minecraft.font, String.format("Food %d (%.1f)", food, sat), 4, 164, 0xFFE8EAED, false);
     }
 }

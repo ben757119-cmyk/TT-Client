@@ -3,7 +3,7 @@ package com.ttclient.modules.render;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 public class DayCounter extends Module {
     public DayCounter() {
@@ -11,10 +11,10 @@ public class DayCounter extends Module {
     }
 
     @Override
-    public void onRender2D(GuiGraphics graphics, float partialTick) {
-        Minecraft mc = mc();
-        if (mc == null || mc.level == null) return;
-        long day = mc.level.getDayTime() / 24000L;
-        graphics.drawString(mc.font, "Day " + day, 4, 116, 0xFFE8EAED, false);
+    public void onRender2D(GuiGraphicsExtractor graphics, float partialTick) {
+        Minecraft minecraft = mc();
+        if (minecraft == null || minecraft.level == null) return;
+        long day = minecraft.level.getGameTime() / 24000L;
+        graphics.text(minecraft.font, "Day " + day, 4, 116, 0xFFE8EAED, false);
     }
 }

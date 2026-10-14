@@ -3,7 +3,7 @@ package com.ttclient.modules.render;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 public class WeatherHud extends Module {
     public WeatherHud() {
@@ -11,10 +11,10 @@ public class WeatherHud extends Module {
     }
 
     @Override
-    public void onRender2D(GuiGraphics graphics, float partialTick) {
-        Minecraft mc = mc();
-        if (mc == null || mc.level == null) return;
-        String w = mc.level.isThundering() ? "Thunder" : (mc.level.isRaining() ? "Rain" : "Clear");
-        graphics.drawString(mc.font, w, 4, 128, 0xFF8B95A8, false);
+    public void onRender2D(GuiGraphicsExtractor graphics, float partialTick) {
+        Minecraft minecraft = mc();
+        if (minecraft == null || minecraft.level == null) return;
+        String w = minecraft.level.isThundering() ? "Thunder" : (minecraft.level.isRaining() ? "Rain" : "Clear");
+        graphics.text(minecraft.font, w, 4, 128, 0xFF8B95A8, false);
     }
 }
