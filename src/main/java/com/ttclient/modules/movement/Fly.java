@@ -39,7 +39,7 @@ public class Fly extends Module {
     }
 
     /** WASD relative to yaw only — pitch ignored. Length capped at {@code s}. */
-    static Vec3 horizontalMove(float yawDeg, double s, Minecraft mc) {
+    public static Vec3 horizontalMove(float yawDeg, double s, Minecraft mc) {
         double rad = Math.toRadians(yawDeg);
         double sin = Math.sin(rad);
         double cos = Math.cos(rad);
@@ -47,7 +47,6 @@ public class Fly extends Module {
         double mx = 0;
         double mz = 0;
 
-        // Forward = -sin(yaw), cos(yaw) in Minecraft
         if (mc.options.keyUp.isDown()) {
             mx -= sin;
             mz += cos;
@@ -56,7 +55,6 @@ public class Fly extends Module {
             mx += sin;
             mz -= cos;
         }
-        // Strafe left/right
         if (mc.options.keyLeft.isDown()) {
             mx -= cos;
             mz -= sin;

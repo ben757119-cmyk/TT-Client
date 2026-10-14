@@ -16,7 +16,7 @@ import java.util.stream.Collectors;
 
 /**
  * Registers every module class shipped in the mod.
- * Note: combat.AutoTotem is a legacy stub — only player.AutoTotem is registered.
+ * combat.AutoTotem is a legacy stub — only player.AutoTotem is registered.
  */
 public class ModuleManager {
     private final List<Module> modules = new ArrayList<>();
@@ -72,7 +72,7 @@ public class ModuleManager {
         register(new AutoTool());
         register(new Freecam());
         register(new AutoMace());
-        register(new AutoTotem()); // player package
+        register(new com.ttclient.modules.player.AutoTotem());
         register(new AutoArmor());
         register(new AutoGapple());
         register(new AutoPotion());
