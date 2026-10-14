@@ -6,6 +6,7 @@ import com.ttclient.gui.ClickGUIScreen;
 import com.ttclient.modules.Module;
 import com.ttclient.modules.ModuleManager;
 import com.ttclient.modules.client.ClickGUIModule;
+import com.ttclient.modules.client.StreamerMode;
 import com.ttclient.modules.misc.AutoChatGame;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -21,9 +22,6 @@ import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import org.lwjgl.glfw.GLFW;
 
-/**
- * Client entry. Instance event handlers via NeoForge.EVENT_BUS.register(this).
- */
 @Mod(value = TTClient.MOD_ID, dist = Dist.CLIENT)
 public class TTClientClient {
 
@@ -78,20 +76,31 @@ public class TTClientClient {
         if (event.getAction() != GLFW.GLFW_PRESS) return;
 
         int key = event.getKey();
-        // Media / volume / unknown keys often report as -1 or 0.
-        // Unbound modules also use -1 — matching them toggles EVERYTHING.
         if (key <= 0 || key == GLFW.GLFW_KEY_UNKNOWN) return;
 
         Minecraft mc = Minecraft.getInstance();
         Screen screen = currentScreen(mc);
 
-        // Don't fire module binds while any screen is open (chat, inventory, GUI…)
-        // Only allow ClickGUI open/close from Right Shift.
+        // StreamerMode always toggles even when other visuals are hidden
+        StreamerMode streamer = modules.getModule(StreamerMode.class);
+        if (streamer != null && streamer.getKeyBind() > 0 && streamer.getKeyBind() == key) {
+            if (screen == null || screen instanceof ClickGUIScreen) {
+                streamer.toggle();
+                if (config != null) config.save();
+            }
+            return;
+        }
+
         ClickGUIModule gui = modules.getModule(ClickGUIModule.class);
         int guiKey = gui != null ? gui.getKeyBind() : GLFW.GLFW_KEY_RIGHT_SHIFT;
         if (guiKey <= 0) guiKey = GLFW.GLFW_KEY_RIGHT_SHIFT;
 
         if (key == guiKey) {
+            // Hide ClickGUI entirely while streaming
+            if (StreamerMode.active()) {
+                if (screen instanceof ClickGUIScreen) openScreen(mc, null);
+                return;
+            }
             if (screen instanceof ClickGUIScreen) {
                 openScreen(mc, null);
                 if (config != null) config.save();
@@ -105,8 +114,8 @@ public class TTClientClient {
 
         for (Module mod : modules.getModules()) {
             if (mod instanceof ClickGUIModule) continue;
+            if (mod instanceof StreamerMode) continue; // handled above
             int bind = mod.getKeyBind();
-            // Only real binds — never match unbound (-1) or zero
             if (bind > 0 && bind == key) {
                 mod.toggle();
                 if (config != null) config.save();
@@ -117,6 +126,7 @@ public class TTClientClient {
     @SubscribeEvent
     public void onRenderGui(RenderGuiEvent.Post event) {
         if (modules == null) return;
+        if (StreamerMode.active()) return;
         modules.onRender2D(event.getGuiGraphics(), event.getPartialTick().getGameTimeDeltaPartialTick(false));
     }
 

@@ -14,16 +14,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
 
-/**
- * Registers every module class shipped in the mod.
- * combat.AutoTotem is a legacy stub — only player.AutoTotem is registered.
- */
 public class ModuleManager {
     private final List<Module> modules = new ArrayList<>();
 
     public void init() {
         // Client
         register(new ClickGUIModule());
+        register(new StreamerMode());
         register(new HUD());
         register(new Notifications());
         register(new Keystrokes());
@@ -184,14 +181,15 @@ public class ModuleManager {
             if (m.isEnabled()) {
                 try {
                     m.onTick();
-                } catch (Throwable t) {
-                    // never let one module kill the tick loop
-                }
+                } catch (Throwable ignored) {}
             }
         }
     }
 
     public void onRender2D(GuiGraphicsExtractor graphics, float partialTick) {
+        // StreamerMode: draw nothing at all (HUD, arraylist, notifications, etc.)
+        if (StreamerMode.active()) return;
+
         for (Module m : modules) {
             if (m.isEnabled()) {
                 try {
