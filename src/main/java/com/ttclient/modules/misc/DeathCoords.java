@@ -1,32 +1,31 @@
 package com.ttclient.modules.misc;
 
+import com.ttclient.client.NotificationManager;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
-import net.minecraft.network.chat.Component;
+import net.minecraft.client.Minecraft;
 
 public class DeathCoords extends Module {
-    private boolean announced;
+    private boolean wasDead;
 
     public DeathCoords() {
-        super("DeathCoords", "Chat + clipboard your death coordinates", Category.MISC);
+        super("DeathCoords", "Remember death coordinates", Category.MISC);
         setEnabled(true);
     }
 
     @Override
     public void onTick() {
-        if (mc.player == null) return;
-        if (mc.player.isDeadOrDying()) {
-            if (!announced) {
-                int x = (int) Math.floor(mc.player.getX());
-                int y = (int) Math.floor(mc.player.getY());
-                int z = (int) Math.floor(mc.player.getZ());
-                String text = "Death: " + x + " " + y + " " + z;
-                mc.player.displayClientMessage(Component.literal("§b[TT] §f" + text), false);
-                mc.keyboardHandler.setClipboard(x + " " + y + " " + z);
-                announced = true;
-            }
-        } else {
-            announced = false;
+        Minecraft mc = mc();
+        if (mc == null || mc.player == null) return;
+        boolean dead = !mc.player.isAlive() || mc.player.getHealth() <= 0;
+        if (dead && !wasDead) {
+            String text = String.format("Death: %.0f %.0f %.0f",
+                    mc.player.getX(), mc.player.getY(), mc.player.getZ());
+            NotificationManager.push("DeathCoords", text);
+            try {
+                mc.keyboardHandler.setClipboard(text);
+            } catch (Throwable ignored) {}
         }
+        wasDead = dead;
     }
 }

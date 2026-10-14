@@ -7,6 +7,7 @@ import com.ttclient.modules.Module;
 import com.ttclient.modules.ModuleManager;
 import com.ttclient.modules.client.ClickGUIModule;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -36,6 +37,25 @@ public class TTClientClient {
         TTClient.LOGGER.info("TT Client {} ready with {} modules", TTClient.VERSION, modules.getModules().size());
     }
 
+    private static Screen currentScreen(Minecraft mc) {
+        try {
+            return mc.gui.screen();
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static void openScreen(Minecraft mc, Screen screen) {
+        try {
+            mc.gui.setScreen(screen);
+            return;
+        } catch (Throwable ignored) {}
+        try {
+            // Fallback for mappings that still expose setScreen on Minecraft
+            Minecraft.class.getMethod("setScreen", Screen.class).invoke(mc, screen);
+        } catch (Throwable ignored) {}
+    }
+
     @SubscribeEvent
     public void onClientTick(ClientTickEvent.Post event) {
         if (modules == null) return;
@@ -53,16 +73,17 @@ public class TTClientClient {
     public void onKey(InputEvent.Key event) {
         if (modules == null) return;
         Minecraft mc = Minecraft.getInstance();
-        if (mc.screen != null && !(mc.screen instanceof ClickGUIScreen)) return;
+        Screen screen = currentScreen(mc);
+        if (screen != null && !(screen instanceof ClickGUIScreen)) return;
 
         if (event.getAction() == GLFW.GLFW_PRESS) {
             ClickGUIModule gui = modules.getModule(ClickGUIModule.class);
             if (gui != null && event.getKey() == gui.getKeyBind()) {
-                if (mc.screen instanceof ClickGUIScreen) {
-                    mc.setScreen(null);
+                if (screen instanceof ClickGUIScreen) {
+                    openScreen(mc, null);
                     if (config != null) config.save();
-                } else if (mc.screen == null) {
-                    mc.setScreen(new ClickGUIScreen());
+                } else if (screen == null) {
+                    openScreen(mc, new ClickGUIScreen());
                 }
                 return;
             }

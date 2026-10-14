@@ -8,9 +8,6 @@ import com.ttclient.settings.NumberSetting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.HashSet;
@@ -24,9 +21,8 @@ import java.util.Set;
 public class TrialChamberFinder extends Module {
     public final NumberSetting range = addSetting(new NumberSetting("Range", "Block scan radius", 64, 24, 128, 8));
     public final NumberSetting interval = addSetting(new NumberSetting("Interval", "Ticks between scans", 40, 10, 100, 5));
-    public final BoolSetting chat = addSetting(new BoolSetting("Chat", "Print finds in chat", true));
     public final BoolSetting notify = addSetting(new BoolSetting("Notify", "Toast on find", true));
-    public final BoolSetting requireSpawner = addSetting(new BoolSetting("NeedSpawner", "Only alert on trial_spawner/vault (high confidence)", false));
+    public final BoolSetting requireSpawner = addSetting(new BoolSetting("NeedSpawner", "Only alert on trial_spawner/vault", false));
 
     private int timer;
     private final Set<Long> reported = new HashSet<>();
@@ -66,7 +62,6 @@ public class TrialChamberFinder extends Module {
         BlockPos bestCluster = null;
         int bestClusterScore = 0;
 
-        // Step by 2 for speed; trial chambers are large enough
         for (int dx = -r; dx <= r; dx += 2) {
             for (int dy = -40; dy <= 40; dy += 2) {
                 for (int dz = -r; dz <= r; dz += 2) {
@@ -75,14 +70,13 @@ public class TrialChamberFinder extends Module {
                     BlockState state = mc.level.getBlockState(pos);
                     if (state.isAir()) continue;
 
-                    String id = blockId(state);
-                    if (id.isEmpty()) continue;
+                    String id = state.getBlock().toString().toLowerCase(Locale.ROOT);
 
-                    if (id.equals("trial_spawner")) {
+                    if (id.contains("trial_spawner")) {
                         bestSpawner = pos;
-                    } else if (id.equals("vault") || id.equals("ominous_vault")) {
+                    } else if (id.contains("ominous_vault") || id.contains("vault")) {
                         bestVault = pos;
-                    } else if (isCopper(id) || id.equals("hopper")) {
+                    } else if (id.contains("copper") || id.contains("hopper")) {
                         int score = scoreNeighborhood(mc, pos);
                         if (score > bestClusterScore) {
                             bestClusterScore = score;
@@ -103,13 +97,11 @@ public class TrialChamberFinder extends Module {
             label = "Vault";
         } else if (!requireSpawner.get() && bestCluster != null && bestClusterScore >= 6) {
             hit = bestCluster;
-            label = "Copper/Hopper cluster (score " + bestClusterScore + ")";
+            label = "Copper/Hopper cluster (" + bestClusterScore + ")";
         }
 
         if (hit == null) return;
 
-        long key = hit.asLong();
-        // Dedupe nearby reports (16-block grid)
         long grid = BlockPos.asLong(hit.getX() >> 4, hit.getY() >> 4, hit.getZ() >> 4);
         if (reported.contains(grid)) {
             lastHit = hit;
@@ -126,9 +118,6 @@ public class TrialChamberFinder extends Module {
         if (notify.get()) {
             NotificationManager.push("Trial Chamber", msg);
         }
-        if (chat.get() && player.connection != null) {
-            player.displayClientMessage(Component.literal("§a[TT] §fTrialChamberFinder: §e" + msg), false);
-        }
     }
 
     private int scoreNeighborhood(Minecraft mc, BlockPos center) {
@@ -141,31 +130,15 @@ public class TrialChamberFinder extends Module {
                 for (int dz = -4; dz <= 4; dz++) {
                     BlockPos p = center.offset(dx, dy, dz);
                     if (!mc.level.hasChunkAt(p)) continue;
-                    String id = blockId(mc.level.getBlockState(p));
-                    if (id.equals("trial_spawner") || id.equals("vault") || id.equals("ominous_vault")) markers++;
-                    else if (id.equals("hopper")) hoppers++;
-                    else if (isCopper(id)) copper++;
+                    String id = mc.level.getBlockState(p).getBlock().toString().toLowerCase(Locale.ROOT);
+                    if (id.contains("trial_spawner") || id.contains("vault")) markers++;
+                    else if (id.contains("hopper")) hoppers++;
+                    else if (id.contains("copper")) copper++;
                     else if (id.contains("tuff")) tuff++;
                 }
             }
         }
         return markers * 20 + hoppers * 3 + copper + tuff / 2;
-    }
-
-    private static String blockId(BlockState state) {
-        try {
-            ResourceLocation rl = BuiltInRegistries.BLOCK.getKey(state.getBlock());
-            return rl != null ? rl.getPath().toLowerCase(Locale.ROOT) : "";
-        } catch (Throwable t) {
-            return state.getBlock().toString().toLowerCase(Locale.ROOT);
-        }
-    }
-
-    private static boolean isCopper(String id) {
-        return id.contains("copper")
-                || id.equals("lightning_rod")
-                || id.contains("copper_bulb")
-                || id.contains("copper_grate");
     }
 
     public BlockPos getLastHit() { return lastHit; }
