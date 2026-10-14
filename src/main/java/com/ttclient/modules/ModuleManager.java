@@ -178,10 +178,26 @@ public class ModuleManager {
     public <T extends Module> T getModule(Class<T> clazz) {
         return modules.stream().filter(clazz::isInstance).map(clazz::cast).findFirst().orElse(null);
     }
+
     public void onTick() {
-        for (Module m : modules) if (m.isEnabled()) m.onTick();
+        for (Module m : modules) {
+            if (m.isEnabled()) {
+                try {
+                    m.onTick();
+                } catch (Throwable t) {
+                    // never let one module kill the tick loop
+                }
+            }
+        }
     }
+
     public void onRender2D(GuiGraphicsExtractor graphics, float partialTick) {
-        for (Module m : modules) if (m.isEnabled()) m.onRender2D(graphics, partialTick);
+        for (Module m : modules) {
+            if (m.isEnabled()) {
+                try {
+                    m.onRender2D(graphics, partialTick);
+                } catch (Throwable ignored) {}
+            }
+        }
     }
 }
