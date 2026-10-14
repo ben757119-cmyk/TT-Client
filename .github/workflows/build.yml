@@ -14,47 +14,29 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up JDK 25
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '25'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.2.1'
 
-      - name: Read version
-        id: ver
+      - id: ver
         run: |
           VER=$(grep '^mod_version=' gradle.properties | cut -d= -f2 | tr -d '[:space:]')
           echo "version=$VER" >> "$GITHUB_OUTPUT"
 
-      - name: Build MASTER jar
-        run: |
-          echo 'edition=master' > src/main/resources/ttclient-edition.properties
-          gradle build --no-daemon
-          mkdir -p dist
-          cp build/libs/ttclient-*.jar "dist/ttclient-${{ steps.ver.outputs.version }}-master.jar" || cp build/libs/*.jar dist/
-          ls -la build/libs/ dist/
+      - name: Build
+        run: gradle build --no-daemon
 
-      - name: Build BETA jar
-        run: |
-          echo 'edition=beta' > src/main/resources/ttclient-edition.properties
-          gradle clean build --no-daemon
-          cp build/libs/ttclient-*.jar "dist/ttclient-${{ steps.ver.outputs.version }}-beta.jar" || true
-          # Also keep generic name from last build
-          ls -la dist/
-
-      - name: Upload JAR artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: ttclient-jars
-          path: dist/*.jar
+          name: ttclient-jar
+          path: build/libs/*.jar
           if-no-files-found: error
 
       - name: Publish GitHub Release
@@ -65,28 +47,12 @@ jobs:
           name: TT Client v${{ steps.ver.outputs.version }}
           body: |
             ## TT Client ${{ steps.ver.outputs.version }}
+            Normal single jar — no license / KeyGen / TTLink.
 
-            ### Artifacts
-            - **ttclient-*-master.jar** — full unlock + KeyGen (your copy)
-            - **ttclient-*-beta.jar** — requires one-time timed key (`TTKEY <key>` in chat)
-
-            ### StreamerMode
-            On Windows, uses OS capture exclusion so **you still see HUD/ClickGUI** but OBS/Discord screenshare do not.
-
-            ### TTLink
-            Both players enable TTLink + same PairCode. Messages use `TTLINK|code|CHAT|text` protocol.
-
-            ### KeyGen (master only)
-            Toggle KeyGen with a duration to print a one-time beta key in chat.
-          files: dist/*.jar
+            - AutoChatGame: type-the-word (Word: Fill)
+            - StreamerMode (Windows capture exclude)
+            - Right Shift ClickGUI
+          files: build/libs/*.jar
           make_latest: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload to existing Release event
-        if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*.jar
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -8,8 +8,6 @@ import com.ttclient.modules.ModuleManager;
 import com.ttclient.modules.client.ClickGUIModule;
 import com.ttclient.modules.client.StreamerMode;
 import com.ttclient.modules.misc.AutoChatGame;
-import com.ttclient.modules.misc.LicenseModule;
-import com.ttclient.modules.misc.TTLink;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -38,8 +36,8 @@ public class TTClientClient {
         modules.init();
         config.load();
         NeoForge.EVENT_BUS.register(this);
-        TTClient.LOGGER.info("TT Client {} ({}) ready with {} modules",
-                TTClient.VERSION, com.ttclient.BuildInfo.EDITION, modules.getModules().size());
+        TTClient.LOGGER.info("TT Client {} ready with {} modules",
+                TTClient.VERSION, modules.getModules().size());
     }
 
     private static Screen currentScreen(Minecraft mc) {
@@ -98,7 +96,6 @@ public class TTClientClient {
         if (guiKey <= 0) guiKey = GLFW.GLFW_KEY_RIGHT_SHIFT;
 
         if (key == guiKey) {
-            // Always allow ClickGUI for the local user (stream-proof hides it from capture on Windows)
             if (screen instanceof ClickGUIScreen) {
                 openScreen(mc, null);
                 if (config != null) config.save();
@@ -146,20 +143,5 @@ public class TTClientClient {
 
         AutoChatGame game = modules.getModule(AutoChatGame.class);
         if (game != null && game.isEnabled()) game.handleChat(text);
-
-        TTLink link = modules.getModule(TTLink.class);
-        if (link != null && link.isEnabled()) link.handleChat(text);
-    }
-
-    /** Intercept outbound chat for TTKEY redeem (before send). */
-    @SubscribeEvent
-    public void onChatSend(net.neoforged.neoforge.client.event.ClientChatEvent event) {
-        try {
-            String msg = event.getMessage();
-            if (msg != null && msg.trim().toUpperCase().startsWith("TTKEY ")) {
-                LicenseModule.tryRedeemFromChat(msg);
-                event.setCanceled(true);
-            }
-        } catch (Throwable ignored) {}
     }
 }
