@@ -18,7 +18,6 @@ public class ModuleManager {
     private final List<Module> modules = new ArrayList<>();
 
     public void init() {
-        // Client
         register(new ClickGUIModule());
         register(new StreamerMode());
         register(new HUD());
@@ -26,7 +25,6 @@ public class ModuleManager {
         register(new Keystrokes());
         register(new ArrayListMod());
 
-        // Combat
         register(new KillAura());
         register(new AimAssist());
         register(new TriggerBot());
@@ -40,12 +38,12 @@ public class ModuleManager {
         register(new AutoArmorSwap());
         register(new WTap());
 
-        // Movement
         register(new Sprint());
         register(new AutoWalk());
         register(new AutoJump());
         register(new ToggleSneak());
         register(new Fly());
+        register(new AntiFlightKick());
         register(new Speed());
         register(new Velocity());
         register(new Step());
@@ -62,7 +60,6 @@ public class ModuleManager {
         register(new BoatFly());
         register(new ElytraFly());
 
-        // Player
         register(new AutoEat());
         register(new AutoFish());
         register(new AutoRespawn());
@@ -87,7 +84,6 @@ public class ModuleManager {
         register(new DurabilityAlert());
         register(new HungerInfo());
 
-        // Render
         register(new Fullbright());
         register(new Zoom());
         register(new LightLevel());
@@ -116,7 +112,6 @@ public class ModuleManager {
         register(new PopChams());
         register(new Brightness());
 
-        // World
         register(new Waypoints());
         register(new TrialChamberFinder());
         register(new StashFinder());
@@ -130,7 +125,6 @@ public class ModuleManager {
         register(new LiquidPlace());
         register(new NewChunks());
 
-        // Misc
         register(new FPSBoost());
         register(new MemoryInfo());
         register(new WorldClock());
@@ -179,22 +173,16 @@ public class ModuleManager {
     public void onTick() {
         for (Module m : modules) {
             if (m.isEnabled()) {
-                try {
-                    m.onTick();
-                } catch (Throwable ignored) {}
+                try { m.onTick(); } catch (Throwable ignored) {}
             }
         }
     }
 
     public void onRender2D(GuiGraphicsExtractor graphics, float partialTick) {
-        // StreamerMode: draw nothing at all (HUD, arraylist, notifications, etc.)
         if (StreamerMode.active()) return;
-
         for (Module m : modules) {
             if (m.isEnabled()) {
-                try {
-                    m.onRender2D(graphics, partialTick);
-                } catch (Throwable ignored) {}
+                try { m.onRender2D(graphics, partialTick); } catch (Throwable ignored) {}
             }
         }
     }
