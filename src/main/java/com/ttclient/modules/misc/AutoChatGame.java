@@ -17,34 +17,51 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Auto-solves common server chat games:
- * unscramble, math, "say this", fill-in-the-blank.
+ * Auto-solves server chat games only. Heavily filtered so normal player chat
+ * is never echoed (old versions matched bare "say" / random math).
  */
 public class AutoChatGame extends Module {
-    public final NumberSetting delay = addSetting(new NumberSetting("Delay", "Ticks before answering", 8, 0, 40, 1));
+    public final NumberSetting delay = addSetting(new NumberSetting("Delay", "Ticks before answering", 10, 0, 60, 1));
     public final BoolSetting unscramble = addSetting(new BoolSetting("Unscramble", "Solve word scrambles", true));
-    public final BoolSetting math = addSetting(new BoolSetting("Math", "Solve simple math", true));
-    public final BoolSetting sayThis = addSetting(new BoolSetting("SayThis", "Answer say-this prompts", true));
-    public final BoolSetting fillBlank = addSetting(new BoolSetting("FillBlank", "Solve fill-in-the-blank", true));
+    public final BoolSetting math = addSetting(new BoolSetting("Math", "Solve simple math prompts", true));
+    public final BoolSetting sayThis = addSetting(new BoolSetting("SayThis", "Answer explicit say-this / type-this prompts", true));
+    public final BoolSetting fillBlank = addSetting(new BoolSetting("FillBlank", "Solve fill-in-the-blank prompts", true));
     public final BoolSetting notify = addSetting(new BoolSetting("Notify", "Toast when answering", true));
+    public final BoolSetting strict = addSetting(new BoolSetting("Strict", "Require clear game keywords (recommended)", true));
 
     private String pendingAnswer;
     private int pendingTicks = -1;
     private long lastAnswerAt;
     private String lastAnswer = "";
+    private String lastPrompt = "";
 
-    // Hyphen kept at end of char classes to avoid illegal Java escapes
+    /** Explicit game prompt markers — message must hit at least one when Strict is on. */
+    private static final Pattern GAME_HINT = Pattern.compile(
+            "(?i)("
+                    + "unscramble|scrambled?\\s+word|chat\\s*game|first\\s+to|"
+                    + "type\\s+this|say\\s+this|fill\\s+in|"
+                    + "what\\s+is\\s+-?\\d|solve\\s*:|calculate\\s*:|"
+                    + "word\\s*[:=]|prize|react\\s+first|quickest|"
+                    + "decode|rearrange|anagram"
+                    + ")");
+
+    /** Player chat shapes we never answer. */
+    private static final Pattern PLAYER_CHAT = Pattern.compile(
+            "(?i)^\\s*["'"]?"
+                    + "(?:"
+                    + "[<\\[][^\\]>\\]]+[>\\]]\\s*"          // <Name> or [Name]
+                    + "|[\\w.]{2,16}\\s*(?:»|->|:)\\s+"     // Name » msg / Name: msg
+                    + "|\\w{2,16}\\s+whispers?\\s*:"         // whispers
+                    + ")");
+
     private static final Pattern WORD_LINE = Pattern.compile(
-            "(?i)(?:word|scramble|unscramble|scrambled(?:\\s+word)?)\\s*[:=-]\\s*([a-z0-9]+)");
+            "(?i)(?:unscramble(?:\\s+the)?(?:\\s+word)?|scrambled?(?:\\s+word)?|word)\\s*[:=\-]\\s*([a-z0-9]{3,16})");
     private static final Pattern MATH_LINE = Pattern.compile(
-            "(?i)(?:what\\s+is|solve|calculate|math|compute)[^0-9-]*(-?\\d+\\s*[+*/x-]\\s*\\d+(?:\\s*[+*/x-]\\s*\\d+)*)");
-    private static final Pattern MATH_BARE = Pattern.compile(
-            "(?i)(?:^|\\s)(-?\\d+\\s*[+*/x-]\\s*\\d+(?:\\s*[+*/x-]\\s*\\d+)*)\\s*\\??\\s*$");
-    private static final Pattern MATH_ANY = Pattern.compile("(-?\\d+\\s*[+*/x-]\\s*\\d+)");
+            "(?i)(?:what\\s+is|solve\\s*:?|calculate\\s*:?|compute\\s*:?)[^0-9\\-]*(-?\\d+\\s*[+*/x\\-]\\s*\\d+(?:\\s*[+*/x\\-]\\s*\\d+)?)");
     private static final Pattern SAY_LINE = Pattern.compile(
-            "(?i)(?:say\\s+this|type\\s+this|repeat|type|say)\\s*[:=-]?\\s*[\"']?([^\"'\\n]{1,40})[\"']?");
+            "(?i)(?:say\\s+this|type\\s+this|type\\s+the\\s+(?:word|phrase)|repeat\\s+this)\\s*[:=\-]\\s*[\"']?([^\"'\\n]{1,40}?)[\"']?\\s*$");
     private static final Pattern FILL_LINE = Pattern.compile(
-            "([_\\W]*[A-Za-z](?:[_\\W]+[A-Za-z]){2,}[_\\W]*)");
+            "(?i)(?:fill\\s+in|complete\\s+the\\s+word|missing\\s+letters)?[^\\n]*?([A-Za-z](?:_[A-Za-z]){2,}|_{2,}[A-Za-z](?:_[A-Za-z])*)");
 
     private static final String[] DICT = {
             "apple","banana","orange","grape","melon","berry","peach","mango","lemon","cherry",
@@ -77,50 +94,66 @@ public class AutoChatGame extends Module {
 
     static {
         for (String w : DICT) {
-            String key = sortLetters(w);
-            ANAGRAM_INDEX.computeIfAbsent(key, k -> new ArrayList<>()).add(w);
+            ANAGRAM_INDEX.computeIfAbsent(sortLetters(w), k -> new ArrayList<>()).add(w);
         }
     }
 
     public AutoChatGame() {
         super("AutoChatGame",
-                "Auto-answer unscramble, math, say-this, and fill-in-blank chat games",
+                "Auto-answer server chat games only (not player chat)",
                 Category.MISC);
     }
 
     public void handleChat(String raw) {
         if (!isEnabled() || raw == null || raw.isBlank()) return;
-        String plain = stripFormatting(raw).trim();
-        if (plain.isEmpty()) return;
 
+        String plain = stripFormatting(raw).trim();
+        if (plain.isEmpty() || plain.length() > 200) return;
+
+        // Never echo our own answers / rapid fire
         if (!lastAnswer.isEmpty() && plain.equalsIgnoreCase(lastAnswer)) return;
-        if (System.currentTimeMillis() - lastAnswerAt < 1500) return;
+        if (System.currentTimeMillis() - lastAnswerAt < 2500) return;
+
+        // Ignore normal player chat bubbles
+        if (looksLikePlayerChat(plain)) return;
+
+        // Strict: must look like a chat-game announcement
+        if (strict.get() && !GAME_HINT.matcher(plain).find()) {
+            // Allow pure "Word: xxxxx" lines only for unscramble
+            if (!(unscramble.get() && WORD_LINE.matcher(plain).find())) {
+                return;
+            }
+        }
+
+        // Don't re-answer the same prompt text
+        String promptKey = plain.toLowerCase(Locale.ROOT);
+        if (promptKey.equals(lastPrompt) && System.currentTimeMillis() - lastAnswerAt < 15000) return;
 
         String answer = null;
 
-        if (unscramble.get() && looksLikeUnscramble(plain)) {
+        if (unscramble.get()) {
             answer = solveUnscramble(plain);
         }
-        if (answer == null && math.get() && looksLikeMath(plain)) {
+        if (answer == null && math.get()) {
             answer = solveMath(plain);
         }
-        if (answer == null && sayThis.get() && looksLikeSay(plain)) {
+        if (answer == null && sayThis.get()) {
             answer = solveSay(plain);
         }
-        if (answer == null && fillBlank.get() && looksLikeFill(plain)) {
+        if (answer == null && fillBlank.get()) {
             answer = solveFill(plain);
-        }
-        if (answer == null && unscramble.get()) {
-            Matcher m = WORD_LINE.matcher(plain);
-            if (m.find()) {
-                answer = unscrambleToken(m.group(1));
-            }
         }
 
         if (answer == null || answer.isBlank()) return;
 
+        // Sanity: never send something that looks like a full chat sentence copied from someone
+        if (answer.length() > 48) return;
+        if (answer.contains("http") || answer.contains("://")) return;
+        if (looksLikePlayerChat(answer)) return;
+
         pendingAnswer = answer.trim();
         pendingTicks = delay.getInt();
+        lastPrompt = promptKey;
         if (notify.get()) {
             NotificationManager.push("ChatGame", pendingAnswer);
         }
@@ -145,55 +178,39 @@ public class AutoChatGame extends Module {
         } catch (Throwable ignored) {}
     }
 
-    private static boolean looksLikeUnscramble(String s) {
-        String l = s.toLowerCase(Locale.ROOT);
-        return l.contains("unscramble") || l.contains("scramble") || l.contains("scrambled")
-                || (l.contains("word") && (l.contains(":") || l.contains("=")));
-    }
-
-    private static boolean looksLikeMath(String s) {
-        String l = s.toLowerCase(Locale.ROOT);
-        return l.contains("what is") || l.contains("solve") || l.contains("calculate")
-                || l.contains("math") || MATH_BARE.matcher(s).find();
-    }
-
-    private static boolean looksLikeSay(String s) {
-        String l = s.toLowerCase(Locale.ROOT);
-        return l.contains("say this") || l.contains("type this") || l.startsWith("say ") || l.startsWith("type ");
-    }
-
-    private static boolean looksLikeFill(String s) {
-        int underscores = 0;
-        for (int i = 0; i < s.length(); i++) if (s.charAt(i) == '_') underscores++;
-        return underscores >= 2 && s.matches(".*[A-Za-z].*");
+    private static boolean looksLikePlayerChat(String s) {
+        if (PLAYER_CHAT.matcher(s).find()) return true;
+        // Common rank formats: [VIP] Name: message
+        if (s.matches("(?i)^\\s*\\[[^\\]]{1,20}\\]\\s*\\w{2,16}\\s*[»:].+")) return true;
+        // Discord-style name — message
+        if (s.matches("(?i)^\\s*\\w{2,16}\\s*[—–-]\\s+.+")) return true;
+        return false;
     }
 
     private String solveUnscramble(String plain) {
         Matcher m = WORD_LINE.matcher(plain);
-        if (m.find()) return unscrambleToken(m.group(1));
-        String[] parts = plain.split("\\s+");
-        for (int i = parts.length - 1; i >= 0; i--) {
-            String t = parts[i].replaceAll("[^A-Za-z0-9]", "");
-            if (t.length() >= 3 && t.length() <= 16) {
-                String sol = unscrambleToken(t);
-                if (sol != null) return sol;
-            }
+        if (!m.find()) return null;
+        // Prefer prompts that mention scramble / word game context when strict
+        String low = plain.toLowerCase(Locale.ROOT);
+        if (strict.get()
+                && !low.contains("unscramble")
+                && !low.contains("scramble")
+                && !low.contains("word")
+                && !low.contains("anagram")) {
+            return null;
         }
-        return null;
+        return unscrambleToken(m.group(1));
     }
 
     private static String unscrambleToken(String token) {
         String normalized = leetToLetters(token).toLowerCase(Locale.ROOT).replaceAll("[^a-z]", "");
-        if (normalized.length() < 2) return null;
-        String key = sortLetters(normalized);
-        List<String> hits = ANAGRAM_INDEX.get(key);
-        if (hits != null && !hits.isEmpty()) {
-            for (String h : hits) {
-                if (h.length() == normalized.length()) return capitalize(h);
-            }
-            return capitalize(hits.get(0));
+        if (normalized.length() < 3 || normalized.length() > 16) return null;
+        List<String> hits = ANAGRAM_INDEX.get(sortLetters(normalized));
+        if (hits == null || hits.isEmpty()) return null;
+        for (String h : hits) {
+            if (h.length() == normalized.length()) return capitalize(h);
         }
-        return null;
+        return capitalize(hits.get(0));
     }
 
     private static String leetToLetters(String s) {
@@ -227,27 +244,20 @@ public class AutoChatGame extends Module {
     }
 
     private String solveMath(String plain) {
+        String low = plain.toLowerCase(Locale.ROOT);
+        // Must be an explicit math prompt — never bare "3+4" in random chat
+        if (!(low.contains("what is") || low.contains("solve") || low.contains("calculate") || low.contains("compute"))) {
+            return null;
+        }
         Matcher m = MATH_LINE.matcher(plain);
-        String expr = null;
-        if (m.find()) expr = m.group(1);
-        if (expr == null) {
-            m = MATH_BARE.matcher(plain);
-            if (m.find()) expr = m.group(1);
-        }
-        if (expr == null) {
-            m = MATH_ANY.matcher(plain);
-            if (m.find()) expr = m.group(1);
-        }
-        if (expr == null) return null;
-        Long val = evalSimple(expr);
+        if (!m.find()) return null;
+        Long val = evalSimple(m.group(1));
         return val == null ? null : String.valueOf(val);
     }
 
     private static Long evalSimple(String expr) {
         try {
-            String e = expr.toLowerCase(Locale.ROOT)
-                    .replace('x', '*')
-                    .replaceAll("\\s+", "");
+            String e = expr.toLowerCase(Locale.ROOT).replace('x', '*').replaceAll("\\s+", "");
             List<String> tokens = new ArrayList<>();
             StringBuilder num = new StringBuilder();
             for (int i = 0; i < e.length(); i++) {
@@ -291,31 +301,26 @@ public class AutoChatGame extends Module {
     }
 
     private String solveSay(String plain) {
+        // ONLY "say this:" / "type this:" style — never bare "say hi guys"
         Matcher m = SAY_LINE.matcher(plain);
         if (!m.find()) return null;
         String t = m.group(1).trim();
-        t = t.replaceAll("(?i)\\s+to\\s+chat.*$", "").trim();
-        if (t.length() > 48) return null;
+        t = t.replaceAll("(?i)\\s+(to\\s+win|for\\s+a\\s+prize|in\\s+chat).*$", "").trim();
+        if (t.length() < 1 || t.length() > 40) return null;
+        // Reject if capture still looks like instructions
+        String low = t.toLowerCase(Locale.ROOT);
+        if (low.startsWith("say") || low.startsWith("type") || low.contains("http")) return null;
         return t;
     }
 
     private String solveFill(String plain) {
+        String low = plain.toLowerCase(Locale.ROOT);
+        if (strict.get() && !(low.contains("fill") || low.contains("blank") || low.contains("complete") || low.contains("_"))) {
+            return null;
+        }
         Matcher m = FILL_LINE.matcher(plain);
-        String best = null;
-        int bestScore = 0;
-        while (m.find()) {
-            String cand = m.group(1);
-            int score = 0;
-            for (int i = 0; i < cand.length(); i++) if (cand.charAt(i) == '_') score++;
-            if (score > bestScore) {
-                bestScore = score;
-                best = cand;
-            }
-        }
-        if (best == null) {
-            if (plain.indexOf('_') >= 0) best = plain;
-            else return null;
-        }
+        if (!m.find()) return null;
+        String best = m.group(1);
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < best.length(); i++) {
             char c = best.charAt(i);
