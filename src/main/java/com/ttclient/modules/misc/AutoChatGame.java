@@ -10,11 +10,9 @@ import net.minecraft.client.Minecraft;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -36,17 +34,17 @@ public class AutoChatGame extends Module {
     private String lastAnswer = "";
 
     private static final Pattern WORD_LINE = Pattern.compile(
-            "(?i)(?:word|scramble|unscramble|scrambled(?:\\s+word)?)\\s*[:=\-]\\s*([a-z0-9]+)");
+            "(?i)(?:word|scramble|unscramble|scrambled(?:\\s+word)?)\\s*[:=-]\\s*([a-z0-9]+)");
     private static final Pattern MATH_LINE = Pattern.compile(
-            "(?i)(?:what\\s+is|solve|calculate|math|compute)[^0-9\\-]*([\\-]?\\d+\\s*[+\\-*/x×÷]\\s*\\d+(?:\\s*[+\\-*/x×÷]\\s*\\d+)*)");
+            "(?i)(?:what\\s+is|solve|calculate|math|compute)[^0-9-]*(-?\\d+\\s*[+\\-*/x]\\s*\\d+(?:\\s*[+\\-*/x]\\s*\\d+)*)");
     private static final Pattern MATH_BARE = Pattern.compile(
-            "(?i)(?:^|\\s)([\\-]?\\d+\\s*[+\\-*/x×÷]\\s*\\d+(?:\\s*[+\\-*/x×÷]\\s*\\d+)*)\\s*\\??\\s*$");
+            "(?i)(?:^|\\s)(-?\\d+\\s*[+\\-*/x]\\s*\\d+(?:\\s*[+\\-*/x]\\s*\\d+)*)\\s*\\??\\s*$");
+    private static final Pattern MATH_ANY = Pattern.compile("(-?\\d+\\s*[+\\-*/x]\\s*\\d+)");
     private static final Pattern SAY_LINE = Pattern.compile(
-            "(?i)(?:say\\s+this|type\\s+this|repeat|type|say)\\s*[:=\-]?\\s*[\"'\u201c\u201d]?([^\"'\n]{1,40})[\"'\u201c\u201d]?");
+            "(?i)(?:say\\s+this|type\\s+this|repeat|type|say)\\s*[:=-]?\\s*[\"']?([^\"'\\n]{1,40})[\"']?");
     private static final Pattern FILL_LINE = Pattern.compile(
             "([_\\W]*[A-Za-z](?:[_\\W]+[A-Za-z]){2,}[_\\W]*)");
 
-    /** Common chat-game / everyday words (lowercase). */
     private static final String[] DICT = {
             "apple","banana","orange","grape","melon","berry","peach","mango","lemon","cherry",
             "house","horse","heart","earth","water","fire","stone","block","sword","shield",
@@ -56,7 +54,7 @@ public class AutoChatGame extends Module {
             "beeks","beek","bees","beach","bean","bear","beast","beat","become","before",
             "chicken","potato","carrot","wheat","sugar","cookie","cake","pizza","burger","salad",
             "school","player","server","client","window","button","screen","mouse","keyboard","chat",
-            "green","blue","red","yellow","purple","white","black","brown","orange","pink",
+            "green","blue","red","yellow","purple","white","black","brown","pink",
             "table","chair","phone","clock","watch","light","night","morning","evening","friend",
             "family","money","power","speed","jump","walk","run","swim","fly","mine",
             "craft","game","play","win","lose","prize","first","second","third","quick",
@@ -65,12 +63,12 @@ public class AutoChatGame extends Module {
             "king","queen","prince","knight","castle","armor","helmet","boots","legs","chest",
             "happy","angry","brave","smart","lucky","magic","spell","potion","enchant","level",
             "health","hunger","damage","attack","defend","guard","scout","hunter","farmer","miner",
-            "keep","keeps","week","weeks","seek","seeks","bee","bees","key","keys",
-            "bake","bakes","sake","lake","make","makes","take","takes","cake","cakes",
-            "ebook","books","book","spoke","smoke","broke","brake","break","bread","breed",
-            "skeleton","wither","phantom","guardian","drowned","husk","stray","pillager","vindicator","ravager",
+            "keep","keeps","week","weeks","seek","seeks","bee","key","keys",
+            "bake","bakes","sake","lake","make","makes","take","takes","cakes",
+            "ebook","books","book","spoke","smoke","broke","brake","break","breed",
+            "phantom","guardian","drowned","husk","stray","pillager","vindicator","ravager",
             "shulker","enderman","blaze","ghast","magma","slime","warden","allay","axolotl","frog",
-            "balance","balloon","banana","bandit","banner","barrel","basket","battle","beacon","beauty",
+            "balloon","bandit","banner","barrel","basket","battle","beauty",
             "code","java","forge","fabric","neoforge","minecraft","spigot","paper","bukkit","velocity"
     };
 
@@ -94,7 +92,6 @@ public class AutoChatGame extends Module {
         String plain = stripFormatting(raw).trim();
         if (plain.isEmpty()) return;
 
-        // Avoid reacting to our own answers looping
         if (!lastAnswer.isEmpty() && plain.equalsIgnoreCase(lastAnswer)) return;
         if (System.currentTimeMillis() - lastAnswerAt < 1500) return;
 
@@ -112,8 +109,6 @@ public class AutoChatGame extends Module {
         if (answer == null && fillBlank.get() && looksLikeFill(plain)) {
             answer = solveFill(plain);
         }
-
-        // Standalone scramble line: "Word: eb5ke"
         if (answer == null && unscramble.get()) {
             Matcher m = WORD_LINE.matcher(plain);
             if (m.find()) {
@@ -167,7 +162,6 @@ public class AutoChatGame extends Module {
     }
 
     private static boolean looksLikeFill(String s) {
-        // e.g. __B_a_l_a_n_c_e or B_a_l_a_n_c_e
         int underscores = 0;
         for (int i = 0; i < s.length(); i++) if (s.charAt(i) == '_') underscores++;
         return underscores >= 2 && s.matches(".*[A-Za-z].*");
@@ -176,7 +170,6 @@ public class AutoChatGame extends Module {
     private String solveUnscramble(String plain) {
         Matcher m = WORD_LINE.matcher(plain);
         if (m.find()) return unscrambleToken(m.group(1));
-        // fallback: last token that looks scrambled
         String[] parts = plain.split("\\s+");
         for (int i = parts.length - 1; i >= 0; i--) {
             String t = parts[i].replaceAll("[^A-Za-z0-9]", "");
@@ -194,13 +187,11 @@ public class AutoChatGame extends Module {
         String key = sortLetters(normalized);
         List<String> hits = ANAGRAM_INDEX.get(key);
         if (hits != null && !hits.isEmpty()) {
-            // Prefer exact-length dictionary word
             for (String h : hits) {
                 if (h.length() == normalized.length()) return capitalize(h);
             }
             return capitalize(hits.get(0));
         }
-        // Partial: if token has digits mixed, try without non-letters already done
         return null;
     }
 
@@ -243,8 +234,7 @@ public class AutoChatGame extends Module {
             if (m.find()) expr = m.group(1);
         }
         if (expr == null) {
-            // scan for a+b pattern anywhere
-            m = Pattern.compile("([\\-]?\\d+\\s*[+\\-*/x×÷]\\s*\\d+)").matcher(plain);
+            m = MATH_ANY.matcher(plain);
             if (m.find()) expr = m.group(1);
         }
         if (expr == null) return null;
@@ -255,11 +245,8 @@ public class AutoChatGame extends Module {
     private static Long evalSimple(String expr) {
         try {
             String e = expr.toLowerCase(Locale.ROOT)
-                    .replace("×", "*")
-                    .replace("x", "*")
-                    .replace("÷", "/")
+                    .replace('x', '*')
                     .replaceAll("\\s+", "");
-            // left-to-right for + - * / (good enough for chat games)
             List<String> tokens = new ArrayList<>();
             StringBuilder num = new StringBuilder();
             for (int i = 0; i < e.length(); i++) {
@@ -291,7 +278,9 @@ public class AutoChatGame extends Module {
                         if (n == 0) return null;
                         acc /= n;
                     }
-                    default -> { return null; }
+                    default -> {
+                        return null;
+                    }
                 }
             }
             return acc;
@@ -304,14 +293,12 @@ public class AutoChatGame extends Module {
         Matcher m = SAY_LINE.matcher(plain);
         if (!m.find()) return null;
         String t = m.group(1).trim();
-        // strip trailing instructions
         t = t.replaceAll("(?i)\\s+to\\s+chat.*$", "").trim();
         if (t.length() > 48) return null;
         return t;
     }
 
     private String solveFill(String plain) {
-        // Prefer the densest underscore letter pattern
         Matcher m = FILL_LINE.matcher(plain);
         String best = null;
         int bestScore = 0;
@@ -325,7 +312,6 @@ public class AutoChatGame extends Module {
             }
         }
         if (best == null) {
-            // whole message might be the pattern
             if (plain.indexOf('_') >= 0) best = plain;
             else return null;
         }
@@ -336,7 +322,6 @@ public class AutoChatGame extends Module {
         }
         if (sb.length() < 3) return null;
         String word = sb.toString();
-        // Match dictionary case-insensitively for nicer casing
         String lower = word.toLowerCase(Locale.ROOT);
         for (String d : DICT) {
             if (d.equalsIgnoreCase(lower)) return capitalize(d);
@@ -345,12 +330,11 @@ public class AutoChatGame extends Module {
     }
 
     private static String stripFormatting(String s) {
-        // strip section signs and hex-like minecraft formatting leftovers
         StringBuilder sb = new StringBuilder(s.length());
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
-            if (c == '§' && i + 1 < s.length()) {
-                i++; // skip code
+            if (c == '\u00A7' && i + 1 < s.length()) {
+                i++;
                 continue;
             }
             sb.append(c);
