@@ -20,6 +20,8 @@ public class ModuleManager {
     public void init() {
         register(new ClickGUIModule());
         register(new StreamerMode());
+        register(new LicenseModule());
+        register(new KeyGen());
         register(new HUD());
         register(new Notifications());
         register(new Keystrokes());
@@ -131,6 +133,7 @@ public class ModuleManager {
         register(new AntiAFK());
         register(new ChatTimestamps());
         register(new AutoChatGame());
+        register(new TTLink());
         register(new CoordCopy());
         register(new DeathCoords());
         register(new SessionTimer());
@@ -179,7 +182,8 @@ public class ModuleManager {
     }
 
     public void onRender2D(GuiGraphicsExtractor graphics, float partialTick) {
-        if (StreamerMode.active()) return;
+        // Only hide locally when OS stream-proof is unavailable
+        if (StreamerMode.shouldHideLocalUi()) return;
         for (Module m : modules) {
             if (m.isEnabled()) {
                 try { m.onRender2D(graphics, partialTick); } catch (Throwable ignored) {}
