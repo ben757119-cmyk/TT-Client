@@ -30,11 +30,14 @@ public class ModuleManager {
         register(new AutoWalk());
         register(new AutoJump());
         register(new ToggleSneak());
+        register(new Fly());
+        register(new Speed());
 
         register(new AutoEat());
         register(new AutoFish());
         register(new AutoRespawn());
         register(new AutoTool());
+        register(new Freecam());
 
         register(new SpeedHud());
         register(new Compass());
@@ -44,6 +47,8 @@ public class ModuleManager {
         register(new Waypoints());
         register(new DurabilityAlert());
         register(new HungerInfo());
+
+        register(new TrialChamberFinder());
 
         register(new FPSBoost());
         register(new MemoryInfo());
