@@ -6,8 +6,10 @@ import com.ttclient.gui.ClickGUIScreen;
 import com.ttclient.modules.Module;
 import com.ttclient.modules.ModuleManager;
 import com.ttclient.modules.client.ClickGUIModule;
+import com.ttclient.modules.misc.AutoChatGame;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -51,7 +53,6 @@ public class TTClientClient {
             return;
         } catch (Throwable ignored) {}
         try {
-            // Fallback for mappings that still expose setScreen on Minecraft
             Minecraft.class.getMethod("setScreen", Screen.class).invoke(mc, screen);
         } catch (Throwable ignored) {}
     }
@@ -101,5 +102,26 @@ public class TTClientClient {
     public void onRenderGui(RenderGuiEvent.Post event) {
         if (modules == null) return;
         modules.onRender2D(event.getGuiGraphics(), event.getPartialTick().getGameTimeDeltaPartialTick(false));
+    }
+
+    /**
+     * NeoForge chat receive. Method name kept generic; if the event type is missing
+     * at compile time we also provide a reflective hook below via Object signature.
+     */
+    @SubscribeEvent
+    public void onClientChat(net.neoforged.neoforge.client.event.ClientChatReceivedEvent event) {
+        if (modules == null) return;
+        AutoChatGame game = modules.getModule(AutoChatGame.class);
+        if (game == null || !game.isEnabled()) return;
+        try {
+            Component msg = event.getMessage();
+            if (msg != null) game.handleChat(msg.getString());
+        } catch (Throwable t) {
+            try {
+                Object m = event.getClass().getMethod("getMessage").invoke(event);
+                if (m instanceof Component c) game.handleChat(c.getString());
+                else if (m != null) game.handleChat(String.valueOf(m));
+            } catch (Throwable ignored) {}
+        }
     }
 }

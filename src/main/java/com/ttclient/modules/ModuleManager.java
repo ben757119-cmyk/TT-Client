@@ -57,6 +57,7 @@ public class ModuleManager {
         register(new WorldClock());
         register(new AntiAFK());
         register(new ChatTimestamps());
+        register(new AutoChatGame());
         register(new CoordCopy());
         register(new DeathCoords());
         register(new SessionTimer());
