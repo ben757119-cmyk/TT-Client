@@ -35,31 +35,22 @@ public class AutoChatGame extends Module {
     private String lastAnswer = "";
     private String lastPrompt = "";
 
-    /** Explicit game prompt markers — message must hit at least one when Strict is on. */
     private static final Pattern GAME_HINT = Pattern.compile(
-            "(?i)("
-                    + "unscramble|scrambled?\\s+word|chat\\s*game|first\\s+to|"
+            "(?i)(unscramble|scrambled?\\s+word|chat\\s*game|first\\s+to|"
                     + "type\\s+this|say\\s+this|fill\\s+in|"
                     + "what\\s+is\\s+-?\\d|solve\\s*:|calculate\\s*:|"
-                    + "word\\s*[:=]|prize|react\\s+first|quickest|"
-                    + "decode|rearrange|anagram"
-                    + ")");
+                    + "word\\s*[:=]|prize|react\\s+first|quickest|decode|rearrange|anagram)");
 
-    /** Player chat shapes we never answer. */
     private static final Pattern PLAYER_CHAT = Pattern.compile(
-            "(?i)^\\s*["'"]?"
-                    + "(?:"
-                    + "[<\\[][^\\]>\\]]+[>\\]]\\s*"          // <Name> or [Name]
-                    + "|[\\w.]{2,16}\\s*(?:»|->|:)\\s+"     // Name » msg / Name: msg
-                    + "|\\w{2,16}\\s+whispers?\\s*:"         // whispers
-                    + ")");
+            "(?i)^\\s*(?:[<\\[][^\\]>\\]]+[>\\]]\\s*|[\\w.]{2,16}\\s*(?:»|->|:)\\s+|\\w{2,16}\\s+whispers?\\s*:)");
 
+    // hyphen at end of char class — never \\- in Java strings
     private static final Pattern WORD_LINE = Pattern.compile(
-            "(?i)(?:unscramble(?:\\s+the)?(?:\\s+word)?|scrambled?(?:\\s+word)?|word)\\s*[:=\-]\\s*([a-z0-9]{3,16})");
+            "(?i)(?:unscramble(?:\\s+the)?(?:\\s+word)?|scrambled?(?:\\s+word)?|word)\\s*[:=-]\\s*([a-z0-9]{3,16})");
     private static final Pattern MATH_LINE = Pattern.compile(
-            "(?i)(?:what\\s+is|solve\\s*:?|calculate\\s*:?|compute\\s*:?)[^0-9\\-]*(-?\\d+\\s*[+*/x\\-]\\s*\\d+(?:\\s*[+*/x\\-]\\s*\\d+)?)");
+            "(?i)(?:what\\s+is|solve\\s*:?|calculate\\s*:?|compute\\s*:?)[^0-9-]*(-?\\d+\\s*[+*/x-]\\s*\\d+(?:\\s*[+*/x-]\\s*\\d+)?)");
     private static final Pattern SAY_LINE = Pattern.compile(
-            "(?i)(?:say\\s+this|type\\s+this|type\\s+the\\s+(?:word|phrase)|repeat\\s+this)\\s*[:=\-]\\s*[\"']?([^\"'\\n]{1,40}?)[\"']?\\s*$");
+            "(?i)(?:say\\s+this|type\\s+this|type\\s+the\\s+(?:word|phrase)|repeat\\s+this)\\s*[:=-]\\s*[\"']?([^\"'\\n]{1,40}?)[\"']?\\s*$");
     private static final Pattern FILL_LINE = Pattern.compile(
             "(?i)(?:fill\\s+in|complete\\s+the\\s+word|missing\\s+letters)?[^\\n]*?([A-Za-z](?:_[A-Za-z]){2,}|_{2,}[A-Za-z](?:_[A-Za-z])*)");
 
@@ -110,43 +101,27 @@ public class AutoChatGame extends Module {
         String plain = stripFormatting(raw).trim();
         if (plain.isEmpty() || plain.length() > 200) return;
 
-        // Never echo our own answers / rapid fire
         if (!lastAnswer.isEmpty() && plain.equalsIgnoreCase(lastAnswer)) return;
         if (System.currentTimeMillis() - lastAnswerAt < 2500) return;
 
-        // Ignore normal player chat bubbles
         if (looksLikePlayerChat(plain)) return;
 
-        // Strict: must look like a chat-game announcement
         if (strict.get() && !GAME_HINT.matcher(plain).find()) {
-            // Allow pure "Word: xxxxx" lines only for unscramble
-            if (!(unscramble.get() && WORD_LINE.matcher(plain).find())) {
+            if (!(unscramble.get() && WORD_LINE.matcher(plain).find() && plain.toLowerCase(Locale.ROOT).contains("word"))) {
                 return;
             }
         }
 
-        // Don't re-answer the same prompt text
         String promptKey = plain.toLowerCase(Locale.ROOT);
         if (promptKey.equals(lastPrompt) && System.currentTimeMillis() - lastAnswerAt < 15000) return;
 
         String answer = null;
-
-        if (unscramble.get()) {
-            answer = solveUnscramble(plain);
-        }
-        if (answer == null && math.get()) {
-            answer = solveMath(plain);
-        }
-        if (answer == null && sayThis.get()) {
-            answer = solveSay(plain);
-        }
-        if (answer == null && fillBlank.get()) {
-            answer = solveFill(plain);
-        }
+        if (unscramble.get()) answer = solveUnscramble(plain);
+        if (answer == null && math.get()) answer = solveMath(plain);
+        if (answer == null && sayThis.get()) answer = solveSay(plain);
+        if (answer == null && fillBlank.get()) answer = solveFill(plain);
 
         if (answer == null || answer.isBlank()) return;
-
-        // Sanity: never send something that looks like a full chat sentence copied from someone
         if (answer.length() > 48) return;
         if (answer.contains("http") || answer.contains("://")) return;
         if (looksLikePlayerChat(answer)) return;
@@ -154,9 +129,7 @@ public class AutoChatGame extends Module {
         pendingAnswer = answer.trim();
         pendingTicks = delay.getInt();
         lastPrompt = promptKey;
-        if (notify.get()) {
-            NotificationManager.push("ChatGame", pendingAnswer);
-        }
+        if (notify.get()) NotificationManager.push("ChatGame", pendingAnswer);
     }
 
     @Override
@@ -180,9 +153,7 @@ public class AutoChatGame extends Module {
 
     private static boolean looksLikePlayerChat(String s) {
         if (PLAYER_CHAT.matcher(s).find()) return true;
-        // Common rank formats: [VIP] Name: message
         if (s.matches("(?i)^\\s*\\[[^\\]]{1,20}\\]\\s*\\w{2,16}\\s*[»:].+")) return true;
-        // Discord-style name — message
         if (s.matches("(?i)^\\s*\\w{2,16}\\s*[—–-]\\s+.+")) return true;
         return false;
     }
@@ -190,7 +161,6 @@ public class AutoChatGame extends Module {
     private String solveUnscramble(String plain) {
         Matcher m = WORD_LINE.matcher(plain);
         if (!m.find()) return null;
-        // Prefer prompts that mention scramble / word game context when strict
         String low = plain.toLowerCase(Locale.ROOT);
         if (strict.get()
                 && !low.contains("unscramble")
@@ -245,7 +215,6 @@ public class AutoChatGame extends Module {
 
     private String solveMath(String plain) {
         String low = plain.toLowerCase(Locale.ROOT);
-        // Must be an explicit math prompt — never bare "3+4" in random chat
         if (!(low.contains("what is") || low.contains("solve") || low.contains("calculate") || low.contains("compute"))) {
             return null;
         }
@@ -301,13 +270,11 @@ public class AutoChatGame extends Module {
     }
 
     private String solveSay(String plain) {
-        // ONLY "say this:" / "type this:" style — never bare "say hi guys"
         Matcher m = SAY_LINE.matcher(plain);
         if (!m.find()) return null;
         String t = m.group(1).trim();
         t = t.replaceAll("(?i)\\s+(to\\s+win|for\\s+a\\s+prize|in\\s+chat).*$", "").trim();
         if (t.length() < 1 || t.length() > 40) return null;
-        // Reject if capture still looks like instructions
         String low = t.toLowerCase(Locale.ROOT);
         if (low.startsWith("say") || low.startsWith("type") || low.contains("http")) return null;
         return t;
