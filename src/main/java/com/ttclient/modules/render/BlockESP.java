@@ -10,7 +10,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -22,13 +22,12 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * Custom block ESP — add/remove blocks (ClickGUI search or chat: ttblock add/remove).
+ * Custom block ESP — add/remove blocks (ClickGUI search or .b add/remove).
  */
 public class BlockESP extends Module {
     public final NumberSetting range = addSetting(new NumberSetting("Range", "Scan range", 48, 16, 96, 8));
     public final ColorSetting color = addSetting(new ColorSetting("Color", "ESP color", 0xFF00E8A0));
 
-    /** Selected block ids (e.g. minecraft:spawner). */
     private final Set<String> selected = new LinkedHashSet<>();
     private final List<BlockPos> hits = new ArrayList<>();
     private int tick;
@@ -38,7 +37,6 @@ public class BlockESP extends Module {
 
     public BlockESP() {
         super("BlockESP", "ESP for custom blocks — search & add in settings", Category.RENDER);
-        // Sensible defaults
         selected.add("minecraft:spawner");
         selected.add("minecraft:chest");
     }
@@ -76,13 +74,12 @@ public class BlockESP extends Module {
         return String.join(",", selected);
     }
 
-    /** Registry search for ClickGUI. */
     public List<String> searchRegistry(String query, int limit) {
         List<String> out = new ArrayList<>();
         String q = query == null ? "" : query.toLowerCase(Locale.ROOT).trim();
         try {
             for (Block block : BuiltInRegistries.BLOCK) {
-                ResourceLocation id = BuiltInRegistries.BLOCK.getKey(block);
+                Identifier id = BuiltInRegistries.BLOCK.getKey(block);
                 if (id == null) continue;
                 String s = id.toString();
                 if (q.isEmpty() || s.contains(q) || id.getPath().contains(q)) {
@@ -101,7 +98,7 @@ public class BlockESP extends Module {
         id = id.trim().toLowerCase(Locale.ROOT);
         if (!id.contains(":")) id = "minecraft:" + id;
         try {
-            ResourceLocation rl = ResourceLocation.parse(id);
+            Identifier rl = Identifier.parse(id);
             if (!BuiltInRegistries.BLOCK.containsKey(rl)) return null;
             return rl.toString();
         } catch (Throwable t) {
@@ -133,7 +130,7 @@ public class BlockESP extends Module {
         Set<Block> wanted = new LinkedHashSet<>();
         for (String id : selected) {
             try {
-                ResourceLocation rl = ResourceLocation.parse(id);
+                Identifier rl = Identifier.parse(id);
                 BuiltInRegistries.BLOCK.getOptional(rl).ifPresent(wanted::add);
             } catch (Throwable ignored) {}
         }
