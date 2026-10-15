@@ -97,6 +97,7 @@ public class ModuleManager {
         register(new Tracers());
         register(new NameTags());
         register(new StorageESP());
+        register(new BlockESP());
         register(new HoleESP());
         register(new Search());
         register(new NoFog());

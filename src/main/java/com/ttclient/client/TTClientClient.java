@@ -8,12 +8,14 @@ import com.ttclient.modules.ModuleManager;
 import com.ttclient.modules.client.ClickGUIModule;
 import com.ttclient.modules.client.StreamerMode;
 import com.ttclient.modules.misc.AutoChatGame;
+import com.ttclient.modules.render.BlockESP;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.client.event.ClientChatEvent;
 import net.neoforged.neoforge.client.event.ClientChatReceivedEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
@@ -143,5 +145,57 @@ public class TTClientClient {
 
         AutoChatGame game = modules.getModule(AutoChatGame.class);
         if (game != null && game.isEnabled()) game.handleChat(text);
+    }
+
+    /** BlockESP chat commands: ttblock add|remove|list|clear <id> */
+    @SubscribeEvent
+    public void onChatSend(ClientChatEvent event) {
+        try {
+            String msg = event.getMessage();
+            if (msg == null) return;
+            String t = msg.trim();
+            if (!t.toLowerCase().startsWith("ttblock")) return;
+
+            event.setCanceled(true);
+            BlockESP esp = modules != null ? modules.getModule(BlockESP.class) : null;
+            if (esp == null) return;
+
+            String[] parts = t.split("\\s+");
+            if (parts.length < 2) {
+                NotificationManager.push("BlockESP", "ttblock add|remove|list|clear");
+                return;
+            }
+            String cmd = parts[1].toLowerCase();
+            switch (cmd) {
+                case "add" -> {
+                    if (parts.length < 3) {
+                        NotificationManager.push("BlockESP", "ttblock add <block>");
+                        return;
+                    }
+                    boolean ok = esp.addBlock(parts[2]);
+                    NotificationManager.push("BlockESP", ok ? "Added " + parts[2] : "Unknown block");
+                    if (config != null) config.save();
+                }
+                case "remove", "rm", "del" -> {
+                    if (parts.length < 3) {
+                        NotificationManager.push("BlockESP", "ttblock remove <block>");
+                        return;
+                    }
+                    boolean ok = esp.removeBlock(parts[2]);
+                    NotificationManager.push("BlockESP", ok ? "Removed " + parts[2] : "Not in list");
+                    if (config != null) config.save();
+                }
+                case "clear" -> {
+                    esp.clearBlocks();
+                    NotificationManager.push("BlockESP", "Cleared");
+                    if (config != null) config.save();
+                }
+                case "list" -> {
+                    String list = String.join(", ", esp.getSelected());
+                    NotificationManager.push("BlockESP", list.isEmpty() ? "(empty)" : list);
+                }
+                default -> NotificationManager.push("BlockESP", "ttblock add|remove|list|clear");
+            }
+        } catch (Throwable ignored) {}
     }
 }

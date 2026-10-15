@@ -3,6 +3,7 @@ package com.ttclient.config;
 import com.ttclient.TTClient;
 import com.ttclient.client.TTClientClient;
 import com.ttclient.modules.Module;
+import com.ttclient.modules.render.BlockESP;
 import com.ttclient.settings.*;
 
 import java.io.*;
@@ -32,6 +33,9 @@ public class ConfigManager {
             props.setProperty(prefix + "key", String.valueOf(mod.getKeyBind()));
             for (Setting<?> s : mod.getSettings()) {
                 props.setProperty(prefix + s.getName().replace(" ", "_"), String.valueOf(s.get()));
+            }
+            if (mod instanceof BlockESP be) {
+                props.setProperty(prefix + "blocks", be.saveBlocks());
             }
         }
         try (OutputStream out = Files.newOutputStream(configFile)) {
@@ -65,6 +69,10 @@ public class ConfigManager {
                     else if (s instanceof ModeSetting ms) ms.set(val);
                     else if (s instanceof ColorSetting cs) cs.set(Integer.parseInt(val));
                 } catch (Exception ignored) {}
+            }
+            if (mod instanceof BlockESP be) {
+                String blocks = props.getProperty(prefix + "blocks");
+                if (blocks != null) be.loadBlocks(blocks);
             }
         }
     }
