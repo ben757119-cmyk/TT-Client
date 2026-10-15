@@ -20,9 +20,7 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Meteor-style storage ESP — highlights chests, barrels, shulkers, hoppers, etc.
- */
+/** Meteor-style storage ESP — boxes projected to true block positions. */
 public class StorageESP extends Module {
     public final BoolSetting chests = addSetting(new BoolSetting("Chests", "Chests / trapped", true));
     public final BoolSetting enderChests = addSetting(new BoolSetting("EnderChests", "Ender chests", true));
@@ -30,7 +28,7 @@ public class StorageESP extends Module {
     public final BoolSetting barrels = addSetting(new BoolSetting("Barrels", "Barrels", true));
     public final BoolSetting hoppers = addSetting(new BoolSetting("Hoppers", "Hoppers", false));
     public final NumberSetting range = addSetting(new NumberSetting("Range", "Scan range (blocks)", 64, 16, 128, 8));
-    public final ColorSetting color = addSetting(new ColorSetting("Color", "Box color", 0xFFFFAA00));
+    public final ColorSetting color = addSetting(new ColorSetting("Color", "Default color", 0xFFFFAA00));
 
     private final List<Target> targets = new ArrayList<>();
     private int scanTicker;
@@ -95,21 +93,38 @@ public class StorageESP extends Module {
     public void onRender2D(GuiGraphicsExtractor g, float partialTick) {
         Minecraft mc = mc();
         if (mc == null || mc.font == null) return;
-        double[] a = new double[2];
-        double[] b = new double[2];
+
+        // Project all 8 corners of the block AABB and draw the 2D bounding box
+        double[] sx = new double[8];
+        double[] sy = new double[8];
 
         for (Target t : targets) {
-            // Project block corners roughly via center + size
-            double x = t.pos.getX() + 0.5;
-            double y = t.pos.getY() + 0.5;
-            double z = t.pos.getZ() + 0.5;
-            if (!EspProjection.worldToScreen(x, y + 0.5, z, a)) continue;
-            if (!EspProjection.worldToScreen(x, y - 0.5, z, b)) continue;
+            int visible = 0;
+            double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE;
+            double maxX = -Double.MAX_VALUE, maxY = -Double.MAX_VALUE;
 
-            double h = Math.max(12, Math.abs(a[1] - b[1]));
-            double w = h * 0.7;
-            EspDraw.box(g, a[0] - w / 2, a[1] - h / 2, a[0] + w / 2, a[1] + h / 2, t.color, 1);
-            EspDraw.label(g, mc.font, t.label, a[0], a[1] - h / 2 - 11, t.color | 0xFF000000);
+            for (int i = 0; i < 8; i++) {
+                double bx = t.pos.getX() + ((i & 1) == 0 ? 0.05 : 0.95);
+                double by = t.pos.getY() + ((i & 2) == 0 ? 0.05 : 0.95);
+                double bz = t.pos.getZ() + ((i & 4) == 0 ? 0.05 : 0.95);
+                double[] p = new double[2];
+                if (!EspProjection.worldToScreen(bx, by, bz, p)) continue;
+                sx[visible] = p[0];
+                sy[visible] = p[1];
+                minX = Math.min(minX, p[0]);
+                minY = Math.min(minY, p[1]);
+                maxX = Math.max(maxX, p[0]);
+                maxY = Math.max(maxY, p[1]);
+                visible++;
+            }
+            if (visible < 2) continue;
+
+            // Clamp tiny boxes so they're still visible
+            if (maxX - minX < 4) { double c = (minX + maxX) * 0.5; minX = c - 2; maxX = c + 2; }
+            if (maxY - minY < 4) { double c = (minY + maxY) * 0.5; minY = c - 2; maxY = c + 2; }
+
+            EspDraw.box(g, minX, minY, maxX, maxY, t.color | 0xFF000000, 1);
+            EspDraw.label(g, mc.font, t.label, (minX + maxX) * 0.5, minY - 11, t.color | 0xFF000000);
         }
     }
 

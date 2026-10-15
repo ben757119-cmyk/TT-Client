@@ -21,9 +21,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-/**
- * Custom block ESP — add/remove blocks (ClickGUI search or .b add/remove).
- */
+/** Custom block ESP — manage list with {@code .b add/remove} or ClickGUI. */
 public class BlockESP extends Module {
     public final NumberSetting range = addSetting(new NumberSetting("Range", "Scan range", 48, 16, 96, 8));
     public final ColorSetting color = addSetting(new ColorSetting("Color", "ESP color", 0xFF00E8A0));
@@ -32,18 +30,17 @@ public class BlockESP extends Module {
     private final List<BlockPos> hits = new ArrayList<>();
     private int tick;
 
-    /** UI search filter (ClickGUI). */
+    /** ClickGUI search buffer (only while BlockESP panel expanded + focused). */
     public String uiSearch = "";
+    public boolean uiSearchFocused = false;
 
     public BlockESP() {
-        super("BlockESP", "ESP for custom blocks — search & add in settings", Category.RENDER);
+        super("BlockESP", "ESP for custom blocks (.b add <id>)", Category.RENDER);
         selected.add("minecraft:spawner");
         selected.add("minecraft:chest");
     }
 
-    public Set<String> getSelected() {
-        return selected;
-    }
+    public Set<String> getSelected() { return selected; }
 
     public boolean addBlock(String id) {
         String norm = normalize(id);
@@ -57,9 +54,7 @@ public class BlockESP extends Module {
         return selected.remove(norm);
     }
 
-    public void clearBlocks() {
-        selected.clear();
-    }
+    public void clearBlocks() { selected.clear(); }
 
     public void loadBlocks(String csv) {
         selected.clear();
@@ -70,9 +65,7 @@ public class BlockESP extends Module {
         }
     }
 
-    public String saveBlocks() {
-        return String.join(",", selected);
-    }
+    public String saveBlocks() { return String.join(",", selected); }
 
     public List<String> searchRegistry(String query, int limit) {
         List<String> out = new ArrayList<>();
@@ -108,10 +101,7 @@ public class BlockESP extends Module {
 
     @Override
     public void onTick() {
-        if (selected.isEmpty()) {
-            hits.clear();
-            return;
-        }
+        if (selected.isEmpty()) { hits.clear(); return; }
         if (++tick % 12 != 0) return;
         rescan();
     }
@@ -164,10 +154,27 @@ public class BlockESP extends Module {
         if (mc == null || mc.font == null) return;
         int col = color.get();
         if (((col >> 24) & 0xFF) == 0) col |= 0xFF000000;
-        double[] s = new double[2];
+
         for (BlockPos pos : hits) {
-            if (!EspProjection.worldToScreen(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, s)) continue;
-            EspDraw.box(g, s[0] - 5, s[1] - 5, s[0] + 5, s[1] + 5, col, 1);
+            double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE;
+            double maxX = -Double.MAX_VALUE, maxY = -Double.MAX_VALUE;
+            int visible = 0;
+            for (int i = 0; i < 8; i++) {
+                double bx = pos.getX() + ((i & 1) == 0 ? 0.05 : 0.95);
+                double by = pos.getY() + ((i & 2) == 0 ? 0.05 : 0.95);
+                double bz = pos.getZ() + ((i & 4) == 0 ? 0.05 : 0.95);
+                double[] p = new double[2];
+                if (!EspProjection.worldToScreen(bx, by, bz, p)) continue;
+                minX = Math.min(minX, p[0]);
+                minY = Math.min(minY, p[1]);
+                maxX = Math.max(maxX, p[0]);
+                maxY = Math.max(maxY, p[1]);
+                visible++;
+            }
+            if (visible < 2) continue;
+            if (maxX - minX < 4) { double c = (minX + maxX) * 0.5; minX = c - 2; maxX = c + 2; }
+            if (maxY - minY < 4) { double c = (minY + maxY) * 0.5; minY = c - 2; maxY = c + 2; }
+            EspDraw.box(g, minX, minY, maxX, maxY, col, 1);
         }
     }
 }

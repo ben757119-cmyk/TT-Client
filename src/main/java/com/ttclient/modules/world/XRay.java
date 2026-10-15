@@ -17,9 +17,7 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Ore ESP / soft xray — scans and boxes ores (true opacity xray needs mixins).
- */
+/** Ore ESP with correct world projection. */
 public class XRay extends Module {
     public final BoolSetting diamonds = addSetting(new BoolSetting("Diamonds", "Diamond ore", true));
     public final BoolSetting ancientDebris = addSetting(new BoolSetting("Debris", "Ancient debris", true));
@@ -36,17 +34,6 @@ public class XRay extends Module {
 
     public XRay() {
         super("XRay", "See ores through walls (ESP-style)", Category.WORLD);
-    }
-
-    @Override
-    public void onEnable() {
-        // Soft fullbright help while xray is on
-        Minecraft mc = mc();
-        if (mc != null && mc.options != null) {
-            try {
-                // gamma may not exist the same way — ignore failures
-            } catch (Throwable ignored) {}
-        }
     }
 
     @Override
@@ -105,15 +92,26 @@ public class XRay extends Module {
 
     @Override
     public void onRender2D(GuiGraphicsExtractor g, float partialTick) {
-        Minecraft mc = mc();
-        if (mc == null) return;
-        double[] s = new double[2];
         for (Hit h : hits) {
-            double x = h.pos.getX() + 0.5;
-            double y = h.pos.getY() + 0.5;
-            double z = h.pos.getZ() + 0.5;
-            if (!EspProjection.worldToScreen(x, y, z, s)) continue;
-            EspDraw.box(g, s[0] - 4, s[1] - 4, s[0] + 4, s[1] + 4, h.color, 1);
+            double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE;
+            double maxX = -Double.MAX_VALUE, maxY = -Double.MAX_VALUE;
+            int visible = 0;
+            for (int i = 0; i < 8; i++) {
+                double bx = h.pos.getX() + ((i & 1) == 0 ? 0.05 : 0.95);
+                double by = h.pos.getY() + ((i & 2) == 0 ? 0.05 : 0.95);
+                double bz = h.pos.getZ() + ((i & 4) == 0 ? 0.05 : 0.95);
+                double[] p = new double[2];
+                if (!EspProjection.worldToScreen(bx, by, bz, p)) continue;
+                minX = Math.min(minX, p[0]);
+                minY = Math.min(minY, p[1]);
+                maxX = Math.max(maxX, p[0]);
+                maxY = Math.max(maxY, p[1]);
+                visible++;
+            }
+            if (visible < 2) continue;
+            if (maxX - minX < 3) { double c = (minX + maxX) * 0.5; minX = c - 1.5; maxX = c + 1.5; }
+            if (maxY - minY < 3) { double c = (minY + maxY) * 0.5; minY = c - 1.5; maxY = c + 1.5; }
+            EspDraw.box(g, minX, minY, maxX, maxY, h.color, 1);
         }
     }
 
