@@ -17,9 +17,7 @@ import net.minecraft.world.phys.HitResult;
 
 /**
  * Spoofs fall distance so mace hits can deal smash-style damage without falling.
- *
  * Fully effective in singleplayer / weak servers that trust client fallDistance.
- * Strict anti-cheats compute smash on the server and will ignore this.
  */
 public class MaceHack extends Module {
     public final NumberSetting spoofFall = addSetting(new NumberSetting(
@@ -41,7 +39,6 @@ public class MaceHack extends Module {
         super("MaceHack", "Mace smash damage without falling", Category.COMBAT);
     }
 
-    /** Apply spoofed fall distance for smash calculation. */
     public static void applySpoof(LocalPlayer p, float fall) {
         if (p == null) return;
         try {
@@ -50,7 +47,6 @@ public class MaceHack extends Module {
         try {
             p.setOnGround(false);
         } catch (Throwable ignored) {}
-        // Nudge velocity downward so some validators see a falling state
         try {
             var v = p.getDeltaMovement();
             if (v.y > -0.08) {
@@ -76,10 +72,14 @@ public class MaceHack extends Module {
             if (mods == null) return 22f;
             MaceHack h = mods.getModule(MaceHack.class);
             if (h == null) return 22f;
-            return (float) h.spoofFall.get();
+            return (float) h.spoofFall.get().doubleValue();
         } catch (Throwable t) {
             return 22f;
         }
+    }
+
+    private float fallValue() {
+        return (float) spoofFall.get().doubleValue();
     }
 
     @Override
@@ -99,22 +99,21 @@ public class MaceHack extends Module {
 
         if (!holdingMace) return;
 
+        float fall = fallValue();
+
         if (always.get()) {
-            applySpoof(p, (float) spoofFall.get());
+            applySpoof(p, fall);
         }
 
-        // Spoof when pressing attack (melee click)
         if (onHit.get() && mc.options != null && mc.options.keyAttack.isDown()) {
-            applySpoof(p, (float) spoofFall.get());
+            applySpoof(p, fall);
         }
 
-        // Optional built-in aura
         if (!autoSwing.get()) return;
         if (timer > 0) { timer--; return; }
 
         LivingEntity target = findTarget(mc, p);
         if (target == null) {
-            // Crosshair entity
             try {
                 HitResult hr = mc.hitResult;
                 if (hr instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity le && le.isAlive()) {
@@ -124,13 +123,12 @@ public class MaceHack extends Module {
         }
         if (target == null) return;
 
-        applySpoof(p, (float) spoofFall.get());
+        applySpoof(p, fall);
         try {
             mc.gameMode.attack(p, target);
             p.swing(InteractionHand.MAIN_HAND);
         } catch (Throwable ignored) {}
-        // Keep spoof a moment after hit
-        applySpoof(p, (float) spoofFall.get());
+        applySpoof(p, fall);
         timer = cooldown.getInt();
     }
 
