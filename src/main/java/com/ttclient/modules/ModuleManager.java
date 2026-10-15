@@ -25,7 +25,6 @@ public class ModuleManager {
         register(new Keystrokes());
         register(new ArrayListMod());
 
-        // Combat / CPVP
         register(new KillAura());
         register(new AimAssist());
         register(new TriggerBot());
@@ -43,7 +42,7 @@ public class ModuleManager {
         register(new AutoArmorSwap());
         register(new WTap());
 
-        // Mace
+        register(new MaceHack());
         register(new MaceAura());
         register(new MaceSwap());
         register(new WindChargeAssist());

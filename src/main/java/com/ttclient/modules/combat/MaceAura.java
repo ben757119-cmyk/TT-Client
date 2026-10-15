@@ -13,14 +13,12 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 
-/**
- * Mace-focused aura: selects mace and hits when airborne/falling for smash potential.
- */
+/** Mace aura — uses MaceHack spoof when that module is on. */
 public class MaceAura extends Module {
     public final NumberSetting range = addSetting(new NumberSetting("Range", "Attack range", 4.5, 2, 6, 0.1));
     public final NumberSetting cooldown = addSetting(new NumberSetting("Cooldown", "Ticks between hits", 12, 0, 30, 1));
     public final BoolSetting onlyPlayers = addSetting(new BoolSetting("PlayersOnly", "Only players", true));
-    public final BoolSetting requireFall = addSetting(new BoolSetting("RequireFall", "Only while falling/airborne", true));
+    public final BoolSetting requireFall = addSetting(new BoolSetting("RequireFall", "Only while falling (off if MaceHack on)", true));
     public final BoolSetting autoSwap = addSetting(new BoolSetting("AutoSwap", "Switch to mace", true));
     public final NumberSetting minFall = addSetting(new NumberSetting("MinFall", "Min fall distance", 1.5, 0, 20, 0.5));
 
@@ -47,8 +45,9 @@ public class MaceAura extends Module {
         if (timer > 0) { timer--; return; }
 
         LocalPlayer p = mc.player;
+        boolean hack = MaceHack.isActive();
 
-        if (requireFall.get()) {
+        if (requireFall.get() && !hack) {
             boolean airborne = !p.onGround();
             boolean falling = p.fallDistance >= minFall.get() || p.getDeltaMovement().y < -0.1;
             if (!airborne && !falling) return;
@@ -67,8 +66,17 @@ public class MaceAura extends Module {
             return;
         }
 
+        if (hack) {
+            MaceHack.applySpoof(p, MaceHack.spoofAmount());
+        }
+
         mc.gameMode.attack(p, target);
         p.swing(InteractionHand.MAIN_HAND);
+
+        if (hack) {
+            MaceHack.applySpoof(p, MaceHack.spoofAmount());
+        }
+
         timer = cooldown.getInt();
     }
 
