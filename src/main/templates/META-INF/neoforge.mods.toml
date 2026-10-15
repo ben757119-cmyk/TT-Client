@@ -13,7 +13,7 @@ Sharp ClickGUI (Right Shift), HUD, movement helpers. No vanilla menu blur.
 [[dependencies.${mod_id}]]
     modId="neoforge"
     type="required"
-    versionRange="[${neo_version},)"
+    versionRange="[26.2.0.64,)"
     ordering="NONE"
     side="CLIENT"
 
