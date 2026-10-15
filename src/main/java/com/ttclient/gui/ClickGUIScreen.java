@@ -77,7 +77,7 @@ public class ClickGUIScreen extends Screen {
         graphics.fill(SEARCH_X, SEARCH_Y, SEARCH_X + 2, SEARCH_Y + SEARCH_H, accent());
         String shown = searchQuery.isEmpty() ? (searchFocused ? "Search modules…" : "Click to search") : searchQuery + (searchFocused ? "_" : "");
         graphics.text(this.font, shown, SEARCH_X + 8, SEARCH_Y + 4, searchQuery.isEmpty() ? TEXT_DIM : 0xFFE8EAED, false);
-        graphics.text(this.font, "TT Client v" + TTClient.VERSION + "  ·  BlockESP: ttblock add <id>", SEARCH_X + SEARCH_W + 12, SEARCH_Y + 4, accent(), false);
+        graphics.text(this.font, "TT Client v" + TTClient.VERSION + "  ·  .b add <block>", SEARCH_X + SEARCH_W + 12, SEARCH_Y + 4, accent(), false);
         for (Panel panel : panelList) panel.render(graphics, mouseX, mouseY);
         if (hoveredModule != null && typing == null) {
             String title = hoveredModule.getName();
@@ -98,14 +98,18 @@ public class ClickGUIScreen extends Screen {
     }
 
     @Override public void onClose() {
-        commitTyping(true); sliding = null; super.onClose();
+        commitTyping(true); sliding = null;
+        for (Panel p : panelList) if (p.expanded instanceof BlockESP be) be.uiSearchFocused = false;
+        super.onClose();
         if (TTClientClient.config != null) TTClientClient.config.save();
     }
 
     @Override public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         double mouseX = event.x(), mouseY = event.y(); int button = event.button();
         if (button == 0 && mouseX >= SEARCH_X && mouseX <= SEARCH_X + SEARCH_W && mouseY >= SEARCH_Y && mouseY <= SEARCH_Y + SEARCH_H) {
-            searchFocused = true; commitTyping(true); return true;
+            searchFocused = true; commitTyping(true);
+            for (Panel p : panelList) if (p.expanded instanceof BlockESP be) be.uiSearchFocused = false;
+            return true;
         }
         if (button == 0) searchFocused = false;
         for (int i = panelList.size() - 1; i >= 0; i--) if (panelList.get(i).mouseClicked(mouseX, mouseY, button)) return true;
@@ -133,10 +137,10 @@ public class ClickGUIScreen extends Screen {
 
     @Override public boolean keyPressed(KeyEvent event) {
         int keyCode = event.key();
-        // BlockESP list search when expanded
         if (typing == null && bindingModule == null) {
             for (Panel panel : panelList) {
-                if (panel.expanded instanceof BlockESP be) {
+                if (panel.expanded instanceof BlockESP be && be.uiSearchFocused) {
+                    if (keyCode == GLFW.GLFW_KEY_ESCAPE) { be.uiSearchFocused = false; return true; }
                     if (keyCode == GLFW.GLFW_KEY_BACKSPACE && be.uiSearch != null && !be.uiSearch.isEmpty()) {
                         be.uiSearch = be.uiSearch.substring(0, be.uiSearch.length() - 1); return true;
                     }
@@ -146,6 +150,7 @@ public class ClickGUIScreen extends Screen {
                         if (keyCode >= GLFW.GLFW_KEY_0 && keyCode <= GLFW.GLFW_KEY_9) { be.uiSearch += (char)('0'+(keyCode-GLFW.GLFW_KEY_0)); return true; }
                         if (keyCode == GLFW.GLFW_KEY_MINUS) { be.uiSearch += '_'; return true; }
                     }
+                    return true;
                 }
             }
         }
@@ -211,9 +216,11 @@ public class ClickGUIScreen extends Screen {
                     for (Setting<?> s : mod.getSettings()) bodyH += settingRowHeight(s);
                     bodyH += SETTING_H;
                     if (mod instanceof BlockESP be) {
-                        bodyH += SETTING_H;
-                        bodyH += Math.min(6, be.searchRegistry(be.uiSearch, 6).size()) * SETTING_H;
-                        bodyH += Math.min(8, be.getSelected().size()) * SETTING_H;
+                        bodyH += SETTING_H; // help
+                        bodyH += SETTING_H; // search
+                        bodyH += Math.min(5, be.searchRegistry(be.uiSearch, 5).size()) * SETTING_H;
+                        bodyH += SETTING_H; // selected header
+                        bodyH += Math.min(6, be.getSelected().size()) * SETTING_H;
                     }
                 }
             }
@@ -264,14 +271,22 @@ public class ClickGUIScreen extends Screen {
                     g.text(font, "Bind: " + keyName(mod.getKeyBind()), ix + 10, my + 2, accent(), false);
                     my += SETTING_H;
                     if (mod instanceof BlockESP be) {
-                        String q = be.uiSearch == null ? "" : be.uiSearch;
-                        g.text(font, "Search: " + (q.isEmpty() ? "type id..." : q + "_"), ix + 10, my + 2, accent(), false);
+                        g.text(font, "Chat: .b add <block>", ix + 10, my + 2, TEXT_DIM, false);
                         my += SETTING_H;
-                        for (String id : be.searchRegistry(q, 6)) {
+                        String q = be.uiSearch == null ? "" : be.uiSearch;
+                        boolean foc = be.uiSearchFocused;
+                        g.fill(ix + 6, my, ix + width - 6, my + SETTING_H - 1, foc ? 0xFF1A2A24 : 0xFF151A22);
+                        String sShown = q.isEmpty() ? (foc ? "type block id..." : "click to search") : q + (foc ? "_" : "");
+                        g.text(font, sShown, ix + 10, my + 2, foc ? accent() : TEXT_DIM, false);
+                        my += SETTING_H;
+                        for (String id : be.searchRegistry(q, 5)) {
                             String shortId = id.startsWith("minecraft:") ? id.substring(10) : id;
+                            if (shortId.length() > 16) shortId = shortId.substring(0, 14) + "..";
                             g.text(font, "+ " + shortId, ix + 10, my + 2, 0xFF8BFFB0, false);
                             my += SETTING_H;
                         }
+                        g.text(font, "Selected (click remove)", ix + 10, my + 2, TEXT_DIM, false);
+                        my += SETTING_H;
                         for (String id : be.getSelected()) {
                             String shortId = id.startsWith("minecraft:") ? id.substring(10) : id;
                             if (shortId.length() > 16) shortId = shortId.substring(0, 14) + "..";
@@ -294,7 +309,12 @@ public class ClickGUIScreen extends Screen {
             for (Module mod : mods) {
                 if (mouseX >= x && mouseX <= x + width && mouseY >= my && mouseY <= my + ROW_H) {
                     if (button == 0) { commitTyping(true); mod.toggle(); return true; }
-                    if (button == 1) { commitTyping(true); expanded = (expanded == mod) ? null : mod; return true; }
+                    if (button == 1) {
+                        commitTyping(true);
+                        if (expanded instanceof BlockESP be) be.uiSearchFocused = false;
+                        expanded = (expanded == mod) ? null : mod;
+                        return true;
+                    }
                     if (button == 2) { startBinding(mod); return true; }
                 }
                 my += ROW_H;
@@ -317,16 +337,24 @@ public class ClickGUIScreen extends Screen {
                     if (mouseX >= x + 2 && mouseX <= x + width - 2 && mouseY >= my && mouseY <= my + SETTING_H) { startBinding(mod); return true; }
                     my += SETTING_H;
                     if (mod instanceof BlockESP be && button == 0) {
-                        my += SETTING_H; // skip search label row
-                        for (String id : be.searchRegistry(be.uiSearch, 6)) {
+                        my += SETTING_H; // help
+                        if (mouseX >= x + 2 && mouseX <= x + width - 2 && mouseY >= my && mouseY <= my + SETTING_H) {
+                            be.uiSearchFocused = true; searchFocused = false; return true;
+                        }
+                        be.uiSearchFocused = false;
+                        my += SETTING_H;
+                        for (String id : be.searchRegistry(be.uiSearch, 5)) {
                             if (mouseX >= x + 2 && mouseX <= x + width - 2 && mouseY >= my && mouseY <= my + SETTING_H) {
-                                be.addBlock(id); if (TTClientClient.config != null) TTClientClient.config.save(); return true;
+                                be.addBlock(id); be.uiSearch = "";
+                                if (TTClientClient.config != null) TTClientClient.config.save(); return true;
                             }
                             my += SETTING_H;
                         }
+                        my += SETTING_H; // selected header
                         for (String id : new ArrayList<>(be.getSelected())) {
                             if (mouseX >= x + 2 && mouseX <= x + width - 2 && mouseY >= my && mouseY <= my + SETTING_H) {
-                                be.removeBlock(id); if (TTClientClient.config != null) TTClientClient.config.save(); return true;
+                                be.removeBlock(id);
+                                if (TTClientClient.config != null) TTClientClient.config.save(); return true;
                             }
                             my += SETTING_H;
                         }
