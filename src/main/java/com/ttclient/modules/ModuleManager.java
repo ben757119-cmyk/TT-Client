@@ -53,6 +53,7 @@ public class ModuleManager {
         register(new AutoJump());
         register(new ToggleSneak());
         register(new Fly());
+        register(new WarpNearest());
         register(new AntiFlightKick());
         register(new Speed());
         register(new Velocity());
