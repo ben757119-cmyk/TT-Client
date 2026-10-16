@@ -1,5 +1,6 @@
 package com.ttclient.modules.combat;
 
+import com.ttclient.client.TTClientClient;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
@@ -21,12 +22,14 @@ import net.minecraft.world.phys.Vec3;
 
 /**
  * When you place a respawn anchor, auto-charge it with glowstone then detonate.
+ * Optional: use Rage reach for scan / interact range.
  */
 public class OneClickAnchors extends Module {
     public final NumberSetting charges = addSetting(new NumberSetting("Charges", "Glowstone charges before explode (1-4)", 4, 1, 4, 1));
     public final NumberSetting delay = addSetting(new NumberSetting("Delay", "Ticks between charge/explode actions", 1, 0, 10, 1));
-    public final NumberSetting range = addSetting(new NumberSetting("Range", "Scan range for your placed anchors", 6.0, 2.0, 12.0, 0.5));
-    public final BoolSetting onlyOwn = addSetting(new BoolSetting("OnlyOwn", "Only process anchors you just placed / look at", true));
+    public final NumberSetting range = addSetting(new NumberSetting("Range", "Scan range when Rage is off", 6.0, 2.0, 64.0, 0.5));
+    public final BoolSetting useRage = addSetting(new BoolSetting("UseRageRange", "Use Rage reach when Rage is enabled", true));
+    public final BoolSetting onlyOwn = addSetting(new BoolSetting("OnlyOwn", "Prefer nearby / looked-at anchors", true));
     public final BoolSetting switchBack = addSetting(new BoolSetting("SwitchBack", "Restore hotbar slot after actions", true));
 
     private BlockPos target;
@@ -44,6 +47,17 @@ public class OneClickAnchors extends Module {
         prevSlot = -1;
     }
 
+    private double effectiveRange() {
+        double r = range.get();
+        if (useRage.get() && TTClientClient.modules != null) {
+            Rage rage = TTClientClient.modules.getModule(Rage.class);
+            if (rage != null && rage.isEnabled()) {
+                r = Math.max(r, rage.reach.get());
+            }
+        }
+        return r;
+    }
+
     @Override
     public void onTick() {
         Minecraft mc = mc();
@@ -55,11 +69,13 @@ public class OneClickAnchors extends Module {
             return;
         }
 
+        double r = effectiveRange();
+
         BlockPos looked = lookingAtAnchor(mc);
         if (looked != null) {
             target = looked;
         } else if (target == null || !isAnchor(mc, target)) {
-            target = findNearbyAnchor(mc, p);
+            target = findNearbyAnchor(mc, p, r);
         }
 
         if (target == null) return;
@@ -69,7 +85,6 @@ public class OneClickAnchors extends Module {
         }
 
         double distSq = p.distanceToSqr(target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5);
-        double r = range.get();
         if (distSq > r * r) {
             target = null;
             return;
@@ -85,18 +100,14 @@ public class OneClickAnchors extends Module {
         if (c < want) {
             if (doCharge(mc, p, target)) {
                 cooldown = delay.getInt();
-            } else {
-                if (c >= 1 && doExplode(mc, p, target)) {
-                    finish(p);
-                }
+            } else if (c >= 1 && doExplode(mc, p, target)) {
+                finish(p);
             }
             return;
         }
 
-        if (c >= 1) {
-            if (doExplode(mc, p, target)) {
-                finish(p);
-            }
+        if (c >= 1 && doExplode(mc, p, target)) {
+            finish(p);
         }
     }
 
@@ -119,10 +130,11 @@ public class OneClickAnchors extends Module {
         return null;
     }
 
-    private BlockPos findNearbyAnchor(Minecraft mc, LocalPlayer p) {
+    private BlockPos findNearbyAnchor(Minecraft mc, LocalPlayer p, double r) {
         BlockPos base = p.blockPosition();
-        int reach = onlyOwn.get() ? 3 : (int) Math.ceil(range.get());
-        double maxD = onlyOwn.get() ? 4.0 * 4.0 : range.get() * range.get();
+        int reach = onlyOwn.get() ? Math.min(4, (int) Math.ceil(r)) : Math.min(16, (int) Math.ceil(r));
+        double maxD = r * r;
+        if (onlyOwn.get()) maxD = Math.min(maxD, 6.0 * 6.0);
         BlockPos best = null;
         double bestD = maxD;
         for (BlockPos pos : BlockPos.betweenClosed(base.offset(-reach, -2, -reach), base.offset(reach, 3, reach))) {
@@ -160,11 +172,7 @@ public class OneClickAnchors extends Module {
         if (p.getMainHandItem().is(Items.GLOWSTONE) || p.getMainHandItem().is(Items.RESPAWN_ANCHOR)) {
             for (int i = 0; i < 9; i++) {
                 ItemStack s = p.getInventory().getItem(i);
-                if (s.isEmpty()) {
-                    InvUtils.selectHotbar(p, i);
-                    break;
-                }
-                if (!s.is(Items.GLOWSTONE) && !s.is(Items.RESPAWN_ANCHOR)) {
+                if (s.isEmpty() || (!s.is(Items.GLOWSTONE) && !s.is(Items.RESPAWN_ANCHOR))) {
                     InvUtils.selectHotbar(p, i);
                     break;
                 }
