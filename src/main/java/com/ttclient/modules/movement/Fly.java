@@ -8,17 +8,15 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.phys.Vec3;
 
-/**
- * Velocity-based fly (yaw only). Does not enable creative flying ability by default
- * so AntiFlightKick / servers see less of the vanilla fly flag.
- */
+/** Velocity-based fly — high max speed. */
 public class Fly extends Module {
-    public final NumberSetting speed = addSetting(new NumberSetting("Speed", "Fly speed", 1.0, 0.2, 5.0, 0.1));
+    public final NumberSetting speed = addSetting(new NumberSetting("Speed", "Fly speed", 2.0, 0.2, 50.0, 0.1));
+    public final NumberSetting verticalMul = addSetting(new NumberSetting("Vertical", "Vertical speed multiplier", 1.0, 0.2, 3.0, 0.1));
     public final BoolSetting useAbility = addSetting(new BoolSetting(
             "CreativeFlag", "Set abilities.flying (easier control, easier kicks)", false));
 
     public Fly() {
-        super("Fly", "Fly with equal speed in every direction (yaw-based)", Category.MOVEMENT);
+        super("Fly", "Fly fast — equal speed every direction", Category.MOVEMENT);
     }
 
     @Override
@@ -27,7 +25,6 @@ public class Fly extends Module {
         if (mc == null || mc.player == null || mc.options == null) return;
         LocalPlayer p = mc.player;
 
-        // Prefer velocity fly without the creative ability bit
         if (useAbility.get()) {
             p.getAbilities().flying = true;
             p.getAbilities().mayfly = true;
@@ -37,17 +34,13 @@ public class Fly extends Module {
 
         p.fallDistance = 0;
 
-        double s = speed.get() * 0.5;
+        // Direct speed — no 0.5 dampen so slider matches feel
+        double s = speed.get();
         Vec3 move = horizontalMove(p.getYRot(), s, mc);
         double my = 0;
-        if (mc.options.keyJump.isDown()) my += s;
-        if (mc.options.keyShift.isDown()) my -= s;
-
-        // Cancel gravity when not holding vertical keys
-        if (my == 0 && !useAbility.get()) {
-            // Hold altitude — zero Y velocity when idle vertically
-            my = 0;
-        }
+        double vs = s * verticalMul.get();
+        if (mc.options.keyJump.isDown()) my += vs;
+        if (mc.options.keyShift.isDown()) my -= vs;
 
         p.setDeltaMovement(move.x, my, move.z);
         p.setOnGround(false);

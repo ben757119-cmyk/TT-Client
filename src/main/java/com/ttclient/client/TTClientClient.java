@@ -29,6 +29,9 @@ public class TTClientClient {
     public static ModuleManager modules;
     public static ConfigManager config;
 
+    /** Mouse binds stored as 2000 + GLFW mouse button index. */
+    public static final int MOUSE_BIND_BASE = 2000;
+
     public TTClientClient() {
         modules = new ModuleManager();
         TTClient.modules = modules;
@@ -112,7 +115,33 @@ public class TTClientClient {
             if (mod instanceof ClickGUIModule) continue;
             if (mod instanceof StreamerMode) continue;
             int bind = mod.getKeyBind();
-            if (bind > 0 && bind == key) {
+            if (bind > 0 && bind < MOUSE_BIND_BASE && bind == key) {
+                mod.toggle();
+                if (config != null) config.save();
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public void onMouse(InputEvent.MouseButton.Post event) {
+        if (modules == null) return;
+        if (event.getAction() != GLFW.GLFW_PRESS) return;
+
+        int button = event.getButton();
+        // Only side/extra buttons for module toggles (avoid breaking LMB/RMB)
+        if (button != GLFW.GLFW_MOUSE_BUTTON_4 && button != GLFW.GLFW_MOUSE_BUTTON_5
+                && button != GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
+            return;
+        }
+
+        Minecraft mc = Minecraft.getInstance();
+        Screen screen = currentScreen(mc);
+        if (screen != null) return;
+
+        int code = MOUSE_BIND_BASE + button;
+        for (Module mod : modules.getModules()) {
+            if (mod instanceof ClickGUIModule) continue;
+            if (mod.getKeyBind() == code) {
                 mod.toggle();
                 if (config != null) config.save();
             }
@@ -146,10 +175,6 @@ public class TTClientClient {
         if (game != null && game.isEnabled()) game.handleChat(text);
     }
 
-    /**
- * Meteor-style: any message starting with {@code .} is client-only.
-     * Never sent to the server — including {@code .} alone or unknown {@code .adjad}.
-     */
     @SubscribeEvent
     public void onChatSend(ClientChatEvent event) {
         try {
