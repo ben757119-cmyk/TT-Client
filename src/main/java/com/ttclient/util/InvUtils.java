@@ -9,13 +9,15 @@ import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
+import java.lang.reflect.Method;
+
 /**
  * Hotbar / offhand helpers with real server packets (no ghost swaps).
+ * Inventory clicks use reflection so we work whether the enum is ClickType or SlotActionType.
  */
 public final class InvUtils {
     private InvUtils() {}
@@ -114,7 +116,9 @@ public final class InvUtils {
         for (int i = 9; i < 36; i++) {
             if (inv.getItem(i).is(item)) return i;
         }
-        if (inv.getItem(40).is(item)) return 40;
+        try {
+            if (inv.getItem(40).is(item)) return 40;
+        } catch (Throwable ignored) {}
         return -1;
     }
 
@@ -167,10 +171,6 @@ public final class InvUtils {
         return false;
     }
 
-    /**
- * Select + F-swap in one call (legacy). Prefer AutoTotem state machine for reliability.
-     * Does not restore previous slot in the same tick.
-     */
     public static boolean swapHotbarOffhand(LocalPlayer p, int hotbarSlot) {
         if (hotbarSlot < 0 || hotbarSlot > 8) return false;
         if (!selectHotbar(p, hotbarSlot)) return false;
@@ -210,30 +210,16 @@ public final class InvUtils {
         int menuSlot = toMenuSlot(invIndex);
         if (menuSlot < 0) return false;
 
-        int syncId;
-        try {
-            syncId = p.inventoryMenu.containerId;
-        } catch (Throwable t) {
-            try {
-                syncId = p.containerMenu.containerId;
-            } catch (Throwable t2) {
-                return false;
-            }
-        }
+        int syncId = inventorySyncId(p);
+        if (syncId < 0) return false;
 
-        try {
-            mc.gameMode.handleInventoryMouseClick(syncId, menuSlot, 40, ClickType.SWAP, p);
+        if (invClick(mc, syncId, menuSlot, 40, "SWAP", p)) return true;
+        if (invClick(mc, syncId, menuSlot, 0, "PICKUP", p)
+                && invClick(mc, syncId, OFFHAND_MENU_SLOT, 0, "PICKUP", p)) {
+            invClick(mc, syncId, menuSlot, 0, "PICKUP", p);
             return true;
-        } catch (Throwable t) {
-            try {
-                mc.gameMode.handleInventoryMouseClick(syncId, menuSlot, 0, ClickType.PICKUP, p);
-                mc.gameMode.handleInventoryMouseClick(syncId, OFFHAND_MENU_SLOT, 0, ClickType.PICKUP, p);
-                mc.gameMode.handleInventoryMouseClick(syncId, menuSlot, 0, ClickType.PICKUP, p);
-                return true;
-            } catch (Throwable t2) {
-                return false;
-            }
         }
+        return false;
     }
 
     private static boolean clickSwapSlots(LocalPlayer p, int fromInv, int toHotbar) {
@@ -241,17 +227,50 @@ public final class InvUtils {
         if (mc == null || mc.gameMode == null) return false;
         int from = toMenuSlot(fromInv);
         if (from < 0 || toHotbar < 0 || toHotbar > 8) return false;
-        int syncId;
+        int syncId = inventorySyncId(p);
+        if (syncId < 0) return false;
+        return invClick(mc, syncId, from, toHotbar, "SWAP", p);
+    }
+
+    private static int inventorySyncId(LocalPlayer p) {
         try {
-            syncId = p.inventoryMenu.containerId;
+            return p.inventoryMenu.containerId;
         } catch (Throwable t) {
-            return false;
+            try {
+                return p.containerMenu.containerId;
+            } catch (Throwable t2) {
+                return -1;
+            }
         }
-        try {
-            mc.gameMode.handleInventoryMouseClick(syncId, from, toHotbar, ClickType.SWAP, p);
-            return true;
-        } catch (Throwable t) {
-            return false;
+    }
+
+    private static boolean invClick(Minecraft mc, int syncId, int slot, int button, String typeName, Player p) {
+        String[] enumClasses = {
+                "net.minecraft.world.inventory.SlotActionType",
+                "net.minecraft.world.inventory.ClickType"
+        };
+        Object action = null;
+        for (String enumClass : enumClasses) {
+            try {
+                Class<?> ctCls = Class.forName(enumClass);
+                @SuppressWarnings({ "unchecked", "rawtypes" })
+                Object a = Enum.valueOf((Class<? extends Enum>) ctCls.asSubclass(Enum.class), typeName);
+                action = a;
+                break;
+            } catch (Throwable ignored) {}
         }
+        if (action == null) return false;
+
+        for (Method m : mc.gameMode.getClass().getMethods()) {
+            if (!m.getName().equals("handleInventoryMouseClick")
+                    && !m.getName().equals("handleContainerClick"))
+                continue;
+            if (m.getParameterCount() != 5) continue;
+            try {
+                m.invoke(mc.gameMode, syncId, slot, button, action, p);
+                return true;
+            } catch (Throwable ignored) {}
+        }
+        return false;
     }
 }
