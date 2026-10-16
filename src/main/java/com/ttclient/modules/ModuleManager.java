@@ -31,6 +31,7 @@ public class ModuleManager {
         register(new AutoClicker());
         register(new Criticals());
         register(new Reach());
+        register(new Rage());
         register(new Hitboxes());
         register(new AutoCrystal());
         register(new Surround());
