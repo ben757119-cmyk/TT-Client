@@ -20,9 +20,12 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
- * Place / charge / detonate respawn anchors.
- * Placement is mid-air only (body/head height around target), not on the ground.
+ * Mid-air anchor place/charge/explode.
+ * Predicts fast targets; places only ONE anchor until that one is done (exploded/gone).
  */
 public class AnchorAura extends Module {
     public final NumberSetting range = addSetting(new NumberSetting("Range", "Base range", 5.0, 2.0, 256.0, 0.5));
@@ -36,13 +39,17 @@ public class AnchorAura extends Module {
     public final NumberSetting safeDist = addSetting(new NumberSetting("SafeDist", "Max distance to place safety glowstone", 5.0, 1.0, 12.0, 0.5));
     public final NumberSetting charges = addSetting(new NumberSetting("Charges", "Glowstone charges before explode (1-4)", 4, 1, 4, 1));
     public final NumberSetting airHeight = addSetting(new NumberSetting("AirHeight", "Blocks above feet to place (1-3)", 1, 1, 3, 1));
+    public final BoolSetting predict = addSetting(new BoolSetting("Predict", "Lead mid-air place when target is moving fast", true));
+    public final NumberSetting predictTicks = addSetting(new NumberSetting("PredictTicks", "Ticks of movement to lead", 4, 0, 15, 1));
+    public final NumberSetting predictMinSpeed = addSetting(new NumberSetting("MinSpeed", "Min horizontal speed to start predicting", 0.18, 0.0, 1.0, 0.02));
 
     private int timer;
     private BlockPos pendingExplode;
+    /** Single active anchor — no second place until this is gone. */
     private BlockPos trackedAnchor;
 
     public AnchorAura() {
-        super("AnchorAura", "Mid-air place/charge/explode anchors", Category.COMBAT);
+        super("AnchorAura", "Mid-air anchors — predict + one at a time", Category.COMBAT);
     }
 
     @Override
@@ -107,8 +114,10 @@ public class AnchorAura extends Module {
         double r = effectiveRange();
         Player target = nearestEnemy(mc, p, r);
 
+        // Clear tracked if destroyed / exploded
         if (trackedAnchor != null && !mc.level.getBlockState(trackedAnchor).is(Blocks.RESPAWN_ANCHOR)) {
             trackedAnchor = null;
+            pendingExplode = null;
         }
 
         if (pendingExplode != null && explode.get()) {
@@ -122,9 +131,16 @@ public class AnchorAura extends Module {
             }
         }
 
-        BlockPos existing = findBestAnchor(mc, p, target, r);
+        // Prefer the single tracked anchor, else find one near target
+        BlockPos existing = null;
+        if (trackedAnchor != null && mc.level.getBlockState(trackedAnchor).is(Blocks.RESPAWN_ANCHOR)) {
+            existing = trackedAnchor;
+        } else {
+            existing = findBestAnchor(mc, p, target, r);
+            if (existing != null) trackedAnchor = existing;
+        }
+
         if (existing != null) {
-            trackedAnchor = existing;
             int c = getCharges(mc.level.getBlockState(existing));
             int want = charges.getInt();
 
@@ -133,6 +149,8 @@ public class AnchorAura extends Module {
                     timer = delay.getInt();
                     return;
                 }
+                timer = delay.getInt();
+                return; // one-at-a-time: keep working this anchor
             }
 
             boolean readyToPop = c >= 1 && c >= want && explode.get();
@@ -154,20 +172,18 @@ public class AnchorAura extends Module {
                     timer = delay.getInt();
                     return;
                 }
+                timer = delay.getInt();
+                return;
             }
 
-            if (c < want && charge.get()) {
-                timer = delay.getInt();
-                return;
-            }
-            if (readyToPop) {
-                timer = delay.getInt();
-                return;
-            }
+            // Anchor exists but not ready — do NOT place another
+            timer = delay.getInt();
+            return;
         }
 
-        if (place.get() && target != null) {
-            BlockPos placed = doPlaceMidAir(mc, p, r, target);
+        // Only place when we have no active tracked anchor
+        if (place.get() && target != null && trackedAnchor == null) {
+            BlockPos placed = doPlaceMidAirPredicted(mc, p, r, target);
             if (placed != null) {
                 trackedAnchor = placed;
                 timer = delay.getInt();
@@ -175,16 +191,123 @@ public class AnchorAura extends Module {
         }
     }
 
-    private BlockPos findBestAnchor(Minecraft mc, LocalPlayer p, Player target, double r) {
-        if (trackedAnchor != null && mc.level.getBlockState(trackedAnchor).is(Blocks.RESPAWN_ANCHOR)) {
-            double d = p.distanceToSqr(trackedAnchor.getX() + 0.5, trackedAnchor.getY() + 0.5, trackedAnchor.getZ() + 0.5);
-            if (d <= r * r + 4) return trackedAnchor;
+    /** Predicted feet position for fast-moving targets. */
+    private BlockPos predictedFeet(Player target) {
+        BlockPos now = target.blockPosition();
+        if (!predict.get()) return now;
+
+        Vec3 vel = target.getDeltaMovement();
+        double horiz = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+        if (horiz < predictMinSpeed.get()) return now;
+
+        double ticks = predictTicks.get();
+        // Lead slightly more when sprinting / very fast
+        if (horiz > 0.35) ticks += 1.5;
+        if (horiz > 0.55) ticks += 1.5;
+
+        double px = target.getX() + vel.x * ticks;
+        double py = target.getY() + vel.y * ticks;
+        double pz = target.getZ() + vel.z * ticks;
+        return BlockPos.containing(px, py, pz);
+    }
+
+    private BlockPos doPlaceMidAirPredicted(Minecraft mc, LocalPlayer p, double r, Player target) {
+        int slot = InvUtils.findHotbar(p, Items.RESPAWN_ANCHOR);
+        if (slot < 0) return null;
+
+        BlockPos feet = predictedFeet(target);
+        // Also try current feet if prediction differs (hedge)
+        BlockPos curFeet = target.blockPosition();
+
+        int h = airHeight.getInt();
+        List<BlockPos> candidates = new ArrayList<>();
+        addMidAirRing(candidates, feet, h);
+        if (!feet.equals(curFeet)) {
+            addMidAirRing(candidates, curFeet, h);
+            // Blend: halfway between current and predicted
+            BlockPos mid = BlockPos.containing(
+                    (target.getX() + (feet.getX() + 0.5)) * 0.5,
+                    (target.getY() + feet.getY()) * 0.5,
+                    (target.getZ() + (feet.getZ() + 0.5)) * 0.5
+            );
+            addMidAirRing(candidates, mid, h);
         }
+
+        ShieldState st = new ShieldState(p);
+
+        for (BlockPos pos : candidates) {
+            if (!isReplaceable(mc, pos)) continue;
+            if (p.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > r * r) continue;
+            if (pos.equals(p.blockPosition()) || pos.equals(p.blockPosition().above())) continue;
+
+            if (tryPlaceMidAir(mc, p, slot, pos)) {
+                restoreShield(mc, p, st);
+                return pos;
+            }
+        }
+
+        restoreShield(mc, p, st);
+        return null;
+    }
+
+    private void addMidAirRing(List<BlockPos> out, BlockPos feet, int h) {
+        for (int dy = h; dy <= h + 1; dy++) {
+            BlockPos level = feet.above(dy);
+            out.add(level.north());
+            out.add(level.south());
+            out.add(level.east());
+            out.add(level.west());
+            out.add(level.north().east());
+            out.add(level.north().west());
+            out.add(level.south().east());
+            out.add(level.south().west());
+            if (dy == h + 1) out.add(level);
+        }
+    }
+
+    private boolean tryPlaceMidAir(Minecraft mc, LocalPlayer p, int slot, BlockPos placePos) {
+        if (tryPlaceAgainstNeighbor(mc, p, slot, placePos)) return true;
+
+        InvUtils.selectHotbar(p, slot);
+        for (Direction face : Direction.values()) {
+            BlockPos clickPos = placePos.relative(face.getOpposite());
+            Vec3 hit = Vec3.atCenterOf(placePos).subtract(
+                    face.getStepX() * 0.5,
+                    face.getStepY() * 0.5,
+                    face.getStepZ() * 0.5
+            );
+            BlockHitResult bhr = new BlockHitResult(hit, face, clickPos, false);
+            try {
+                mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, bhr);
+                p.swing(InteractionHand.MAIN_HAND);
+                if (!isReplaceable(mc, placePos)) return true;
+            } catch (Throwable ignored) {}
+        }
+
+        try {
+            BlockPos below = placePos.below();
+            Vec3 hit = new Vec3(placePos.getX() + 0.5, placePos.getY(), placePos.getZ() + 0.5);
+            BlockHitResult bhr = new BlockHitResult(hit, Direction.UP, below, false);
+            mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, bhr);
+            p.swing(InteractionHand.MAIN_HAND);
+            if (!isReplaceable(mc, placePos)) return true;
+        } catch (Throwable ignored) {}
+
+        return !isReplaceable(mc, placePos);
+    }
+
+    private BlockPos findBestAnchor(Minecraft mc, LocalPlayer p, Player target, double r) {
         if (target != null) {
             BlockPos found = scanAnchorsAround(mc, target.blockPosition(), 6, r, p);
             if (found != null) {
                 double d = p.distanceToSqr(found.getX() + 0.5, found.getY() + 0.5, found.getZ() + 0.5);
                 if (d <= r * r + 4) return found;
+            }
+            // Predicted area
+            BlockPos pred = predictedFeet(target);
+            if (!pred.equals(target.blockPosition())) {
+                found = scanAnchorsAround(mc, pred, 5, r, p);
+                if (found != null) return found;
             }
         }
         BlockPos best = scanAnchorsAround(mc, p.blockPosition(), (int) Math.min(48, Math.ceil(r)), r, p);
@@ -210,104 +333,6 @@ public class AnchorAura extends Module {
             }
         }
         return best;
-    }
-
-    /**
-     * Mid-air only: places at body/head height around the target (not ground ring).
-     */
-    private BlockPos doPlaceMidAir(Minecraft mc, LocalPlayer p, double r, Player target) {
-        int slot = InvUtils.findHotbar(p, Items.RESPAWN_ANCHOR);
-        if (slot < 0) return null;
-
-        BlockPos feet = target.blockPosition();
-        int h = airHeight.getInt();
-
-        // Strict mid-air ring: y = feet + h and feet + h + 1, never ground (dy=0)
-        java.util.ArrayList<BlockPos> candidates = new java.util.ArrayList<>();
-        for (int dy = h; dy <= h + 1; dy++) {
-            BlockPos level = feet.above(dy);
-            candidates.add(level.north());
-            candidates.add(level.south());
-            candidates.add(level.east());
-            candidates.add(level.west());
-            candidates.add(level.north().east());
-            candidates.add(level.north().west());
-            candidates.add(level.south().east());
-            candidates.add(level.south().west());
-            // directly above head (still air)
-            if (dy == h + 1) candidates.add(level);
-        }
-
-        ShieldState st = new ShieldState(p);
-
-        for (BlockPos pos : candidates) {
-            if (!isReplaceable(mc, pos)) continue;
-            if (p.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > r * r) continue;
-            if (pos.equals(p.blockPosition()) || pos.equals(p.blockPosition().above())) continue;
-
-            if (tryPlaceMidAir(mc, p, slot, pos)) {
-                restoreShield(mc, p, st);
-                return pos;
-            }
-        }
-
-        // Second pass: small mid-air cube (dy 1..3 only)
-        for (int dx = -2; dx <= 2; dx++) {
-            for (int dy = 1; dy <= 3; dy++) {
-                for (int dz = -2; dz <= 2; dz++) {
-                    if (dx == 0 && dz == 0 && dy <= 1) continue; // skip inside target torso-ish
-                    BlockPos pos = feet.offset(dx, dy, dz);
-                    if (!isReplaceable(mc, pos)) continue;
-                    if (p.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > r * r) continue;
-                    if (tryPlaceMidAir(mc, p, slot, pos)) {
-                        restoreShield(mc, p, st);
-                        return pos;
-                    }
-                }
-            }
-        }
-
-        restoreShield(mc, p, st);
-        return null;
-    }
-
-    /**
-     * Place into mid-air cell: prefer solid/anchor neighbors, then air-place click fallback.
-     */
-    private boolean tryPlaceMidAir(Minecraft mc, LocalPlayer p, int slot, BlockPos placePos) {
-        // 1) Normal: solid neighbor (including another mid-air anchor)
-        if (tryPlaceAgainstNeighbor(mc, p, slot, placePos)) return true;
-
-        // 2) Air-place fallback — click as if supporting faces exist (works on some servers / weak validation)
-        InvUtils.selectHotbar(p, slot);
-        for (Direction face : Direction.values()) {
-            BlockPos clickPos = placePos.relative(face.getOpposite());
-            Vec3 hit = Vec3.atCenterOf(placePos).subtract(
-                    face.getStepX() * 0.5,
-                    face.getStepY() * 0.5,
-                    face.getStepZ() * 0.5
-            );
-            BlockHitResult bhr = new BlockHitResult(hit, face, clickPos, false);
-            try {
-                var result = mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, bhr);
-                p.swing(InteractionHand.MAIN_HAND);
-                if (!isReplaceable(mc, placePos)) return true;
-                if (result != null && !isReplaceable(mc, placePos)) return true;
-            } catch (Throwable ignored) {}
-        }
-
-        // 3) Click underside of the air cell (UP on block below, even if air)
-        try {
-            BlockPos below = placePos.below();
-            Vec3 hit = new Vec3(placePos.getX() + 0.5, placePos.getY(), placePos.getZ() + 0.5);
-            BlockHitResult bhr = new BlockHitResult(hit, Direction.UP, below, false);
-            var result = mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, bhr);
-            p.swing(InteractionHand.MAIN_HAND);
-            if (!isReplaceable(mc, placePos)) return true;
-            if (result != null && !isReplaceable(mc, placePos)) return true;
-        } catch (Throwable ignored) {}
-
-        return !isReplaceable(mc, placePos);
     }
 
     private boolean placeSafetyGlowstone(Minecraft mc, LocalPlayer p, BlockPos anchor) {
