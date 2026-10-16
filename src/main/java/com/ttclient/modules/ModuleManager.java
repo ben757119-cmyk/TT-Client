@@ -39,6 +39,7 @@ public class ModuleManager {
         register(new HoleFill());
         register(new AutoTrap());
         register(new AnchorAura());
+        register(new OneClickAnchors());
         register(new Offhand());
         register(new AutoXP());
         register(new AutoArmorSwap());
