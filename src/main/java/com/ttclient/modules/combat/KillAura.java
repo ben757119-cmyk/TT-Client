@@ -23,7 +23,6 @@ public class KillAura extends Module {
     public final BoolSetting rotate = addSetting(new BoolSetting("Rotate", "Look at target", true));
     public final BoolSetting weaponSwap = addSetting(new BoolSetting("WeaponSwap", "Switch to best weapon", true));
     public final BoolSetting useRage = addSetting(new BoolSetting("UseRageRange", "Use Rage reach when on", true));
-    public final NumberSetting wallBypass = addSetting(new NumberSetting("HurtTime", "Skip target if hurtTime above", 10, 0, 20, 1));
 
     public KillAura() {
         super("KillAura", "Attack nearest target on cooldown", Category.COMBAT);
@@ -47,7 +46,7 @@ public class KillAura extends Module {
         LocalPlayer p = mc.player;
         if (p.getAttackStrengthScale(0.5f) < 0.92f) return;
 
-        LivingEntity target = findTarget(mc, p, effectiveRange());
+        LivingEntity target = findTargetFiltered(mc, p, effectiveRange());
         if (target == null) return;
 
         if (weaponSwap.get()) {
@@ -76,30 +75,6 @@ public class KillAura extends Module {
         p.yBodyRot = yaw;
     }
 
-    public static LivingEntity findTarget(Minecraft mc, LocalPlayer p, double r) {
-        AABB box = p.getBoundingBox().inflate(r);
-        LivingEntity best = null;
-        double bestDist = r * r;
-
-        for (Entity e : mc.level.getEntities(p, box)) {
-            if (!(e instanceof LivingEntity living) || !living.isAlive()) continue;
-            if (living == p) continue;
-            if (living.isInvisible() && living instanceof Player) continue;
-            double d = p.distanceToSqr(living);
-            if (d > bestDist) continue;
-            // Prefer lower health players
-            double score = d;
-            if (living instanceof Player) score -= 50;
-            if (living.getHealth() < 10) score -= 10;
-            if (best == null || score < bestDist) {
-                // store score in bestDist for ranking
-                bestDist = score;
-                best = living;
-            }
-        }
-        return best;
-    }
-
     public LivingEntity findTargetFiltered(Minecraft mc, LocalPlayer p, double r) {
         AABB box = p.getBoundingBox().inflate(r);
         LivingEntity best = null;
@@ -113,8 +88,6 @@ public class KillAura extends Module {
             } else if (living instanceof Monster) {
                 if (!mobs.get()) continue;
             } else continue;
-
-            if (living.hurtTime > wallBypass.getInt()) continue;
 
             double d = p.distanceToSqr(living);
             if (d > r * r) continue;
