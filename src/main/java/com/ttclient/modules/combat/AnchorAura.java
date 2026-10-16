@@ -22,7 +22,7 @@ import net.minecraft.world.phys.Vec3;
 
 /**
  * Place / charge / detonate respawn anchors.
- * Tracks anchors near the *target* so far-range (Rage) still charges/explodes after place.
+ * Placement is mid-air only (body/head height around target), not on the ground.
  */
 public class AnchorAura extends Module {
     public final NumberSetting range = addSetting(new NumberSetting("Range", "Base range", 5.0, 2.0, 256.0, 0.5));
@@ -35,14 +35,14 @@ public class AnchorAura extends Module {
     public final BoolSetting safeAnchor = addSetting(new BoolSetting("SafeAnchor", "Place glowstone between you and close anchors", true));
     public final NumberSetting safeDist = addSetting(new NumberSetting("SafeDist", "Max distance to place safety glowstone", 5.0, 1.0, 12.0, 0.5));
     public final NumberSetting charges = addSetting(new NumberSetting("Charges", "Glowstone charges before explode (1-4)", 4, 1, 4, 1));
+    public final NumberSetting airHeight = addSetting(new NumberSetting("AirHeight", "Blocks above feet to place (1-3)", 1, 1, 3, 1));
 
     private int timer;
     private BlockPos pendingExplode;
-    /** Last anchor we placed or interacted with — preferred for charge/explode when far. */
     private BlockPos trackedAnchor;
 
     public AnchorAura() {
-        super("AnchorAura", "Place/charge/explode anchors (safe + shield)", Category.COMBAT);
+        super("AnchorAura", "Mid-air place/charge/explode anchors", Category.COMBAT);
     }
 
     @Override
@@ -107,12 +107,10 @@ public class AnchorAura extends Module {
         double r = effectiveRange();
         Player target = nearestEnemy(mc, p, r);
 
-        // Validate tracked anchor still exists
         if (trackedAnchor != null && !mc.level.getBlockState(trackedAnchor).is(Blocks.RESPAWN_ANCHOR)) {
             trackedAnchor = null;
         }
 
-        // Finish delayed safe explode
         if (pendingExplode != null && explode.get()) {
             BlockPos pos = pendingExplode;
             pendingExplode = null;
@@ -130,7 +128,6 @@ public class AnchorAura extends Module {
             int c = getCharges(mc.level.getBlockState(existing));
             int want = charges.getInt();
 
-            // Always prefer finishing charge/explode on existing before placing more
             if (c < want && charge.get()) {
                 if (doCharge(mc, p, existing)) {
                     timer = delay.getInt();
@@ -159,9 +156,8 @@ public class AnchorAura extends Module {
                 }
             }
 
-            // Anchor exists but not ready / failed interact — don't spam place more if one is tracked
             if (c < want && charge.get()) {
-                timer = delay.getInt(); // wait and retry charge
+                timer = delay.getInt();
                 return;
             }
             if (readyToPop) {
@@ -171,7 +167,7 @@ public class AnchorAura extends Module {
         }
 
         if (place.get() && target != null) {
-            BlockPos placed = doPlaceReturn(mc, p, r, target);
+            BlockPos placed = doPlaceMidAir(mc, p, r, target);
             if (placed != null) {
                 trackedAnchor = placed;
                 timer = delay.getInt();
@@ -179,17 +175,11 @@ public class AnchorAura extends Module {
         }
     }
 
-    /** Prefer tracked → near target → near player. */
     private BlockPos findBestAnchor(Minecraft mc, LocalPlayer p, Player target, double r) {
         if (trackedAnchor != null && mc.level.getBlockState(trackedAnchor).is(Blocks.RESPAWN_ANCHOR)) {
             double d = p.distanceToSqr(trackedAnchor.getX() + 0.5, trackedAnchor.getY() + 0.5, trackedAnchor.getZ() + 0.5);
             if (d <= r * r + 4) return trackedAnchor;
         }
-
-        BlockPos best = null;
-        double bestScore = Double.MAX_VALUE;
-
-        // Search around target first (this is what was missing when far away)
         if (target != null) {
             BlockPos found = scanAnchorsAround(mc, target.blockPosition(), 6, r, p);
             if (found != null) {
@@ -197,16 +187,10 @@ public class AnchorAura extends Module {
                 if (d <= r * r + 4) return found;
             }
         }
-
-        // Search around player
-        best = scanAnchorsAround(mc, p.blockPosition(), (int) Math.min(48, Math.ceil(r)), r, p);
+        BlockPos best = scanAnchorsAround(mc, p.blockPosition(), (int) Math.min(48, Math.ceil(r)), r, p);
         if (best != null) return best;
-
-        // Wide scan around target again with larger radius
-        if (target != null) {
-            best = scanAnchorsAround(mc, target.blockPosition(), 10, r, p);
-        }
-        return best;
+        if (target != null) return scanAnchorsAround(mc, target.blockPosition(), 10, r, p);
+        return null;
     }
 
     private BlockPos scanAnchorsAround(Minecraft mc, BlockPos origin, int ri, double maxRange, LocalPlayer p) {
@@ -228,9 +212,106 @@ public class AnchorAura extends Module {
         return best;
     }
 
+    /**
+     * Mid-air only: places at body/head height around the target (not ground ring).
+     */
+    private BlockPos doPlaceMidAir(Minecraft mc, LocalPlayer p, double r, Player target) {
+        int slot = InvUtils.findHotbar(p, Items.RESPAWN_ANCHOR);
+        if (slot < 0) return null;
+
+        BlockPos feet = target.blockPosition();
+        int h = airHeight.getInt();
+
+        // Strict mid-air ring: y = feet + h and feet + h + 1, never ground (dy=0)
+        java.util.ArrayList<BlockPos> candidates = new java.util.ArrayList<>();
+        for (int dy = h; dy <= h + 1; dy++) {
+            BlockPos level = feet.above(dy);
+            candidates.add(level.north());
+            candidates.add(level.south());
+            candidates.add(level.east());
+            candidates.add(level.west());
+            candidates.add(level.north().east());
+            candidates.add(level.north().west());
+            candidates.add(level.south().east());
+            candidates.add(level.south().west());
+            // directly above head (still air)
+            if (dy == h + 1) candidates.add(level);
+        }
+
+        ShieldState st = new ShieldState(p);
+
+        for (BlockPos pos : candidates) {
+            if (!isReplaceable(mc, pos)) continue;
+            if (p.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > r * r) continue;
+            if (pos.equals(p.blockPosition()) || pos.equals(p.blockPosition().above())) continue;
+
+            if (tryPlaceMidAir(mc, p, slot, pos)) {
+                restoreShield(mc, p, st);
+                return pos;
+            }
+        }
+
+        // Second pass: small mid-air cube (dy 1..3 only)
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dy = 1; dy <= 3; dy++) {
+                for (int dz = -2; dz <= 2; dz++) {
+                    if (dx == 0 && dz == 0 && dy <= 1) continue; // skip inside target torso-ish
+                    BlockPos pos = feet.offset(dx, dy, dz);
+                    if (!isReplaceable(mc, pos)) continue;
+                    if (p.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > r * r) continue;
+                    if (tryPlaceMidAir(mc, p, slot, pos)) {
+                        restoreShield(mc, p, st);
+                        return pos;
+                    }
+                }
+            }
+        }
+
+        restoreShield(mc, p, st);
+        return null;
+    }
+
+    /**
+     * Place into mid-air cell: prefer solid/anchor neighbors, then air-place click fallback.
+     */
+    private boolean tryPlaceMidAir(Minecraft mc, LocalPlayer p, int slot, BlockPos placePos) {
+        // 1) Normal: solid neighbor (including another mid-air anchor)
+        if (tryPlaceAgainstNeighbor(mc, p, slot, placePos)) return true;
+
+        // 2) Air-place fallback — click as if supporting faces exist (works on some servers / weak validation)
+        InvUtils.selectHotbar(p, slot);
+        for (Direction face : Direction.values()) {
+            BlockPos clickPos = placePos.relative(face.getOpposite());
+            Vec3 hit = Vec3.atCenterOf(placePos).subtract(
+                    face.getStepX() * 0.5,
+                    face.getStepY() * 0.5,
+                    face.getStepZ() * 0.5
+            );
+            BlockHitResult bhr = new BlockHitResult(hit, face, clickPos, false);
+            try {
+                var result = mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, bhr);
+                p.swing(InteractionHand.MAIN_HAND);
+                if (!isReplaceable(mc, placePos)) return true;
+                if (result != null && !isReplaceable(mc, placePos)) return true;
+            } catch (Throwable ignored) {}
+        }
+
+        // 3) Click underside of the air cell (UP on block below, even if air)
+        try {
+            BlockPos below = placePos.below();
+            Vec3 hit = new Vec3(placePos.getX() + 0.5, placePos.getY(), placePos.getZ() + 0.5);
+            BlockHitResult bhr = new BlockHitResult(hit, Direction.UP, below, false);
+            var result = mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, bhr);
+            p.swing(InteractionHand.MAIN_HAND);
+            if (!isReplaceable(mc, placePos)) return true;
+            if (result != null && !isReplaceable(mc, placePos)) return true;
+        } catch (Throwable ignored) {}
+
+        return !isReplaceable(mc, placePos);
+    }
+
     private boolean placeSafetyGlowstone(Minecraft mc, LocalPlayer p, BlockPos anchor) {
         if (hasCoverBetween(mc, p, anchor)) return true;
-
         int gs = InvUtils.findHotbar(p, Items.GLOWSTONE);
         if (gs < 0) return false;
 
@@ -245,8 +326,7 @@ public class AnchorAura extends Module {
         int steps = (int) Math.ceil(len * 2);
         for (int i = 1; i <= steps; i++) {
             double t = Math.min(0.55, Math.max(0.25, i / (double) steps));
-            Vec3 pt = from.add(dir.scale(len * t));
-            BlockPos bp = BlockPos.containing(pt);
+            BlockPos bp = BlockPos.containing(from.add(dir.scale(len * t)));
             if (bp.equals(anchor)) continue;
             if (!isReplaceable(mc, bp)) {
                 if (!mc.level.getBlockState(bp).is(Blocks.RESPAWN_ANCHOR)) return true;
@@ -256,16 +336,10 @@ public class AnchorAura extends Module {
             double dPlayer = p.distanceToSqr(bp.getX() + 0.5, bp.getY() + 0.5, bp.getZ() + 0.5);
             if (dPlayer >= 0.8 && dPlayer <= 9.0) break;
         }
-
-        if (best == null) {
-            Direction facing = Direction.getApproximateNearest(dir.x, 0, dir.z);
-            best = p.blockPosition().relative(facing);
-            if (!isReplaceable(mc, best)) best = best.above();
-            if (!isReplaceable(mc, best)) return hasCoverBetween(mc, p, anchor);
-        }
+        if (best == null) return false;
 
         ShieldState st = new ShieldState(p);
-        boolean placed = tryPlaceAgainstNeighbor(mc, p, gs, best);
+        boolean placed = tryPlaceMidAir(mc, p, gs, best);
         restoreShield(mc, p, st);
         return placed || hasCoverBetween(mc, p, anchor);
     }
@@ -300,7 +374,6 @@ public class AnchorAura extends Module {
 
     private boolean doExplode(Minecraft mc, LocalPlayer p, BlockPos anchor) {
         ShieldState st = new ShieldState(p);
-
         if (p.getMainHandItem().is(Items.GLOWSTONE) || p.getInventory().getItem(st.hotbarSlot).is(Items.GLOWSTONE)) {
             for (int i = 0; i < 9; i++) {
                 ItemStack s = p.getInventory().getItem(i);
@@ -318,59 +391,9 @@ public class AnchorAura extends Module {
                 }
             }
         }
-
         boolean ok = clickBlock(mc, p, anchor);
         restoreShield(mc, p, st);
         return ok;
-    }
-
-    /** @return position where anchor was placed, or null */
-    private BlockPos doPlaceReturn(Minecraft mc, LocalPlayer p, double r, Player target) {
-        int slot = InvUtils.findHotbar(p, Items.RESPAWN_ANCHOR);
-        if (slot < 0) return null;
-
-        BlockPos feet = target.blockPosition();
-        BlockPos[] candidates = {
-                feet.north(), feet.south(), feet.east(), feet.west(),
-                feet.north().above(), feet.south().above(), feet.east().above(), feet.west().above(),
-                feet.above(2),
-                feet.north().north(), feet.south().south(), feet.east().east(), feet.west().west()
-        };
-
-        ShieldState st = new ShieldState(p);
-
-        for (BlockPos pos : candidates) {
-            if (!isReplaceable(mc, pos)) continue;
-            if (p.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > r * r) continue;
-            if (pos.equals(p.blockPosition()) || pos.equals(p.blockPosition().above())) continue;
-            // Don't place if an anchor is already adjacent to target
-            if (tryPlaceAgainstNeighbor(mc, p, slot, pos)) {
-                restoreShield(mc, p, st);
-                // Confirm block appeared (client prediction)
-                if (mc.level.getBlockState(pos).is(Blocks.RESPAWN_ANCHOR) || !isReplaceable(mc, pos)) {
-                    return pos;
-                }
-                return pos; // still track intended place pos
-            }
-        }
-
-        for (int dx = -2; dx <= 2; dx++) {
-            for (int dy = 0; dy <= 2; dy++) {
-                for (int dz = -2; dz <= 2; dz++) {
-                    if (dx == 0 && dy == 0 && dz == 0) continue;
-                    BlockPos pos = feet.offset(dx, dy, dz);
-                    if (!isReplaceable(mc, pos)) continue;
-                    if (p.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > r * r) continue;
-                    if (tryPlaceAgainstNeighbor(mc, p, slot, pos)) {
-                        restoreShield(mc, p, st);
-                        return pos;
-                    }
-                }
-            }
-        }
-
-        restoreShield(mc, p, st);
-        return null;
     }
 
     private boolean isReplaceable(Minecraft mc, BlockPos pos) {
@@ -383,15 +406,12 @@ public class AnchorAura extends Module {
                 Direction.DOWN, Direction.NORTH, Direction.SOUTH,
                 Direction.EAST, Direction.WEST, Direction.UP
         };
-
         for (Direction towardSupport : order) {
             BlockPos support = placePos.relative(towardSupport);
             BlockState ss = mc.level.getBlockState(support);
             if (ss.isAir() || ss.canBeReplaced()) continue;
             Direction face = towardSupport.getOpposite();
-
             InvUtils.selectHotbar(p, slot);
-
             Vec3 hit = Vec3.atCenterOf(support).add(
                     face.getStepX() * 0.5,
                     face.getStepY() * 0.5,
