@@ -21,10 +21,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
-/**
- * All-in-one CPVP: aura + aim + d-tap + crits + crystals + totem + weapon swap.
- * Keeps working with F3 open (only pauses for real container GUIs / ClickGUI).
- */
+/** All-in-one CPVP: aura + aim + d-tap + crits + crystals + totem + weapon swap. */
 public class Destroyer extends Module {
     public final NumberSetting range = addSetting(new NumberSetting("Range", "Attack range", 4.5, 2.5, 8.0, 0.1));
     public final NumberSetting crystalRange = addSetting(new NumberSetting("CrystalRange", "Crystal range", 5.0, 2.0, 6.0, 0.1));
@@ -37,7 +34,7 @@ public class Destroyer extends Module {
     public final BoolSetting autoTotem = addSetting(new BoolSetting("AutoTotem", "Totem offhand", true));
     public final BoolSetting keepSprint = addSetting(new BoolSetting("KeepSprint", "Sprint when not tapping", true));
     public final BoolSetting useRage = addSetting(new BoolSetting("UseRageRange", "Use Rage reach", true));
-    public final NumberSetting totemDelay = addSetting(new NumberSetting("TotemDelay", "Totem swap delay", 3, 1, 15, 1));
+    public final NumberSetting totemDelay = addSetting(new NumberSetting("TotemDelay", "Totem swap delay", 2, 1, 15, 1));
     public final NumberSetting tapTicks = addSetting(new NumberSetting("TapTicks", "D-tap hold length", 2, 1, 6, 1));
 
     private int totemCd;
@@ -66,7 +63,6 @@ public class Destroyer extends Module {
         return r;
     }
 
-    /** Pause only for ClickGUI / chests / inv — NOT F3. */
     private boolean shouldPause(Minecraft mc) {
         try {
             var s = mc.gui.screen();
@@ -89,7 +85,6 @@ public class Destroyer extends Module {
 
         LocalPlayer p = mc.player;
 
-        // D-tap window
         if (tapLeft > 0) {
             tapLeft--;
             try {
@@ -103,18 +98,15 @@ public class Destroyer extends Module {
             p.setSprinting(true);
         }
 
-        // Totem
         if (autoTotem.get()) {
             if (totemCd > 0) totemCd--;
             else if (!p.getOffhandItem().is(Items.TOTEM_OF_UNDYING)) {
-                int slot = InvUtils.findItemSlot(p, Items.TOTEM_OF_UNDYING);
-                if (slot >= 0 && InvUtils.swapToOffhand(p, slot)) totemCd = totemDelay.getInt();
+                if (InvUtils.equipTotem(p)) totemCd = totemDelay.getInt();
             }
         }
 
         double r = effectiveRange();
 
-        // Crystal break priority
         if (breakCrystals.get()) {
             EndCrystal crystal = nearestCrystal(mc, p, crystalRange.get());
             if (crystal != null && p.getAttackStrengthScale(0.5f) >= 0.8f) {
@@ -126,11 +118,8 @@ public class Destroyer extends Module {
             }
         }
 
-        // Place crystal near target
         if (placeCrystals.get() && placeCd <= 0) {
-            if (tryPlaceCrystal(mc, p, r)) {
-                placeCd = 4;
-            }
+            if (tryPlaceCrystal(mc, p, r)) placeCd = 4;
         } else if (placeCd > 0) placeCd--;
 
         Player target = nearestPlayer(mc, p, r);
@@ -145,7 +134,6 @@ public class Destroyer extends Module {
 
         if (p.getAttackStrengthScale(0.5f) < 0.92f) return;
 
-        // Crit jump
         if (crits.get() && p.onGround() && !p.isInWater() && !p.onClimbable()) {
             try { p.jumpFromGround(); } catch (Throwable ignored) {}
         }
@@ -194,7 +182,6 @@ public class Destroyer extends Module {
         }
         if (base == null) return false;
 
-        // Existing crystal?
         AABB box = new AABB(base.above()).inflate(0.2);
         for (Entity e : mc.level.getEntities(p, box)) {
             if (e instanceof EndCrystal) return false;
@@ -217,8 +204,7 @@ public class Destroyer extends Module {
         String n = st.getBlock().toString().toLowerCase();
         boolean obby = n.contains("obsidian") || n.contains("bedrock");
         if (!obby) return false;
-        BlockPos above = base.above();
-        return mc.level.getBlockState(above).isAir();
+        return mc.level.getBlockState(base.above()).isAir();
     }
 
     private static void lookAt(LocalPlayer p, Entity target) {
