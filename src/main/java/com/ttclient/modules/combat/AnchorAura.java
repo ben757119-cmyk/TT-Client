@@ -22,7 +22,7 @@ import net.minecraft.world.phys.Vec3;
 
 /**
  * Place / charge / detonate respawn anchors.
- * SafeAnchor: before exploding an anchor within SafeDist, place glowstone between you and it.
+ * Tracks anchors near the *target* so far-range (Rage) still charges/explodes after place.
  */
 public class AnchorAura extends Module {
     public final NumberSetting range = addSetting(new NumberSetting("Range", "Base range", 5.0, 2.0, 256.0, 0.5));
@@ -37,11 +37,18 @@ public class AnchorAura extends Module {
     public final NumberSetting charges = addSetting(new NumberSetting("Charges", "Glowstone charges before explode (1-4)", 4, 1, 4, 1));
 
     private int timer;
-    /** After placing safety block, wait a tick before exploding. */
     private BlockPos pendingExplode;
+    /** Last anchor we placed or interacted with — preferred for charge/explode when far. */
+    private BlockPos trackedAnchor;
 
     public AnchorAura() {
         super("AnchorAura", "Place/charge/explode anchors (safe + shield)", Category.COMBAT);
+    }
+
+    @Override
+    public void onDisable() {
+        pendingExplode = null;
+        trackedAnchor = null;
     }
 
     private double effectiveRange() {
@@ -98,6 +105,12 @@ public class AnchorAura extends Module {
 
         LocalPlayer p = mc.player;
         double r = effectiveRange();
+        Player target = nearestEnemy(mc, p, r);
+
+        // Validate tracked anchor still exists
+        if (trackedAnchor != null && !mc.level.getBlockState(trackedAnchor).is(Blocks.RESPAWN_ANCHOR)) {
+            trackedAnchor = null;
+        }
 
         // Finish delayed safe explode
         if (pendingExplode != null && explode.get()) {
@@ -111,11 +124,13 @@ public class AnchorAura extends Module {
             }
         }
 
-        BlockPos existing = findNearbyAnchor(mc, p, r);
+        BlockPos existing = findBestAnchor(mc, p, target, r);
         if (existing != null) {
+            trackedAnchor = existing;
             int c = getCharges(mc.level.getBlockState(existing));
             int want = charges.getInt();
 
+            // Always prefer finishing charge/explode on existing before placing more
             if (c < want && charge.get()) {
                 if (doCharge(mc, p, existing)) {
                     timer = delay.getInt();
@@ -131,13 +146,11 @@ public class AnchorAura extends Module {
                         existing.getX() + 0.5, existing.getY() + 0.5, existing.getZ() + 0.5));
 
                 if (safeAnchor.get() && dist <= safeDist.get()) {
-                    // Place 1 glowstone between player and anchor, then explode next tick
                     if (placeSafetyGlowstone(mc, p, existing)) {
                         pendingExplode = existing;
                         timer = Math.max(1, delay.getInt());
                         return;
                     }
-                    // If we couldn't place, still try explode (user may already have cover)
                 }
 
                 if (doExplode(mc, p, existing)) {
@@ -145,21 +158,77 @@ public class AnchorAura extends Module {
                     return;
                 }
             }
+
+            // Anchor exists but not ready / failed interact — don't spam place more if one is tracked
+            if (c < want && charge.get()) {
+                timer = delay.getInt(); // wait and retry charge
+                return;
+            }
+            if (readyToPop) {
+                timer = delay.getInt();
+                return;
+            }
         }
 
-        if (place.get()) {
-            if (doPlace(mc, p, r)) {
+        if (place.get() && target != null) {
+            BlockPos placed = doPlaceReturn(mc, p, r, target);
+            if (placed != null) {
+                trackedAnchor = placed;
                 timer = delay.getInt();
             }
         }
     }
 
-    /**
-     * Place a single glowstone block on the line from player → anchor (closest air to mid).
-     * @return true if a block was placed or solid cover already exists on the path
-     */
+    /** Prefer tracked → near target → near player. */
+    private BlockPos findBestAnchor(Minecraft mc, LocalPlayer p, Player target, double r) {
+        if (trackedAnchor != null && mc.level.getBlockState(trackedAnchor).is(Blocks.RESPAWN_ANCHOR)) {
+            double d = p.distanceToSqr(trackedAnchor.getX() + 0.5, trackedAnchor.getY() + 0.5, trackedAnchor.getZ() + 0.5);
+            if (d <= r * r + 4) return trackedAnchor;
+        }
+
+        BlockPos best = null;
+        double bestScore = Double.MAX_VALUE;
+
+        // Search around target first (this is what was missing when far away)
+        if (target != null) {
+            BlockPos found = scanAnchorsAround(mc, target.blockPosition(), 6, r, p);
+            if (found != null) {
+                double d = p.distanceToSqr(found.getX() + 0.5, found.getY() + 0.5, found.getZ() + 0.5);
+                if (d <= r * r + 4) return found;
+            }
+        }
+
+        // Search around player
+        best = scanAnchorsAround(mc, p.blockPosition(), (int) Math.min(48, Math.ceil(r)), r, p);
+        if (best != null) return best;
+
+        // Wide scan around target again with larger radius
+        if (target != null) {
+            best = scanAnchorsAround(mc, target.blockPosition(), 10, r, p);
+        }
+        return best;
+    }
+
+    private BlockPos scanAnchorsAround(Minecraft mc, BlockPos origin, int ri, double maxRange, LocalPlayer p) {
+        BlockPos best = null;
+        double bestD = maxRange * maxRange + 16;
+        for (int dx = -ri; dx <= ri; dx++) {
+            for (int dy = -3; dy <= 4; dy++) {
+                for (int dz = -ri; dz <= ri; dz++) {
+                    BlockPos pos = origin.offset(dx, dy, dz);
+                    if (!mc.level.getBlockState(pos).is(Blocks.RESPAWN_ANCHOR)) continue;
+                    double d = p.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+                    if (d <= bestD) {
+                        bestD = d;
+                        best = pos;
+                    }
+                }
+            }
+        }
+        return best;
+    }
+
     private boolean placeSafetyGlowstone(Minecraft mc, LocalPlayer p, BlockPos anchor) {
-        // Already have solid cover between?
         if (hasCoverBetween(mc, p, anchor)) return true;
 
         int gs = InvUtils.findHotbar(p, Items.GLOWSTONE);
@@ -172,35 +241,26 @@ public class AnchorAura extends Module {
         if (len < 0.5) return false;
         Vec3 dir = delta.scale(1.0 / len);
 
-        // Walk from player toward anchor; pick first replaceable block that has a solid neighbor
         BlockPos best = null;
         int steps = (int) Math.ceil(len * 2);
         for (int i = 1; i <= steps; i++) {
-            double t = i / (double) steps;
-            // Prefer roughly between 0.35–0.65 of the path, closer to player for safety
-            Vec3 pt = from.add(dir.scale(len * Math.min(0.55, Math.max(0.25, t))));
+            double t = Math.min(0.55, Math.max(0.25, i / (double) steps));
+            Vec3 pt = from.add(dir.scale(len * t));
             BlockPos bp = BlockPos.containing(pt);
             if (bp.equals(anchor)) continue;
-            if (bp.distSqr(p.blockPosition()) < 0.1) continue;
             if (!isReplaceable(mc, bp)) {
-                // Already solid cover on path
                 if (!mc.level.getBlockState(bp).is(Blocks.RESPAWN_ANCHOR)) return true;
                 continue;
             }
             best = bp;
-            // Prefer first valid slot ~1–2 blocks in front of player
             double dPlayer = p.distanceToSqr(bp.getX() + 0.5, bp.getY() + 0.5, bp.getZ() + 0.5);
             if (dPlayer >= 0.8 && dPlayer <= 9.0) break;
         }
 
         if (best == null) {
-            // Fallback: one block toward anchor from feet
-            BlockPos feet = p.blockPosition();
             Direction facing = Direction.getApproximateNearest(dir.x, 0, dir.z);
-            best = feet.relative(facing);
-            if (!isReplaceable(mc, best)) {
-                best = feet.relative(facing).above();
-            }
+            best = p.blockPosition().relative(facing);
+            if (!isReplaceable(mc, best)) best = best.above();
             if (!isReplaceable(mc, best)) return hasCoverBetween(mc, p, anchor);
         }
 
@@ -222,9 +282,7 @@ public class AnchorAura extends Module {
             BlockPos bp = BlockPos.containing(from.add(dir.scale(len * (i / (double) steps))));
             if (bp.equals(anchor)) continue;
             BlockState st = mc.level.getBlockState(bp);
-            if (!st.isAir() && !st.canBeReplaced() && !st.is(Blocks.RESPAWN_ANCHOR)) {
-                return true;
-            }
+            if (!st.isAir() && !st.canBeReplaced() && !st.is(Blocks.RESPAWN_ANCHOR)) return true;
         }
         return false;
     }
@@ -236,6 +294,7 @@ public class AnchorAura extends Module {
         InvUtils.selectHotbar(p, gs);
         boolean ok = clickBlock(mc, p, anchor);
         restoreShield(mc, p, st);
+        if (ok) trackedAnchor = anchor;
         return ok;
     }
 
@@ -265,12 +324,10 @@ public class AnchorAura extends Module {
         return ok;
     }
 
-    private boolean doPlace(Minecraft mc, LocalPlayer p, double r) {
+    /** @return position where anchor was placed, or null */
+    private BlockPos doPlaceReturn(Minecraft mc, LocalPlayer p, double r, Player target) {
         int slot = InvUtils.findHotbar(p, Items.RESPAWN_ANCHOR);
-        if (slot < 0) return false;
-
-        Player target = nearestEnemy(mc, p, r);
-        if (target == null) return false;
+        if (slot < 0) return null;
 
         BlockPos feet = target.blockPosition();
         BlockPos[] candidates = {
@@ -286,9 +343,14 @@ public class AnchorAura extends Module {
             if (!isReplaceable(mc, pos)) continue;
             if (p.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > r * r) continue;
             if (pos.equals(p.blockPosition()) || pos.equals(p.blockPosition().above())) continue;
+            // Don't place if an anchor is already adjacent to target
             if (tryPlaceAgainstNeighbor(mc, p, slot, pos)) {
                 restoreShield(mc, p, st);
-                return true;
+                // Confirm block appeared (client prediction)
+                if (mc.level.getBlockState(pos).is(Blocks.RESPAWN_ANCHOR) || !isReplaceable(mc, pos)) {
+                    return pos;
+                }
+                return pos; // still track intended place pos
             }
         }
 
@@ -301,14 +363,14 @@ public class AnchorAura extends Module {
                     if (p.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > r * r) continue;
                     if (tryPlaceAgainstNeighbor(mc, p, slot, pos)) {
                         restoreShield(mc, p, st);
-                        return true;
+                        return pos;
                     }
                 }
             }
         }
 
         restoreShield(mc, p, st);
-        return false;
+        return null;
     }
 
     private boolean isReplaceable(Minecraft mc, BlockPos pos) {
@@ -370,29 +432,6 @@ public class AnchorAura extends Module {
             }
         } catch (Throwable ignored) {}
         return 0;
-    }
-
-    private BlockPos findNearbyAnchor(Minecraft mc, LocalPlayer p, double r) {
-        BlockPos o = p.blockPosition();
-        int ri = (int) Math.ceil(Math.min(r, 48));
-        ri = Math.max(ri, 8);
-
-        BlockPos best = null;
-        double bestD = r * r;
-        for (int dx = -ri; dx <= ri; dx++) {
-            for (int dy = -3; dy <= 4; dy++) {
-                for (int dz = -ri; dz <= ri; dz++) {
-                    BlockPos pos = o.offset(dx, dy, dz);
-                    if (!mc.level.getBlockState(pos).is(Blocks.RESPAWN_ANCHOR)) continue;
-                    double d = p.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
-                    if (d <= bestD) {
-                        bestD = d;
-                        best = pos;
-                    }
-                }
-            }
-        }
-        return best;
     }
 
     private Player nearestEnemy(Minecraft mc, LocalPlayer self, double r) {
