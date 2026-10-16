@@ -25,7 +25,7 @@ import java.util.List;
 
 /**
  * Mid-air anchor place/charge/explode.
- * Predicts fast targets; places only ONE anchor until that one is done (exploded/gone).
+ * Exactly one anchor at a time. Predict only when target is elytra / extremely fast.
  */
 public class AnchorAura extends Module {
     public final NumberSetting range = addSetting(new NumberSetting("Range", "Base range", 5.0, 2.0, 256.0, 0.5));
@@ -39,23 +39,26 @@ public class AnchorAura extends Module {
     public final NumberSetting safeDist = addSetting(new NumberSetting("SafeDist", "Max distance to place safety glowstone", 5.0, 1.0, 12.0, 0.5));
     public final NumberSetting charges = addSetting(new NumberSetting("Charges", "Glowstone charges before explode (1-4)", 4, 1, 4, 1));
     public final NumberSetting airHeight = addSetting(new NumberSetting("AirHeight", "Blocks above feet to place (1-3)", 1, 1, 3, 1));
-    public final BoolSetting predict = addSetting(new BoolSetting("Predict", "Lead mid-air place when target is moving fast", true));
-    public final NumberSetting predictTicks = addSetting(new NumberSetting("PredictTicks", "Ticks of movement to lead", 4, 0, 15, 1));
-    public final NumberSetting predictMinSpeed = addSetting(new NumberSetting("MinSpeed", "Min horizontal speed to start predicting", 0.18, 0.0, 1.0, 0.02));
+    public final BoolSetting predict = addSetting(new BoolSetting("Predict", "Lead place only when elytra / extremely fast", true));
+    public final NumberSetting predictTicks = addSetting(new NumberSetting("PredictTicks", "Ticks of movement to lead when predicting", 6, 0, 20, 1));
+    /** Horizontal speed ~ elytra boost territory; normal sprint is ~0.28 */
+    public final NumberSetting predictMinSpeed = addSetting(new NumberSetting("MinSpeed", "Min speed to predict (elytra zoom)", 0.95, 0.4, 3.0, 0.05));
 
     private int timer;
     private BlockPos pendingExplode;
-    /** Single active anchor — no second place until this is gone. */
     private BlockPos trackedAnchor;
+    /** After a successful place packet, lock placing until explode/clear. */
+    private boolean placeLock;
 
     public AnchorAura() {
-        super("AnchorAura", "Mid-air anchors — predict + one at a time", Category.COMBAT);
+        super("AnchorAura", "One mid-air anchor; predict only if zooming", Category.COMBAT);
     }
 
     @Override
     public void onDisable() {
         pendingExplode = null;
         trackedAnchor = null;
+        placeLock = false;
     }
 
     private double effectiveRange() {
@@ -114,10 +117,21 @@ public class AnchorAura extends Module {
         double r = effectiveRange();
         Player target = nearestEnemy(mc, p, r);
 
-        // Clear tracked if destroyed / exploded
+        // Sync tracked anchor with world
         if (trackedAnchor != null && !mc.level.getBlockState(trackedAnchor).is(Blocks.RESPAWN_ANCHOR)) {
             trackedAnchor = null;
             pendingExplode = null;
+            placeLock = false;
+        }
+
+        // If any anchor already exists near target / us, adopt it and never place a second
+        if (trackedAnchor == null && target != null) {
+            BlockPos near = scanAnchorsAround(mc, target.blockPosition(), 8, r, p);
+            if (near == null) near = scanAnchorsAround(mc, p.blockPosition(), 8, r, p);
+            if (near != null) {
+                trackedAnchor = near;
+                placeLock = true;
+            }
         }
 
         if (pendingExplode != null && explode.get()) {
@@ -131,26 +145,20 @@ public class AnchorAura extends Module {
             }
         }
 
-        // Prefer the single tracked anchor, else find one near target
         BlockPos existing = null;
         if (trackedAnchor != null && mc.level.getBlockState(trackedAnchor).is(Blocks.RESPAWN_ANCHOR)) {
             existing = trackedAnchor;
-        } else {
-            existing = findBestAnchor(mc, p, target, r);
-            if (existing != null) trackedAnchor = existing;
         }
 
         if (existing != null) {
+            placeLock = true; // hard lock while we own an anchor
             int c = getCharges(mc.level.getBlockState(existing));
             int want = charges.getInt();
 
             if (c < want && charge.get()) {
-                if (doCharge(mc, p, existing)) {
-                    timer = delay.getInt();
-                    return;
-                }
+                doCharge(mc, p, existing);
                 timer = delay.getInt();
-                return; // one-at-a-time: keep working this anchor
+                return;
             }
 
             boolean readyToPop = c >= 1 && c >= want && explode.get();
@@ -168,42 +176,66 @@ public class AnchorAura extends Module {
                     }
                 }
 
-                if (doExplode(mc, p, existing)) {
-                    timer = delay.getInt();
-                    return;
-                }
+                doExplode(mc, p, existing);
                 timer = delay.getInt();
                 return;
             }
 
-            // Anchor exists but not ready — do NOT place another
+            // Still have this one anchor — never place another
             timer = delay.getInt();
             return;
         }
 
-        // Only place when we have no active tracked anchor
-        if (place.get() && target != null && trackedAnchor == null) {
+        // Place only if unlocked and no tracked anchor
+        if (place.get() && target != null && trackedAnchor == null && !placeLock) {
+            // Double-check no anchor already near target
+            BlockPos already = scanAnchorsAround(mc, target.blockPosition(), 8, r, p);
+            if (already != null) {
+                trackedAnchor = already;
+                placeLock = true;
+                timer = delay.getInt();
+                return;
+            }
+
             BlockPos placed = doPlaceMidAirPredicted(mc, p, r, target);
             if (placed != null) {
                 trackedAnchor = placed;
+                placeLock = true; // one only until cleared
                 timer = delay.getInt();
             }
         }
     }
 
-    /** Predicted feet position for fast-moving targets. */
-    private BlockPos predictedFeet(Player target) {
-        BlockPos now = target.blockPosition();
-        if (!predict.get()) return now;
+    /** True only for elytra flight or extreme speed (not normal sprint). */
+    private boolean shouldPredict(Player target) {
+        if (!predict.get()) return false;
+
+        boolean elytra = false;
+        try {
+            elytra = target.isFallFlying();
+        } catch (Throwable ignored) {}
 
         Vec3 vel = target.getDeltaMovement();
+        double speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
         double horiz = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
-        if (horiz < predictMinSpeed.get()) return now;
 
+        // Elytra gliding at real speed, or overall velocity past threshold (firework zoom)
+        if (elytra && (speed >= 0.6 || horiz >= 0.5)) return true;
+        if (speed >= predictMinSpeed.get()) return true;
+        if (horiz >= predictMinSpeed.get()) return true;
+        return false;
+    }
+
+    private BlockPos predictedFeet(Player target) {
+        BlockPos now = target.blockPosition();
+        if (!shouldPredict(target)) return now;
+
+        Vec3 vel = target.getDeltaMovement();
         double ticks = predictTicks.get();
-        // Lead slightly more when sprinting / very fast
-        if (horiz > 0.35) ticks += 1.5;
-        if (horiz > 0.55) ticks += 1.5;
+        double speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
+        // Extra lead when firework-boosting hard
+        if (speed > 1.5) ticks += 2;
+        if (speed > 2.5) ticks += 3;
 
         double px = target.getX() + vel.x * ticks;
         double py = target.getY() + vel.y * ticks;
@@ -216,19 +248,18 @@ public class AnchorAura extends Module {
         if (slot < 0) return null;
 
         BlockPos feet = predictedFeet(target);
-        // Also try current feet if prediction differs (hedge)
         BlockPos curFeet = target.blockPosition();
-
         int h = airHeight.getInt();
+
         List<BlockPos> candidates = new ArrayList<>();
         addMidAirRing(candidates, feet, h);
-        if (!feet.equals(curFeet)) {
-            addMidAirRing(candidates, curFeet, h);
-            // Blend: halfway between current and predicted
+        // Only add current position ring when NOT predicting (or as light hedge)
+        if (!feet.equals(curFeet) && shouldPredict(target)) {
+            // Prefer predicted; small hedge halfway
             BlockPos mid = BlockPos.containing(
-                    (target.getX() + (feet.getX() + 0.5)) * 0.5,
+                    (target.getX() + feet.getX() + 0.5) * 0.5,
                     (target.getY() + feet.getY()) * 0.5,
-                    (target.getZ() + (feet.getZ() + 0.5)) * 0.5
+                    (target.getZ() + feet.getZ() + 0.5) * 0.5
             );
             addMidAirRing(candidates, mid, h);
         }
@@ -242,6 +273,7 @@ public class AnchorAura extends Module {
 
             if (tryPlaceMidAir(mc, p, slot, pos)) {
                 restoreShield(mc, p, st);
+                // Only return if the cell looks occupied / we sent place — still lock one
                 return pos;
             }
         }
@@ -294,26 +326,6 @@ public class AnchorAura extends Module {
         } catch (Throwable ignored) {}
 
         return !isReplaceable(mc, placePos);
-    }
-
-    private BlockPos findBestAnchor(Minecraft mc, LocalPlayer p, Player target, double r) {
-        if (target != null) {
-            BlockPos found = scanAnchorsAround(mc, target.blockPosition(), 6, r, p);
-            if (found != null) {
-                double d = p.distanceToSqr(found.getX() + 0.5, found.getY() + 0.5, found.getZ() + 0.5);
-                if (d <= r * r + 4) return found;
-            }
-            // Predicted area
-            BlockPos pred = predictedFeet(target);
-            if (!pred.equals(target.blockPosition())) {
-                found = scanAnchorsAround(mc, pred, 5, r, p);
-                if (found != null) return found;
-            }
-        }
-        BlockPos best = scanAnchorsAround(mc, p.blockPosition(), (int) Math.min(48, Math.ceil(r)), r, p);
-        if (best != null) return best;
-        if (target != null) return scanAnchorsAround(mc, target.blockPosition(), 10, r, p);
-        return null;
     }
 
     private BlockPos scanAnchorsAround(Minecraft mc, BlockPos origin, int ri, double maxRange, LocalPlayer p) {
