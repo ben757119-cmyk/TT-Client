@@ -12,6 +12,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.RespawnAnchorBlock;
@@ -21,8 +22,7 @@ import net.minecraft.world.phys.Vec3;
 
 /**
  * Place / charge / detonate respawn anchors near players.
- * Placement targets air beside the enemy (not inside them).
- * Range expands automatically when Rage is enabled.
+ * KeepShield: briefly use main-hand for anchors, then restore slot and re-block.
  */
 public class AnchorAura extends Module {
     public final NumberSetting range = addSetting(new NumberSetting("Range", "Base range", 5.0, 2.0, 256.0, 0.5));
@@ -31,12 +31,13 @@ public class AnchorAura extends Module {
     public final BoolSetting charge = addSetting(new BoolSetting("Charge", "Charge with glowstone", true));
     public final BoolSetting explode = addSetting(new BoolSetting("Explode", "Detonate charged anchors", true));
     public final BoolSetting useRage = addSetting(new BoolSetting("UseRageRange", "Use Rage reach when Rage is on", true));
+    public final BoolSetting keepShield = addSetting(new BoolSetting("KeepShield", "Hold/use shield while AnchorAura runs", true));
     public final NumberSetting charges = addSetting(new NumberSetting("Charges", "Glowstone charges before explode (1-4)", 4, 1, 4, 1));
 
     private int timer;
 
     public AnchorAura() {
-        super("AnchorAura", "Place/charge/explode respawn anchors", Category.COMBAT);
+        super("AnchorAura", "Place/charge/explode anchors (shield-friendly)", Category.COMBAT);
     }
 
     private double effectiveRange() {
@@ -50,6 +51,49 @@ public class AnchorAura extends Module {
         return r;
     }
 
+    private static boolean isShield(ItemStack stack) {
+        return stack != null && !stack.isEmpty() && stack.is(Items.SHIELD);
+    }
+
+    /** Snapshot shield state before we touch the hotbar. */
+    private static final class ShieldState {
+        final int hotbarSlot;
+        final boolean blocking;
+        final boolean offhandShield;
+        final boolean mainhandShield;
+
+        ShieldState(LocalPlayer p) {
+            hotbarSlot = p.getInventory().getSelectedSlot();
+            blocking = p.isBlocking();
+            offhandShield = isShield(p.getOffhandItem());
+            mainhandShield = isShield(p.getMainHandItem());
+        }
+    }
+
+    private void restoreShield(Minecraft mc, LocalPlayer p, ShieldState st) {
+        if (!keepShield.get() || st == null) {
+            if (st != null) InvUtils.selectHotbar(p, st.hotbarSlot);
+            return;
+        }
+
+        // Always put their hotbar back
+        InvUtils.selectHotbar(p, st.hotbarSlot);
+
+        // Prefer offhand shield — re-press use so blocking resumes
+        try {
+            if (st.offhandShield) {
+                // If they were blocking or holding use, re-start offhand use
+                if (st.blocking || (mc.options != null && mc.options.keyUse.isDown())) {
+                    mc.gameMode.useItem(p, InteractionHand.OFF_HAND);
+                }
+            } else if (st.mainhandShield) {
+                if (st.blocking || (mc.options != null && mc.options.keyUse.isDown())) {
+                    mc.gameMode.useItem(p, InteractionHand.MAIN_HAND);
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
     @Override
     public void onTick() {
         Minecraft mc = mc();
@@ -59,7 +103,9 @@ public class AnchorAura extends Module {
         LocalPlayer p = mc.player;
         double r = effectiveRange();
 
-        // 1) Existing anchors: charge then explode
+        // While KeepShield is on and player is actively blocking, still allow actions
+        // (we only briefly swap main hand).
+
         BlockPos existing = findNearbyAnchor(mc, p, r);
         if (existing != null) {
             int c = getCharges(mc.level.getBlockState(existing));
@@ -79,7 +125,6 @@ public class AnchorAura extends Module {
                 }
             }
 
-            // Still charging path if below want
             if (c > 0 && c < want && explode.get() && !charge.get()) {
                 if (doExplode(mc, p, existing)) {
                     timer = delay.getInt();
@@ -88,7 +133,6 @@ public class AnchorAura extends Module {
             }
         }
 
-        // 2) Place new anchor near nearest enemy
         if (place.get()) {
             if (doPlace(mc, p, r)) {
                 timer = delay.getInt();
@@ -99,27 +143,39 @@ public class AnchorAura extends Module {
     private boolean doCharge(Minecraft mc, LocalPlayer p, BlockPos anchor) {
         int gs = InvUtils.findHotbar(p, Items.GLOWSTONE);
         if (gs < 0) return false;
-        int prev = p.getInventory().getSelectedSlot();
+
+        ShieldState st = new ShieldState(p);
         InvUtils.selectHotbar(p, gs);
         boolean ok = clickBlock(mc, p, anchor);
-        InvUtils.selectHotbar(p, prev);
+        restoreShield(mc, p, st);
         return ok;
     }
 
     private boolean doExplode(Minecraft mc, LocalPlayer p, BlockPos anchor) {
-        // Must NOT be holding glowstone or it will charge instead
-        int prev = p.getInventory().getSelectedSlot();
-        if (p.getMainHandItem().is(Items.GLOWSTONE)) {
-            // Switch to a non-glowstone slot if possible
+        ShieldState st = new ShieldState(p);
+
+        // Must not hold glowstone or it charges instead
+        if (p.getMainHandItem().is(Items.GLOWSTONE) || p.getInventory().getItem(st.hotbarSlot).is(Items.GLOWSTONE)) {
             for (int i = 0; i < 9; i++) {
-                if (!p.getInventory().getItem(i).is(Items.GLOWSTONE)) {
+                ItemStack s = p.getInventory().getItem(i);
+                if (!s.is(Items.GLOWSTONE) && !isShield(s)) {
                     InvUtils.selectHotbar(p, i);
                     break;
                 }
             }
+            // If every slot is glowstone/shield, still try current non-gs
+            if (p.getMainHandItem().is(Items.GLOWSTONE)) {
+                for (int i = 0; i < 9; i++) {
+                    if (!p.getInventory().getItem(i).is(Items.GLOWSTONE)) {
+                        InvUtils.selectHotbar(p, i);
+                        break;
+                    }
+                }
+            }
         }
+
         boolean ok = clickBlock(mc, p, anchor);
-        InvUtils.selectHotbar(p, prev);
+        restoreShield(mc, p, st);
         return ok;
     }
 
@@ -131,26 +187,26 @@ public class AnchorAura extends Module {
         if (target == null) return false;
 
         BlockPos feet = target.blockPosition();
-        // Prefer positions around the target, not inside them
         BlockPos[] candidates = {
                 feet.north(), feet.south(), feet.east(), feet.west(),
                 feet.north().above(), feet.south().above(), feet.east().above(), feet.west().above(),
                 feet.above(2),
-                feet.north().north(), feet.south().south(), feet.east().east(), feet.west().west(),
-                feet.below() // only if air (unlikely)
+                feet.north().north(), feet.south().south(), feet.east().east(), feet.west().west()
         };
 
-        // Sort-ish: try closer solid-adjacent air first
+        ShieldState st = new ShieldState(p);
+
         for (BlockPos pos : candidates) {
             if (!isReplaceable(mc, pos)) continue;
             if (p.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > r * r) continue;
-            // Don't place inside our own feet
             if (pos.equals(p.blockPosition()) || pos.equals(p.blockPosition().above())) continue;
 
-            if (tryPlaceAgainstNeighbor(mc, p, slot, pos)) return true;
+            if (tryPlaceAgainstNeighbor(mc, p, slot, pos)) {
+                restoreShield(mc, p, st);
+                return true;
+            }
         }
 
-        // Fallback: scan a small cube around target
         for (int dx = -2; dx <= 2; dx++) {
             for (int dy = 0; dy <= 2; dy++) {
                 for (int dz = -2; dz <= 2; dz++) {
@@ -158,10 +214,15 @@ public class AnchorAura extends Module {
                     BlockPos pos = feet.offset(dx, dy, dz);
                     if (!isReplaceable(mc, pos)) continue;
                     if (p.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > r * r) continue;
-                    if (tryPlaceAgainstNeighbor(mc, p, slot, pos)) return true;
+                    if (tryPlaceAgainstNeighbor(mc, p, slot, pos)) {
+                        restoreShield(mc, p, st);
+                        return true;
+                    }
                 }
             }
         }
+
+        restoreShield(mc, p, st);
         return false;
     }
 
@@ -171,7 +232,6 @@ public class AnchorAura extends Module {
     }
 
     private boolean tryPlaceAgainstNeighbor(Minecraft mc, LocalPlayer p, int slot, BlockPos placePos) {
-        // Prefer DOWN support (floor), then sides, then up
         Direction[] order = {
                 Direction.DOWN, Direction.NORTH, Direction.SOUTH,
                 Direction.EAST, Direction.WEST, Direction.UP
@@ -181,13 +241,10 @@ public class AnchorAura extends Module {
             BlockPos support = placePos.relative(towardSupport);
             BlockState ss = mc.level.getBlockState(support);
             if (ss.isAir() || ss.canBeReplaced()) continue;
-            // Click the support face that points toward placePos
             Direction face = towardSupport.getOpposite();
 
-            int prev = p.getInventory().getSelectedSlot();
             InvUtils.selectHotbar(p, slot);
 
-            // Hit vec on the face center
             Vec3 hit = Vec3.atCenterOf(support).add(
                     face.getStepX() * 0.5,
                     face.getStepY() * 0.5,
@@ -197,19 +254,14 @@ public class AnchorAura extends Module {
             try {
                 var result = mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, bhr);
                 p.swing(InteractionHand.MAIN_HAND);
-                InvUtils.selectHotbar(p, prev);
-                // Consider success if the place pos is no longer replaceable OR interaction didn't fail hard
                 if (!isReplaceable(mc, placePos)) return true;
                 if (result != null) return true;
-            } catch (Throwable t) {
-                InvUtils.selectHotbar(p, prev);
-            }
+            } catch (Throwable ignored) {}
         }
         return false;
     }
 
     private boolean clickBlock(Minecraft mc, LocalPlayer p, BlockPos pos) {
-        // Try each face so interaction registers
         for (Direction face : Direction.values()) {
             Vec3 hit = Vec3.atCenterOf(pos).add(
                     face.getStepX() * 0.5,
@@ -237,10 +289,8 @@ public class AnchorAura extends Module {
 
     private BlockPos findNearbyAnchor(Minecraft mc, LocalPlayer p, double r) {
         BlockPos o = p.blockPosition();
-        int ri = (int) Math.ceil(Math.min(r, 64)); // scan cap for perf; still hits far if chunk loaded
-        // If rage range is huge, still only scan reasonable area around player + expand a bit
-        ri = Math.max(ri, (int) Math.ceil(Math.min(r, 16)));
-        if (r > 16) ri = (int) Math.ceil(Math.min(r, 48));
+        int ri = (int) Math.ceil(Math.min(r, 48));
+        ri = Math.max(ri, 8);
 
         BlockPos best = null;
         double bestD = r * r;
