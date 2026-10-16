@@ -41,7 +41,7 @@ public class KillAura extends Module {
     public void onTick() {
         Minecraft mc = mc();
         if (mc == null || mc.player == null || mc.level == null || mc.gameMode == null) return;
-        if (mc.screen != null) return;
+        if (InvUtils.hasScreen(mc)) return;
 
         LocalPlayer p = mc.player;
         if (p.getAttackStrengthScale(0.5f) < 0.92f) return;

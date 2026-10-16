@@ -15,10 +15,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
-/**
- * Single toggle: auto totem + aim + weapon + hit players (+ crystal break).
- * Turn on → pressure targets. Turn off → stop.
- */
+/** Single toggle: auto totem + aim + weapon + hit players (+ crystal break). */
 public class Destroyer extends Module {
     public final NumberSetting range = addSetting(new NumberSetting("Range", "Attack range", 4.5, 2.5, 6.0, 0.1));
     public final NumberSetting crystalRange = addSetting(new NumberSetting("CrystalRange", "Break crystals in range", 5.0, 2.0, 6.0, 0.1));
@@ -27,7 +24,6 @@ public class Destroyer extends Module {
     public final BoolSetting breakCrystals = addSetting(new BoolSetting("BreakCrystals", "Punch nearby crystals", true));
     public final BoolSetting autoTotem = addSetting(new BoolSetting("AutoTotem", "Keep totem in offhand", true));
     public final NumberSetting totemDelay = addSetting(new NumberSetting("TotemDelay", "Ticks between totem swaps", 4, 1, 15, 1));
-    public final BoolSetting onlyPlayers = addSetting(new BoolSetting("OnlyPlayers", "Ignore mobs", true));
 
     private int totemCd;
 
@@ -44,11 +40,10 @@ public class Destroyer extends Module {
     public void onTick() {
         Minecraft mc = mc();
         if (mc == null || mc.player == null || mc.level == null || mc.gameMode == null) return;
-        if (mc.screen != null) return;
+        if (InvUtils.hasScreen(mc)) return;
 
         LocalPlayer p = mc.player;
 
-        // ---- Totem (packet-based, no ghost) ----
         if (autoTotem.get()) {
             if (totemCd > 0) totemCd--;
             else if (!p.getOffhandItem().is(Items.TOTEM_OF_UNDYING)) {
@@ -59,7 +54,6 @@ public class Destroyer extends Module {
             }
         }
 
-        // ---- Crystal break first (cpvp) ----
         if (breakCrystals.get()) {
             EndCrystal crystal = nearestCrystal(mc, p, crystalRange.get());
             if (crystal != null) {
@@ -72,7 +66,6 @@ public class Destroyer extends Module {
             }
         }
 
-        // ---- Player target ----
         Player target = nearestPlayer(mc, p, range.get());
         if (target == null) return;
 

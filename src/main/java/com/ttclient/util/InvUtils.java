@@ -4,7 +4,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Inventory;
-import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -62,46 +62,75 @@ public final class InvUtils {
 
     /** Inventory index (0-40) → InventoryMenu slot id. */
     public static int toMenuSlot(int invIndex) {
-        if (invIndex >= 0 && invIndex < 9) return 36 + invIndex; // hotbar
-        if (invIndex >= 9 && invIndex < 36) return invIndex;     // main
-        if (invIndex >= 36 && invIndex < 40) return 5 + (invIndex - 36); // armor rough
-        if (invIndex == 40) return 45; // offhand
+        if (invIndex >= 0 && invIndex < 9) return 36 + invIndex;
+        if (invIndex >= 9 && invIndex < 36) return invIndex;
+        if (invIndex == 40) return 45;
         return -1;
     }
 
     public static final int OFFHAND_MENU_SLOT = 45;
 
     /**
- * Server-synced swap of inv slot into offhand via ClickType.SWAP (button 40).
-     * Does NOT client-side ghost items.
+ * Server-synced swap into offhand.
+     * Uses reflection so we work across ClickType / SlotActionType naming.
      */
     public static boolean swapToOffhand(LocalPlayer p, int invIndex) {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.gameMode == null || p == null) return false;
         int menuSlot = toMenuSlot(invIndex);
         if (menuSlot < 0) return false;
+
+        int syncId;
         try {
-            int syncId = p.containerMenu.containerId;
-            mc.gameMode.handleInventoryMouseClick(syncId, menuSlot, 40, ClickType.SWAP, p);
-            return true;
+            syncId = p.containerMenu.containerId;
         } catch (Throwable t) {
-            try {
-                // Fallback: pickup → offhand → put back
-                int syncId = p.containerMenu.containerId;
-                mc.gameMode.handleInventoryMouseClick(syncId, menuSlot, 0, ClickType.PICKUP, p);
-                mc.gameMode.handleInventoryMouseClick(syncId, OFFHAND_MENU_SLOT, 0, ClickType.PICKUP, p);
-                mc.gameMode.handleInventoryMouseClick(syncId, menuSlot, 0, ClickType.PICKUP, p);
-                return true;
-            } catch (Throwable ignored) {
-                return false;
-            }
+            return false;
         }
+
+        // Try ClickType then SlotActionType (loader/mapping differences)
+        if (invokeInvClick(mc, syncId, menuSlot, 40, "net.minecraft.world.inventory.ClickType", "SWAP", p))
+            return true;
+        if (invokeInvClick(mc, syncId, menuSlot, 40, "net.minecraft.world.inventory.SlotActionType", "SWAP", p))
+            return true;
+
+        // Fallback: PICKUP path
+        if (invokeInvClick(mc, syncId, menuSlot, 0, "net.minecraft.world.inventory.ClickType", "PICKUP", p)
+                && invokeInvClick(mc, syncId, OFFHAND_MENU_SLOT, 0, "net.minecraft.world.inventory.ClickType", "PICKUP", p)) {
+            invokeInvClick(mc, syncId, menuSlot, 0, "net.minecraft.world.inventory.ClickType", "PICKUP", p);
+            return true;
+        }
+        if (invokeInvClick(mc, syncId, menuSlot, 0, "net.minecraft.world.inventory.SlotActionType", "PICKUP", p)
+                && invokeInvClick(mc, syncId, OFFHAND_MENU_SLOT, 0, "net.minecraft.world.inventory.SlotActionType", "PICKUP", p)) {
+            invokeInvClick(mc, syncId, menuSlot, 0, "net.minecraft.world.inventory.SlotActionType", "PICKUP", p);
+            return true;
+        }
+
+        // Last resort: select hotbar only (user can press F)
+        if (invIndex >= 0 && invIndex < 9) selectHotbar(p, invIndex);
+        return false;
     }
 
-    /** Find first inventory slot containing item (0 = hotbar start). */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static boolean invokeInvClick(Minecraft mc, int syncId, int slot, int button,
+                                          String enumClass, String enumName, Player p) {
+        try {
+            Class<?> ctCls = Class.forName(enumClass);
+            Object action = Enum.valueOf((Class<? extends Enum>) ctCls.asSubclass(Enum.class), enumName);
+            for (var m : mc.gameMode.getClass().getMethods()) {
+                if (!m.getName().equals("handleInventoryMouseClick") && !m.getName().equals("handleContainerClick"))
+                    continue;
+                if (m.getParameterCount() != 5) continue;
+                Class<?>[] pts = m.getParameterTypes();
+                if (pts[0] != int.class && pts[0] != Integer.TYPE) continue;
+                m.invoke(mc.gameMode, syncId, slot, button, action, p);
+                return true;
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
     public static int findItemSlot(LocalPlayer p, Item item) {
         Inventory inv = p.getInventory();
-        // Prefer hotbar first
         for (int i = 0; i < 9; i++) {
             if (inv.getItem(i).is(item)) return i;
         }
@@ -118,7 +147,6 @@ public final class InvUtils {
         return swapToOffhand(p, slot);
     }
 
-    /** Prefer sword/axe/mace in hotbar. */
     public static int findBestWeapon(LocalPlayer p) {
         Inventory inv = p.getInventory();
         int best = -1;
@@ -141,6 +169,21 @@ public final class InvUtils {
             }
         }
         return best;
+    }
+
+    /** NeoForge 26.2: screen is on gui, not Minecraft.screen */
+    public static boolean hasScreen(Minecraft mc) {
+        if (mc == null) return false;
+        try {
+            return mc.gui.screen() != null;
+        } catch (Throwable t) {
+            try {
+                Object s = Minecraft.class.getMethod("getScreen").invoke(mc);
+                return s != null;
+            } catch (Throwable ignored) {
+                return false;
+            }
+        }
     }
 
     public static Minecraft mc() {
