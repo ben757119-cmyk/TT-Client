@@ -35,10 +35,10 @@ public class ClickGUIScreen extends Screen {
     private NumberSetting typing = null;
     private String typingBuffer = "";
 
-    private static final int PANEL_BG = 0xF0121620, HEADER_BG = 0xFF0E1A16, TEXT_DIM = 0xFF8B95A8, ROW_OFF = 0xFF9AA3B5;
-    private static final int SLIDER_BG = 0xFF1A2030, SEARCH_BG = 0xF00A0E14;
-    private static final int ROW_H = 15, SETTING_H = 13, NUMBER_H = 28;
-    private static final int SEARCH_X = 14, SEARCH_Y = 8, SEARCH_W = 220, SEARCH_H = 16;
+    private static final int PANEL_BG = 0xF00B0D12, HEADER_BG = 0xFF080A0E, TEXT_DIM = 0xFF6B7280, ROW_OFF = 0xFF9CA3AF;
+    private static final int SLIDER_BG = 0xFF141820, SEARCH_BG = 0xF0080A0E, ROW_ON_BG = 0x2200E8A0;
+    private static final int ROW_H = 16, SETTING_H = 14, NUMBER_H = 30;
+    private static final int SEARCH_X = 12, SEARCH_Y = 10, SEARCH_W = 240, SEARCH_H = 18;
 
     private int accent() {
         ClickGUIModule guiMod = TTClientClient.modules != null ? TTClientClient.modules.getModule(ClickGUIModule.class) : null;
@@ -56,7 +56,7 @@ public class ClickGUIScreen extends Screen {
             Panel p = new Panel(cat, x, 48);
             panels.put(cat, p);
             panelList.add(p);
-            x += 138;
+            x += 144;
         }
     }
 
@@ -64,7 +64,7 @@ public class ClickGUIScreen extends Screen {
     @Override public boolean isPauseScreen() { return false; }
     @Override public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         ClickGUIModule guiMod = TTClientClient.modules != null ? TTClientClient.modules.getModule(ClickGUIModule.class) : null;
-        if (guiMod != null && guiMod.dim.get()) graphics.fill(0, 0, this.width, this.height, 0x660A0B0F);
+        if (guiMod != null && guiMod.dim.get()) graphics.fill(0, 0, this.width, this.height, 0x88060A10);
     }
     @Override protected void extractBlurredBackground(GuiGraphicsExtractor graphics) {}
     @Override public void extractTransparentBackground(GuiGraphicsExtractor graphics) {}
@@ -75,25 +75,25 @@ public class ClickGUIScreen extends Screen {
         hoveredModule = null;
         graphics.fill(SEARCH_X, SEARCH_Y, SEARCH_X + SEARCH_W, SEARCH_Y + SEARCH_H, SEARCH_BG);
         graphics.fill(SEARCH_X, SEARCH_Y, SEARCH_X + 2, SEARCH_Y + SEARCH_H, accent());
-        String shown = searchQuery.isEmpty() ? (searchFocused ? "Search modules…" : "Click to search") : searchQuery + (searchFocused ? "_" : "");
-        graphics.text(this.font, shown, SEARCH_X + 8, SEARCH_Y + 4, searchQuery.isEmpty() ? TEXT_DIM : 0xFFE8EAED, false);
-        graphics.text(this.font, "TT Client v" + TTClient.VERSION + "  ·  .b add <block>", SEARCH_X + SEARCH_W + 12, SEARCH_Y + 4, accent(), false);
+        String shown = searchQuery.isEmpty() ? (searchFocused ? "search..." : "search modules") : searchQuery + (searchFocused ? "_" : "");
+        graphics.text(this.font, shown, SEARCH_X + 8, SEARCH_Y + 5, searchQuery.isEmpty() ? TEXT_DIM : 0xFFE8EAED, false);
+        graphics.text(this.font, "tt  " + TTClient.VERSION + "  ·  rshift", SEARCH_X + SEARCH_W + 14, SEARCH_Y + 5, accent(), false);
         for (Panel panel : panelList) panel.render(graphics, mouseX, mouseY);
         if (hoveredModule != null && typing == null) {
             String title = hoveredModule.getName();
             String desc = hoveredModule.getDescription();
             int pad = 8, tw = Math.max(font.width(title), font.width(desc)), boxW = tw + pad * 2, boxH = 28;
             int tx = Math.min(mouseX + 12, this.width - boxW - 4), ty = Math.min(mouseY + 12, this.height - boxH - 4);
-            graphics.fill(tx, ty, tx + boxW, ty + boxH, 0xF0000000);
+            graphics.fill(tx, ty, tx + boxW, ty + boxH, 0xF0080A0E);
             graphics.fill(tx, ty, tx + 2, ty + boxH, accent());
             graphics.text(font, title, tx + pad, ty + 4, accent(), false);
             graphics.text(font, desc, tx + pad, ty + 15, TEXT_DIM, false);
         }
         if (bindingModule != null) {
-            String msg = "Bind: " + bindingModule.getName() + "  (ESC clear)";
+            String msg = "bind  " + bindingModule.getName() + "  ·  esc clear · mouse ok";
             int tw = this.font.width(msg);
-            graphics.fill(this.width / 2 - tw / 2 - 10, this.height - 30, this.width / 2 + tw / 2 + 10, this.height - 12, 0xEE000000);
-            graphics.text(this.font, msg, this.width / 2 - tw / 2, this.height - 25, accent(), false);
+            graphics.fill(this.width / 2 - tw / 2 - 12, this.height - 32, this.width / 2 + tw / 2 + 12, this.height - 12, 0xF0080A0E);
+            graphics.text(this.font, msg, this.width / 2 - tw / 2, this.height - 26, accent(), false);
         }
     }
 
@@ -106,6 +106,11 @@ public class ClickGUIScreen extends Screen {
 
     @Override public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         double mouseX = event.x(), mouseY = event.y(); int button = event.button();
+        if (bindingModule != null && button >= 0) {
+            bindingModule.setKeyBind(2000 + button);
+            bindingModule = null;
+            return true;
+        }
         if (button == 0 && mouseX >= SEARCH_X && mouseX <= SEARCH_X + SEARCH_W && mouseY >= SEARCH_Y && mouseY <= SEARCH_Y + SEARCH_H) {
             searchFocused = true; commitTyping(true);
             for (Panel p : panelList) if (p.expanded instanceof BlockESP be) be.uiSearchFocused = false;
@@ -181,6 +186,13 @@ public class ClickGUIScreen extends Screen {
     public void startBinding(Module module) { commitTyping(true); this.bindingModule = module; searchFocused = false; }
     private static String keyName(int key) {
         if (key <= 0) return "NONE";
+        if (key >= 2000 && key < 2016) {
+            int b = key - 2000;
+            if (b == GLFW.GLFW_MOUSE_BUTTON_4) return "MOUSE4";
+            if (b == GLFW.GLFW_MOUSE_BUTTON_5) return "MOUSE5";
+            if (b == GLFW.GLFW_MOUSE_BUTTON_MIDDLE) return "MOUSE3";
+            return "MOUSE" + (b + 1);
+        }
         if (key == GLFW.GLFW_KEY_RIGHT_SHIFT) return "RSHIFT";
         if (key >= GLFW.GLFW_KEY_A && key <= GLFW.GLFW_KEY_Z) return String.valueOf((char)('A'+(key-GLFW.GLFW_KEY_A)));
         if (key >= GLFW.GLFW_KEY_0 && key <= GLFW.GLFW_KEY_9) return String.valueOf((char)('0'+(key-GLFW.GLFW_KEY_0)));
@@ -193,7 +205,7 @@ public class ClickGUIScreen extends Screen {
         private double x, y;
         private boolean open = true, dragging = false;
         private double dragOffsetX, dragOffsetY;
-        private final int width = 130, headerHeight = 18;
+        private final int width = 136, headerHeight = 20;
         Module expanded = null;
 
         public Panel(Category category, double x, double y) { this.category = category; this.x = x; this.y = y; }
@@ -216,10 +228,10 @@ public class ClickGUIScreen extends Screen {
                     for (Setting<?> s : mod.getSettings()) bodyH += settingRowHeight(s);
                     bodyH += SETTING_H;
                     if (mod instanceof BlockESP be) {
-                        bodyH += SETTING_H; // help
-                        bodyH += SETTING_H; // search
+                        bodyH += SETTING_H;
+                        bodyH += SETTING_H;
                         bodyH += Math.min(5, be.searchRegistry(be.uiSearch, 5).size()) * SETTING_H;
-                        bodyH += SETTING_H; // selected header
+                        bodyH += SETTING_H;
                         bodyH += Math.min(6, be.getSelected().size()) * SETTING_H;
                     }
                 }
@@ -231,22 +243,25 @@ public class ClickGUIScreen extends Screen {
             int ix = (int) x, iy = (int) y;
             List<Module> mods = filteredModules();
             int bodyH = bodyHeight(mods);
-            g.fill(ix + 2, iy + 2, ix + width + 2, iy + bodyH + 2, 0x44000000);
+            g.fill(ix + 3, iy + 3, ix + width + 3, iy + bodyH + 3, 0x66000000);
             g.fill(ix, iy, ix + width, iy + bodyH, PANEL_BG);
             g.fill(ix, iy, ix + width, iy + headerHeight, HEADER_BG);
+            g.fill(ix, iy + headerHeight - 1, ix + width, iy + headerHeight, 0x3300E8A0);
             g.fill(ix, iy, ix + 2, iy + bodyH, accent());
-            g.text(font, category.name, ix + 8, iy + 5, accent(), false);
+            g.text(font, category.name.toUpperCase(Locale.ROOT), ix + 8, iy + 6, accent(), false);
+            g.text(font, open ? "-" : "+", ix + width - 12, iy + 6, TEXT_DIM, false);
             if (!open) return;
             int my = iy + headerHeight;
             for (Module mod : mods) {
                 boolean on = mod.isEnabled();
                 int color = on ? accent() : ROW_OFF;
                 if (mouseX >= ix && mouseX <= ix + width && mouseY >= my && mouseY <= my + ROW_H) {
-                    g.fill(ix + 2, my, ix + width, my + ROW_H, 0x18FFFFFF);
+                    g.fill(ix + 2, my, ix + width, my + ROW_H, 0x14FFFFFF);
                     hoveredModule = mod;
                 }
-                g.text(font, mod.getName(), ix + 8, my + 4, color, false);
-                if (on) g.fill(ix + width - 11, my + 5, ix + width - 5, my + 11, accent());
+                if (on) g.fill(ix + 2, my, ix + width, my + ROW_H, ROW_ON_BG);
+                g.text(font, mod.getName(), ix + 10, my + 4, color, false);
+                if (on) g.fill(ix + width - 10, my + 5, ix + width - 5, my + 11, accent());
                 my += ROW_H;
                 if (expanded == mod) {
                     for (Setting<?> s : mod.getSettings()) {
@@ -255,28 +270,28 @@ public class ClickGUIScreen extends Screen {
                             String valText = (typing == ns) ? typingBuffer + "_" : ns.getDisplay();
                             int vw = font.width(valText);
                             g.text(font, valText, ix + width - 8 - vw, my + 2, typing == ns ? accent() : 0xFFE8EAED, false);
-                            int trackX = ix + 10, trackW = width - 20, trackY = my + 15;
-                            g.fill(trackX, trackY, trackX + trackW, trackY + 6, SLIDER_BG);
+                            int trackX = ix + 10, trackW = width - 20, trackY = my + 16;
+                            g.fill(trackX, trackY, trackX + trackW, trackY + 5, SLIDER_BG);
                             double range = ns.getMax() - ns.getMin();
                             double t = range <= 0 ? 0 : (ns.get() - ns.getMin()) / range;
                             int fillW = (int) Math.round(trackW * Math.max(0, Math.min(1, t)));
-                            if (fillW > 0) g.fill(trackX, trackY, trackX + fillW, trackY + 6, 0xFF0A3D32);
-                            g.fill(trackX + fillW - 2, trackY - 2, trackX + fillW + 2, trackY + 8, accent());
+                            if (fillW > 0) g.fill(trackX, trackY, trackX + fillW, trackY + 5, 0xFF0A3D32);
+                            g.fill(trackX + Math.max(0, fillW - 1), trackY - 2, trackX + fillW + 2, trackY + 7, accent());
                             my += NUMBER_H;
                         } else {
                             g.text(font, s.getName() + ": " + String.valueOf(s.get()), ix + 10, my + 2, TEXT_DIM, false);
                             my += SETTING_H;
                         }
                     }
-                    g.text(font, "Bind: " + keyName(mod.getKeyBind()), ix + 10, my + 2, accent(), false);
+                    g.text(font, "bind  " + keyName(mod.getKeyBind()), ix + 10, my + 2, accent(), false);
                     my += SETTING_H;
                     if (mod instanceof BlockESP be) {
-                        g.text(font, "Chat: .b add <block>", ix + 10, my + 2, TEXT_DIM, false);
+                        g.text(font, ".b add <block>", ix + 10, my + 2, TEXT_DIM, false);
                         my += SETTING_H;
                         String q = be.uiSearch == null ? "" : be.uiSearch;
                         boolean foc = be.uiSearchFocused;
-                        g.fill(ix + 6, my, ix + width - 6, my + SETTING_H - 1, foc ? 0xFF1A2A24 : 0xFF151A22);
-                        String sShown = q.isEmpty() ? (foc ? "type block id..." : "click to search") : q + (foc ? "_" : "");
+                        g.fill(ix + 6, my, ix + width - 6, my + SETTING_H - 1, foc ? 0xFF1A2A24 : 0xFF12151C);
+                        String sShown = q.isEmpty() ? (foc ? "block id..." : "search") : q + (foc ? "_" : "");
                         g.text(font, sShown, ix + 10, my + 2, foc ? accent() : TEXT_DIM, false);
                         my += SETTING_H;
                         for (String id : be.searchRegistry(q, 5)) {
@@ -285,7 +300,7 @@ public class ClickGUIScreen extends Screen {
                             g.text(font, "+ " + shortId, ix + 10, my + 2, 0xFF8BFFB0, false);
                             my += SETTING_H;
                         }
-                        g.text(font, "Selected (click remove)", ix + 10, my + 2, TEXT_DIM, false);
+                        g.text(font, "selected", ix + 10, my + 2, TEXT_DIM, false);
                         my += SETTING_H;
                         for (String id : be.getSelected()) {
                             String shortId = id.startsWith("minecraft:") ? id.substring(10) : id;
@@ -337,7 +352,7 @@ public class ClickGUIScreen extends Screen {
                     if (mouseX >= x + 2 && mouseX <= x + width - 2 && mouseY >= my && mouseY <= my + SETTING_H) { startBinding(mod); return true; }
                     my += SETTING_H;
                     if (mod instanceof BlockESP be && button == 0) {
-                        my += SETTING_H; // help
+                        my += SETTING_H;
                         if (mouseX >= x + 2 && mouseX <= x + width - 2 && mouseY >= my && mouseY <= my + SETTING_H) {
                             be.uiSearchFocused = true; searchFocused = false; return true;
                         }
@@ -350,7 +365,7 @@ public class ClickGUIScreen extends Screen {
                             }
                             my += SETTING_H;
                         }
-                        my += SETTING_H; // selected header
+                        my += SETTING_H;
                         for (String id : new ArrayList<>(be.getSelected())) {
                             if (mouseX >= x + 2 && mouseX <= x + width - 2 && mouseY >= my && mouseY <= my + SETTING_H) {
                                 be.removeBlock(id);
