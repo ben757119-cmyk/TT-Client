@@ -9,7 +9,6 @@ import com.ttclient.settings.ColorSetting;
 import com.ttclient.settings.NumberSetting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.player.Player;
 
 /** Montage-style china hat ring above players (screen-space). */
@@ -33,21 +32,21 @@ public class ChinaHat extends Module {
         int col = color.get();
         if (((col >> 24) & 0xFF) == 0) col |= 0xFF000000;
 
-        if (self.get()) drawHat(g, mc.player, partialTick, col);
+        if (self.get()) drawHat(g, mc.player, col);
 
         if (others.get()) {
             for (Player pl : mc.level.players()) {
                 if (pl == mc.player || !pl.isAlive()) continue;
                 if (mc.player.distanceToSqr(pl) > 64 * 64) continue;
-                drawHat(g, pl, partialTick, col);
+                drawHat(g, pl, col);
             }
         }
     }
 
-    private void drawHat(GuiGraphicsExtractor g, Player pl, float pt, int col) {
-        double x = pl.xo + (pl.getX() - pl.xo) * pt;
-        double y = pl.yo + (pl.getY() - pl.yo) * pt + pl.getBbHeight() + height.get();
-        double z = pl.zo + (pl.getZ() - pl.zo) * pt;
+    private void drawHat(GuiGraphicsExtractor g, Player pl, int col) {
+        double x = pl.getX();
+        double y = pl.getY() + pl.getBbHeight() + height.get();
+        double z = pl.getZ();
 
         double rad = radius.get();
         int segs = segments.getInt();
@@ -76,12 +75,10 @@ public class ChinaHat extends Module {
             prevX = out[0];
             prevY = out[1];
         }
-        // close loop if both ends visible
         if (hasFirst && prevX != null) {
             EspDraw.line(g, prevX, prevY, firstX, firstY, col);
         }
 
-        // small filled center accent
         if (EspProjection.worldToScreen(x, y, z, out)) {
             int cx = (int) out[0];
             int cy = (int) out[1];
