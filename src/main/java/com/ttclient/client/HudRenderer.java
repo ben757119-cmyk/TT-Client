@@ -23,13 +23,16 @@ public class HudRenderer {
     private static final int ACCENT = 0xFF00E8A0;
     private static final int TEXT = 0xFFE8EAED;
     private static final int DIM = 0xFF8B95A8;
-    private static final int PANEL = 0xAA0A0B0F;
+    private static final int PANEL = 0x99060A10;
 
     @SubscribeEvent
     public void onRenderGui(RenderGuiEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
-        if (mc.gui.screen() != null) return;
+        // Allow HUD while F3 is open — only skip full GUI screens
+        try {
+            if (mc.gui.screen() != null) return;
+        } catch (Throwable ignored) {}
 
         GuiGraphicsExtractor g = event.getGuiGraphics();
         Font font = mc.font;
@@ -67,34 +70,27 @@ public class HudRenderer {
         int cy = sh / 2;
         int gap = 3;
         int len = 6;
-        g.fill(cx - gap - len, cy - 1, cx - gap, cy + 1, ACCENT);
-        g.fill(cx + gap, cy - 1, cx + gap + len, cy + 1, ACCENT);
-        g.fill(cx - 1, cy - gap - len, cx + 1, cy - gap, ACCENT);
-        g.fill(cx - 1, cy + gap, cx + 1, cy + gap + len, ACCENT);
-        if (ch.dot.get()) {
-            g.fill(cx - 1, cy - 1, cx + 1, cy + 1, ACCENT);
-        }
+        int c = ACCENT;
+        g.fill(cx - gap - len, cy, cx - gap, cy + 1, c);
+        g.fill(cx + gap, cy, cx + gap + len, cy + 1, c);
+        g.fill(cx, cy - gap - len, cx + 1, cy - gap, c);
+        g.fill(cx, cy + gap, cx + 1, cy + gap + len, c);
     }
 
     private void drawHud(GuiGraphicsExtractor g, Font font, Minecraft mc, HUD hud) {
-        int y = 4;
-        if (hud.watermark.get()) {
-            String w = "TT Client " + TTClient.VERSION;
-            g.fill(2, y - 1, 6 + font.width(w), y + 10, PANEL);
-            g.text(font, w, 4, y, ACCENT, false);
-            y += 12;
+        String watermark = "TT Client";
+        g.fill(4, 4, 8 + font.width(watermark) + 6, 16, PANEL);
+        g.fill(4, 4, 6, 16, ACCENT);
+        g.text(font, watermark, 10, 6, ACCENT, false);
+
+        if (hud.coords != null && hud.coords.get()) {
+            var p = mc.player;
+            String coords = String.format("XYZ %.1f %.1f %.1f", p.getX(), p.getY(), p.getZ());
+            g.text(font, coords, 10, 18, DIM, false);
         }
-        if (hud.fps.get()) {
-            g.text(font, mc.getFps() + " FPS", 4, y, TEXT, false);
-            y += 10;
-        }
-        if (hud.coords.get() && mc.player != null) {
-            String s = String.format("XYZ %.1f %.1f %.1f", mc.player.getX(), mc.player.getY(), mc.player.getZ());
-            g.text(font, s, 4, y, TEXT, false);
-            y += 10;
-        }
-        if (hud.direction.get() && mc.player != null) {
-            g.text(font, "Facing " + mc.player.getDirection().getSerializedName(), 4, y, DIM, false);
+        if (hud.fps != null && hud.fps.get()) {
+            String fps = mc.getFps() + " FPS";
+            g.text(font, fps, 10, 28, TEXT, false);
         }
     }
 
@@ -114,16 +110,17 @@ public class HudRenderer {
             Module m = enabled.get(i);
             String name = m.getName();
             int w = font.width(name);
-            int x = sw - w - 6;
+            int x = sw - w - 8;
             int color = ACCENT;
             if (mod.rainbow.get()) {
-                float hue = ((time / 20f) + i * 12) % 360 / 360f;
-                color = 0xFF000000 | java.awt.Color.HSBtoRGB(hue, 0.7f, 1f);
+                float hue = ((time / 18f) + i * 14) % 360 / 360f;
+                color = 0xFF000000 | java.awt.Color.HSBtoRGB(hue, 0.65f, 1f);
             }
-            g.fill(x - 3, y - 1, sw - 2, y + 10, PANEL);
-            g.fill(sw - 2, y - 1, sw, y + 10, color);
-            g.text(font, name, x, y, color, false);
-            y += 11;
+            // montage bar: soft panel + accent edge
+            g.fill(x - 5, y - 1, sw - 1, y + 11, PANEL);
+            g.fill(sw - 2, y - 1, sw, y + 11, color);
+            g.text(font, name, x, y + 1, color, false);
+            y += 12;
         }
     }
 
