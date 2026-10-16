@@ -25,11 +25,11 @@ import java.util.List;
 
 /**
  * Mid-air anchor place/charge/explode.
- * Exactly one anchor at a time. Predict only when target is elytra / extremely fast.
+ * HARD rule: at most one place attempt; wait for that anchor (or timeout) before another.
  */
 public class AnchorAura extends Module {
     public final NumberSetting range = addSetting(new NumberSetting("Range", "Base range", 5.0, 2.0, 256.0, 0.5));
-    public final NumberSetting delay = addSetting(new NumberSetting("Delay", "Ticks between actions", 2, 0, 20, 1));
+    public final NumberSetting delay = addSetting(new NumberSetting("Delay", "Ticks between actions", 3, 0, 20, 1));
     public final BoolSetting place = addSetting(new BoolSetting("Place", "Place anchors near target", true));
     public final BoolSetting charge = addSetting(new BoolSetting("Charge", "Charge with glowstone", true));
     public final BoolSetting explode = addSetting(new BoolSetting("Explode", "Detonate charged anchors", true));
@@ -41,24 +41,27 @@ public class AnchorAura extends Module {
     public final NumberSetting airHeight = addSetting(new NumberSetting("AirHeight", "Blocks above feet to place (1-3)", 1, 1, 3, 1));
     public final BoolSetting predict = addSetting(new BoolSetting("Predict", "Lead place only when elytra / extremely fast", true));
     public final NumberSetting predictTicks = addSetting(new NumberSetting("PredictTicks", "Ticks of movement to lead when predicting", 6, 0, 20, 1));
-    /** Horizontal speed ~ elytra boost territory; normal sprint is ~0.28 */
     public final NumberSetting predictMinSpeed = addSetting(new NumberSetting("MinSpeed", "Min speed to predict (elytra zoom)", 0.95, 0.4, 3.0, 0.05));
+    public final NumberSetting placeWait = addSetting(new NumberSetting("PlaceWait", "Ticks to wait after a place before retry", 25, 10, 60, 1));
 
     private int timer;
     private BlockPos pendingExplode;
     private BlockPos trackedAnchor;
-    /** After a successful place packet, lock placing until explode/clear. */
-    private boolean placeLock;
+    /** Intended place position while waiting for server confirm. */
+    private BlockPos pendingPlacePos;
+    /** Ticks left where placing is forbidden after a place attempt. */
+    private int placeLockTicks;
 
     public AnchorAura() {
-        super("AnchorAura", "One mid-air anchor; predict only if zooming", Category.COMBAT);
+        super("AnchorAura", "One anchor only — wait before next place", Category.COMBAT);
     }
 
     @Override
     public void onDisable() {
         pendingExplode = null;
         trackedAnchor = null;
-        placeLock = false;
+        pendingPlacePos = null;
+        placeLockTicks = 0;
     }
 
     private double effectiveRange() {
@@ -111,175 +114,204 @@ public class AnchorAura extends Module {
     public void onTick() {
         Minecraft mc = mc();
         if (mc == null || mc.player == null || mc.level == null || mc.gameMode == null) return;
+
+        if (placeLockTicks > 0) placeLockTicks--;
         if (timer > 0) { timer--; return; }
 
         LocalPlayer p = mc.player;
         double r = effectiveRange();
         Player target = nearestEnemy(mc, p, r);
 
-        // Sync tracked anchor with world
-        if (trackedAnchor != null && !mc.level.getBlockState(trackedAnchor).is(Blocks.RESPAWN_ANCHOR)) {
-            trackedAnchor = null;
-            pendingExplode = null;
-            placeLock = false;
-        }
-
-        // If any anchor already exists near target / us, adopt it and never place a second
-        if (trackedAnchor == null && target != null) {
-            BlockPos near = scanAnchorsAround(mc, target.blockPosition(), 8, r, p);
-            if (near == null) near = scanAnchorsAround(mc, p.blockPosition(), 8, r, p);
-            if (near != null) {
-                trackedAnchor = near;
-                placeLock = true;
+        // Resolve pending place → confirmed anchor
+        if (pendingPlacePos != null) {
+            if (mc.level.getBlockState(pendingPlacePos).is(Blocks.RESPAWN_ANCHOR)) {
+                trackedAnchor = pendingPlacePos;
+                pendingPlacePos = null;
+            } else if (placeLockTicks <= 0) {
+                // Give up on this attempt only after full wait — still don't spam
+                pendingPlacePos = null;
             }
         }
 
+        // If tracked was destroyed (exploded), clear
+        if (trackedAnchor != null && !mc.level.getBlockState(trackedAnchor).is(Blocks.RESPAWN_ANCHOR)) {
+            trackedAnchor = null;
+            pendingExplode = null;
+        }
+
+        // Adopt any existing single nearest anchor near target (never place a second)
+        if (trackedAnchor == null) {
+            BlockPos found = null;
+            if (target != null) found = scanAnchorsAround(mc, target.blockPosition(), 10, r, p);
+            if (found == null) found = scanAnchorsAround(mc, p.blockPosition(), 10, r, p);
+            if (found != null) {
+                trackedAnchor = found;
+                pendingPlacePos = null;
+            }
+        }
+
+        // Safe explode follow-up
         if (pendingExplode != null && explode.get()) {
             BlockPos pos = pendingExplode;
             pendingExplode = null;
             if (mc.level.getBlockState(pos).is(Blocks.RESPAWN_ANCHOR)) {
-                if (doExplode(mc, p, pos)) {
-                    timer = delay.getInt();
-                    return;
-                }
+                doExplode(mc, p, pos);
+                timer = delay.getInt();
+                return;
             }
         }
 
-        BlockPos existing = null;
-        if (trackedAnchor != null && mc.level.getBlockState(trackedAnchor).is(Blocks.RESPAWN_ANCHOR)) {
-            existing = trackedAnchor;
-        }
-
-        if (existing != null) {
-            placeLock = true; // hard lock while we own an anchor
-            int c = getCharges(mc.level.getBlockState(existing));
+        // ===== Work on the ONE existing anchor =====
+        if (trackedAnchor != null) {
+            int c = getCharges(mc.level.getBlockState(trackedAnchor));
             int want = charges.getInt();
 
             if (c < want && charge.get()) {
-                doCharge(mc, p, existing);
+                doCharge(mc, p, trackedAnchor);
                 timer = delay.getInt();
                 return;
             }
 
-            boolean readyToPop = c >= 1 && c >= want && explode.get();
-            if (!readyToPop && c > 0 && explode.get() && !charge.get()) readyToPop = true;
-
+            boolean readyToPop = explode.get() && c >= 1 && (c >= want || !charge.get());
             if (readyToPop) {
                 double dist = Math.sqrt(p.distanceToSqr(
-                        existing.getX() + 0.5, existing.getY() + 0.5, existing.getZ() + 0.5));
-
+                        trackedAnchor.getX() + 0.5, trackedAnchor.getY() + 0.5, trackedAnchor.getZ() + 0.5));
                 if (safeAnchor.get() && dist <= safeDist.get()) {
-                    if (placeSafetyGlowstone(mc, p, existing)) {
-                        pendingExplode = existing;
+                    if (placeSafetyGlowstone(mc, p, trackedAnchor)) {
+                        pendingExplode = trackedAnchor;
                         timer = Math.max(1, delay.getInt());
                         return;
                     }
                 }
-
-                doExplode(mc, p, existing);
+                doExplode(mc, p, trackedAnchor);
                 timer = delay.getInt();
                 return;
             }
 
-            // Still have this one anchor — never place another
+            // Have an anchor but not ready — do nothing else (no place)
             timer = delay.getInt();
             return;
         }
 
-        // Place only if unlocked and no tracked anchor
-        if (place.get() && target != null && trackedAnchor == null && !placeLock) {
-            // Double-check no anchor already near target
-            BlockPos already = scanAnchorsAround(mc, target.blockPosition(), 8, r, p);
-            if (already != null) {
-                trackedAnchor = already;
-                placeLock = true;
-                timer = delay.getInt();
-                return;
-            }
+        // ===== Place ONLY if no anchor, not waiting on a place, lock expired =====
+        if (!place.get() || target == null) return;
+        if (pendingPlacePos != null) return;          // waiting for confirm
+        if (placeLockTicks > 0) return;               // hard cooldown after place attempt
 
-            BlockPos placed = doPlaceMidAirPredicted(mc, p, r, target);
-            if (placed != null) {
-                trackedAnchor = placed;
-                placeLock = true; // one only until cleared
-                timer = delay.getInt();
+        // Final scan — if anything is already there, take it
+        BlockPos already = scanAnchorsAround(mc, target.blockPosition(), 10, r, p);
+        if (already != null) {
+            trackedAnchor = already;
+            timer = delay.getInt();
+            return;
+        }
+
+        // ONE place attempt this cycle
+        BlockPos intended = pickOneMidAirSpot(mc, p, r, target);
+        if (intended == null) return;
+
+        ShieldState st = new ShieldState(p);
+        boolean sent = tryPlaceOnce(mc, p, intended);
+        restoreShield(mc, p, st);
+
+        if (sent) {
+            pendingPlacePos = intended;
+            placeLockTicks = placeWait.getInt(); // long lock — no more places
+            if (mc.level.getBlockState(intended).is(Blocks.RESPAWN_ANCHOR)) {
+                trackedAnchor = intended;
+                pendingPlacePos = null;
             }
+            timer = delay.getInt();
         }
     }
 
-    /** True only for elytra flight or extreme speed (not normal sprint). */
-    private boolean shouldPredict(Player target) {
-        if (!predict.get()) return false;
-
-        boolean elytra = false;
-        try {
-            elytra = target.isFallFlying();
-        } catch (Throwable ignored) {}
-
-        Vec3 vel = target.getDeltaMovement();
-        double speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
-        double horiz = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
-
-        // Elytra gliding at real speed, or overall velocity past threshold (firework zoom)
-        if (elytra && (speed >= 0.6 || horiz >= 0.5)) return true;
-        if (speed >= predictMinSpeed.get()) return true;
-        if (horiz >= predictMinSpeed.get()) return true;
-        return false;
-    }
-
-    private BlockPos predictedFeet(Player target) {
-        BlockPos now = target.blockPosition();
-        if (!shouldPredict(target)) return now;
-
-        Vec3 vel = target.getDeltaMovement();
-        double ticks = predictTicks.get();
-        double speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
-        // Extra lead when firework-boosting hard
-        if (speed > 1.5) ticks += 2;
-        if (speed > 2.5) ticks += 3;
-
-        double px = target.getX() + vel.x * ticks;
-        double py = target.getY() + vel.y * ticks;
-        double pz = target.getZ() + vel.z * ticks;
-        return BlockPos.containing(px, py, pz);
-    }
-
-    private BlockPos doPlaceMidAirPredicted(Minecraft mc, LocalPlayer p, double r, Player target) {
-        int slot = InvUtils.findHotbar(p, Items.RESPAWN_ANCHOR);
-        if (slot < 0) return null;
-
-        BlockPos feet = predictedFeet(target);
-        BlockPos curFeet = target.blockPosition();
+    /** Pick a single best mid-air candidate (prediction only if elytra/fast). */
+    private BlockPos pickOneMidAirSpot(Minecraft mc, LocalPlayer p, double r, Player target) {
+        BlockPos feet = shouldPredict(target) ? predictedFeet(target) : target.blockPosition();
         int h = airHeight.getInt();
 
         List<BlockPos> candidates = new ArrayList<>();
         addMidAirRing(candidates, feet, h);
-        // Only add current position ring when NOT predicting (or as light hedge)
-        if (!feet.equals(curFeet) && shouldPredict(target)) {
-            // Prefer predicted; small hedge halfway
-            BlockPos mid = BlockPos.containing(
-                    (target.getX() + feet.getX() + 0.5) * 0.5,
-                    (target.getY() + feet.getY()) * 0.5,
-                    (target.getZ() + feet.getZ() + 0.5) * 0.5
-            );
-            addMidAirRing(candidates, mid, h);
-        }
 
-        ShieldState st = new ShieldState(p);
-
+        BlockPos best = null;
+        double bestD = Double.MAX_VALUE;
         for (BlockPos pos : candidates) {
             if (!isReplaceable(mc, pos)) continue;
-            if (p.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > r * r) continue;
+            double d = p.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+            if (d > r * r) continue;
             if (pos.equals(p.blockPosition()) || pos.equals(p.blockPosition().above())) continue;
-
-            if (tryPlaceMidAir(mc, p, slot, pos)) {
-                restoreShield(mc, p, st);
-                // Only return if the cell looks occupied / we sent place — still lock one
-                return pos;
+            // Prefer closer to target body
+            double td = target.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+            if (td < bestD) {
+                bestD = td;
+                best = pos;
             }
         }
+        return best;
+    }
 
-        restoreShield(mc, p, st);
-        return null;
+    /** Single interaction only — no multi-face spam that can multi-place. */
+    private boolean tryPlaceOnce(Minecraft mc, LocalPlayer p, BlockPos placePos) {
+        int slot = InvUtils.findHotbar(p, Items.RESPAWN_ANCHOR);
+        if (slot < 0) return false;
+        InvUtils.selectHotbar(p, slot);
+
+        // Prefer one solid neighbor
+        Direction[] order = {
+                Direction.DOWN, Direction.NORTH, Direction.SOUTH,
+                Direction.EAST, Direction.WEST, Direction.UP
+        };
+        for (Direction towardSupport : order) {
+            BlockPos support = placePos.relative(towardSupport);
+            BlockState ss = mc.level.getBlockState(support);
+            if (ss.isAir() || ss.canBeReplaced()) continue;
+            Direction face = towardSupport.getOpposite();
+            Vec3 hit = Vec3.atCenterOf(support).add(
+                    face.getStepX() * 0.5, face.getStepY() * 0.5, face.getStepZ() * 0.5);
+            BlockHitResult bhr = new BlockHitResult(hit, face, support, false);
+            try {
+                mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, bhr);
+                p.swing(InteractionHand.MAIN_HAND);
+                return true; // one packet only
+            } catch (Throwable ignored) {}
+        }
+
+        // One air-place fallback packet
+        try {
+            BlockPos below = placePos.below();
+            Vec3 hit = new Vec3(placePos.getX() + 0.5, placePos.getY(), placePos.getZ() + 0.5);
+            BlockHitResult bhr = new BlockHitResult(hit, Direction.UP, below, false);
+            mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, bhr);
+            p.swing(InteractionHand.MAIN_HAND);
+            return true;
+        } catch (Throwable ignored) {}
+
+        return false;
+    }
+
+    private boolean shouldPredict(Player target) {
+        if (!predict.get()) return false;
+        boolean elytra = false;
+        try { elytra = target.isFallFlying(); } catch (Throwable ignored) {}
+        Vec3 vel = target.getDeltaMovement();
+        double speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
+        double horiz = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+        if (elytra && (speed >= 0.6 || horiz >= 0.5)) return true;
+        if (speed >= predictMinSpeed.get() || horiz >= predictMinSpeed.get()) return true;
+        return false;
+    }
+
+    private BlockPos predictedFeet(Player target) {
+        Vec3 vel = target.getDeltaMovement();
+        double ticks = predictTicks.get();
+        double speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
+        if (speed > 1.5) ticks += 2;
+        if (speed > 2.5) ticks += 3;
+        return BlockPos.containing(
+                target.getX() + vel.x * ticks,
+                target.getY() + vel.y * ticks,
+                target.getZ() + vel.z * ticks
+        );
     }
 
     private void addMidAirRing(List<BlockPos> out, BlockPos feet, int h) {
@@ -295,37 +327,6 @@ public class AnchorAura extends Module {
             out.add(level.south().west());
             if (dy == h + 1) out.add(level);
         }
-    }
-
-    private boolean tryPlaceMidAir(Minecraft mc, LocalPlayer p, int slot, BlockPos placePos) {
-        if (tryPlaceAgainstNeighbor(mc, p, slot, placePos)) return true;
-
-        InvUtils.selectHotbar(p, slot);
-        for (Direction face : Direction.values()) {
-            BlockPos clickPos = placePos.relative(face.getOpposite());
-            Vec3 hit = Vec3.atCenterOf(placePos).subtract(
-                    face.getStepX() * 0.5,
-                    face.getStepY() * 0.5,
-                    face.getStepZ() * 0.5
-            );
-            BlockHitResult bhr = new BlockHitResult(hit, face, clickPos, false);
-            try {
-                mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, bhr);
-                p.swing(InteractionHand.MAIN_HAND);
-                if (!isReplaceable(mc, placePos)) return true;
-            } catch (Throwable ignored) {}
-        }
-
-        try {
-            BlockPos below = placePos.below();
-            Vec3 hit = new Vec3(placePos.getX() + 0.5, placePos.getY(), placePos.getZ() + 0.5);
-            BlockHitResult bhr = new BlockHitResult(hit, Direction.UP, below, false);
-            mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, bhr);
-            p.swing(InteractionHand.MAIN_HAND);
-            if (!isReplaceable(mc, placePos)) return true;
-        } catch (Throwable ignored) {}
-
-        return !isReplaceable(mc, placePos);
     }
 
     private BlockPos scanAnchorsAround(Minecraft mc, BlockPos origin, int ri, double maxRange, LocalPlayer p) {
@@ -375,10 +376,26 @@ public class AnchorAura extends Module {
         }
         if (best == null) return false;
 
+        // One glowstone place only
         ShieldState st = new ShieldState(p);
-        boolean placed = tryPlaceMidAir(mc, p, gs, best);
+        InvUtils.selectHotbar(p, gs);
+        boolean ok = false;
+        for (Direction towardSupport : Direction.values()) {
+            BlockPos support = best.relative(towardSupport);
+            BlockState ss = mc.level.getBlockState(support);
+            if (ss.isAir() || ss.canBeReplaced()) continue;
+            Direction face = towardSupport.getOpposite();
+            Vec3 hit = Vec3.atCenterOf(support).add(
+                    face.getStepX() * 0.5, face.getStepY() * 0.5, face.getStepZ() * 0.5);
+            try {
+                mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(hit, face, support, false));
+                p.swing(InteractionHand.MAIN_HAND);
+                ok = true;
+                break;
+            } catch (Throwable ignored) {}
+        }
         restoreShield(mc, p, st);
-        return placed || hasCoverBetween(mc, p, anchor);
+        return ok || hasCoverBetween(mc, p, anchor);
     }
 
     private boolean hasCoverBetween(Minecraft mc, LocalPlayer p, BlockPos anchor) {
@@ -403,15 +420,14 @@ public class AnchorAura extends Module {
         if (gs < 0) return false;
         ShieldState st = new ShieldState(p);
         InvUtils.selectHotbar(p, gs);
-        boolean ok = clickBlock(mc, p, anchor);
+        boolean ok = clickBlockOnce(mc, p, anchor);
         restoreShield(mc, p, st);
-        if (ok) trackedAnchor = anchor;
         return ok;
     }
 
     private boolean doExplode(Minecraft mc, LocalPlayer p, BlockPos anchor) {
         ShieldState st = new ShieldState(p);
-        if (p.getMainHandItem().is(Items.GLOWSTONE) || p.getInventory().getItem(st.hotbarSlot).is(Items.GLOWSTONE)) {
+        if (p.getMainHandItem().is(Items.GLOWSTONE)) {
             for (int i = 0; i < 9; i++) {
                 ItemStack s = p.getInventory().getItem(i);
                 if (!s.is(Items.GLOWSTONE) && !isShield(s)) {
@@ -419,67 +435,27 @@ public class AnchorAura extends Module {
                     break;
                 }
             }
-            if (p.getMainHandItem().is(Items.GLOWSTONE)) {
-                for (int i = 0; i < 9; i++) {
-                    if (!p.getInventory().getItem(i).is(Items.GLOWSTONE)) {
-                        InvUtils.selectHotbar(p, i);
-                        break;
-                    }
-                }
-            }
         }
-        boolean ok = clickBlock(mc, p, anchor);
+        boolean ok = clickBlockOnce(mc, p, anchor);
         restoreShield(mc, p, st);
         return ok;
+    }
+
+    private boolean clickBlockOnce(Minecraft mc, LocalPlayer p, BlockPos pos) {
+        Vec3 hit = Vec3.atCenterOf(pos).add(0, 0.5, 0);
+        BlockHitResult bhr = new BlockHitResult(hit, Direction.UP, pos, false);
+        try {
+            mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, bhr);
+            p.swing(InteractionHand.MAIN_HAND);
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
     private boolean isReplaceable(Minecraft mc, BlockPos pos) {
         BlockState st = mc.level.getBlockState(pos);
         return st.isAir() || st.canBeReplaced();
-    }
-
-    private boolean tryPlaceAgainstNeighbor(Minecraft mc, LocalPlayer p, int slot, BlockPos placePos) {
-        Direction[] order = {
-                Direction.DOWN, Direction.NORTH, Direction.SOUTH,
-                Direction.EAST, Direction.WEST, Direction.UP
-        };
-        for (Direction towardSupport : order) {
-            BlockPos support = placePos.relative(towardSupport);
-            BlockState ss = mc.level.getBlockState(support);
-            if (ss.isAir() || ss.canBeReplaced()) continue;
-            Direction face = towardSupport.getOpposite();
-            InvUtils.selectHotbar(p, slot);
-            Vec3 hit = Vec3.atCenterOf(support).add(
-                    face.getStepX() * 0.5,
-                    face.getStepY() * 0.5,
-                    face.getStepZ() * 0.5
-            );
-            BlockHitResult bhr = new BlockHitResult(hit, face, support, false);
-            try {
-                var result = mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, bhr);
-                p.swing(InteractionHand.MAIN_HAND);
-                if (!isReplaceable(mc, placePos)) return true;
-                if (result != null) return true;
-            } catch (Throwable ignored) {}
-        }
-        return false;
-    }
-
-    private boolean clickBlock(Minecraft mc, LocalPlayer p, BlockPos pos) {
-        for (Direction face : Direction.values()) {
-            Vec3 hit = Vec3.atCenterOf(pos).add(
-                    face.getStepX() * 0.5,
-                    face.getStepY() * 0.5,
-                    face.getStepZ() * 0.5
-            );
-            BlockHitResult bhr = new BlockHitResult(hit, face, pos, false);
-            try {
-                mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, bhr);
-                p.swing(InteractionHand.MAIN_HAND);
-                return true;
-            } catch (Throwable ignored) {}
-        }
-        return false;
     }
 
     private int getCharges(BlockState st) {
