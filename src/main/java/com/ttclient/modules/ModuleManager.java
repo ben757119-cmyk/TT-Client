@@ -25,6 +25,7 @@ public class ModuleManager {
         register(new Keystrokes());
         register(new ArrayListMod());
 
+        register(new Destroyer());
         register(new KillAura());
         register(new AimAssist());
         register(new TriggerBot());
