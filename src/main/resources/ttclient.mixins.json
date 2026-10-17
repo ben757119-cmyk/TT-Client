@@ -4,9 +4,10 @@
   "package": "com.ttclient.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
-    "MixinBlockStateBase"
+    "MixinBlockStateBase",
+    "MixinCamera"
   ],
   "injectors": {
-    "defaultRequire": 1
+    "defaultRequire": 0
   }
 }
