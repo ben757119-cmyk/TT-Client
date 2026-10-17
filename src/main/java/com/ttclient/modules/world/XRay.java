@@ -1,6 +1,7 @@
 package com.ttclient.modules.world;
 
 import com.ttclient.client.TTClientClient;
+import com.ttclient.modules.BlockListModule;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.render.EspDraw;
@@ -10,90 +11,233 @@ import com.ttclient.settings.NumberSetting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.level.block.Blocks;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
-/** XRay: opacity (mixins) + ore ESP. */
-public class XRay extends Module {
-    public final BoolSetting opacity = addSetting(new BoolSetting("Opacity", "Hide non-ores (classic XRay)", true));
-    public final BoolSetting esp = addSetting(new BoolSetting("ESP", "Draw boxes on ores", true));
-    public final BoolSetting tracers = addSetting(new BoolSetting("Tracers", "Lines to ores", true));
-    public final BoolSetting fullbright = addSetting(new BoolSetting("Fullbright", "Max brightness while on", true));
+/** Fast progressive ore ESP + optional opacity. Searchable ore list in ClickGUI. */
+public class XRay extends Module implements BlockListModule {
+    public final BoolSetting opacity = addSetting(new BoolSetting("Opacity", "Hide non-selected (SLOW toggle — leave OFF on Donut)", false));
+    public final BoolSetting esp = addSetting(new BoolSetting("ESP", "Boxes on selected ores", true));
+    public final BoolSetting tracers = addSetting(new BoolSetting("Tracers", "Lines to ores", false));
+    public final BoolSetting fullbright = addSetting(new BoolSetting("Fullbright", "Brighten while on", true));
+    public final NumberSetting range = addSetting(new NumberSetting("Range", "ESP range", 48, 16, 80, 8));
+    public final NumberSetting maxHits = addSetting(new NumberSetting("MaxHits", "Max boxes", 200, 50, 500, 25));
 
-    public final BoolSetting diamonds = addSetting(new BoolSetting("Diamonds", "Diamond ore", true));
-    public final BoolSetting ancientDebris = addSetting(new BoolSetting("AncientDebris", "Ancient debris", true));
-    public final BoolSetting iron = addSetting(new BoolSetting("Iron", "Iron ore", true));
-    public final BoolSetting gold = addSetting(new BoolSetting("Gold", "Gold ore", true));
-    public final BoolSetting copper = addSetting(new BoolSetting("Copper", "Copper ore", true));
-    public final BoolSetting coal = addSetting(new BoolSetting("Coal", "Coal ore", true));
-    public final BoolSetting redstone = addSetting(new BoolSetting("Redstone", "Redstone ore", true));
-    public final BoolSetting lapis = addSetting(new BoolSetting("Lapis", "Lapis ore", true));
-    public final BoolSetting emerald = addSetting(new BoolSetting("Emerald", "Emerald ore", true));
-    public final BoolSetting quartz = addSetting(new BoolSetting("Quartz", "Nether quartz", true));
-
-    public final NumberSetting range = addSetting(new NumberSetting("Range", "ESP scan range", 48, 16, 96, 8));
-
+    private final Set<String> selected = new LinkedHashSet<>();
     private final List<Hit> hits = new ArrayList<>();
-    private int tick;
+    private final List<Hit> building = new ArrayList<>();
+    private int scanDx, scanDz;
     private Double oldGamma;
+    private boolean lastOpacity;
+    public String uiSearch = "";
+    public boolean uiSearchFocused;
 
     public XRay() {
-        super("XRay", "See ores through walls (opacity + ESP)", Category.WORLD);
+        super("XRay", "Ore ESP + optional opacity — pick ores in settings", Category.WORLD);
+        presetValuables();
     }
 
     public static XRay get() {
         try {
             var mods = TTClientClient.modules;
-            if (mods == null) return null;
-            return mods.getModule(XRay.class);
-        } catch (Throwable t) {
-            return null;
-        }
+            return mods == null ? null : mods.getModule(XRay.class);
+        } catch (Throwable t) { return null; }
     }
 
     public static boolean isOpacityActive() {
         XRay x = get();
         return x != null && x.isEnabled() && x.opacity.get();
     }
-
-    public static boolean shouldHideNonOres() {
-        return isOpacityActive();
-    }
-
+    public static boolean shouldHideNonOres() { return isOpacityActive(); }
     public static boolean isOre(BlockState st) {
         XRay x = get();
-        if (x == null || !x.isEnabled() || st == null) return false;
-        return x.match(st) != 0;
+        return x != null && x.isEnabled() && st != null && x.matchesSelected(st);
     }
 
-    @Override
-    public void onEnable() {
-        tick = 0;
-        hits.clear();
-        applyGamma(true);
-        reloadChunks();
-    }
+    @Override public String getUiSearch() { return uiSearch == null ? "" : uiSearch; }
+    @Override public void setUiSearch(String s) { uiSearch = s == null ? "" : s; }
+    @Override public boolean isUiSearchFocused() { return uiSearchFocused; }
+    @Override public void setUiSearchFocused(boolean f) { uiSearchFocused = f; }
+    @Override public Set<String> getSelected() { return selected; }
+    @Override public String listTitle() { return "ores"; }
 
-    @Override
-    public void onDisable() {
-        hits.clear();
-        applyGamma(false);
-        reloadChunks();
+    @Override public boolean addBlock(String id) {
+        String n = normalize(id);
+        if (n == null) return false;
+        boolean ok = selected.add(n);
+        if (ok && opacity.get()) scheduleReload();
+        return ok;
     }
-
-    @Override
-    public void onTick() {
-        if (fullbright.get()) applyGamma(true);
-        if (!esp.get() && !tracers.get()) {
-            hits.clear();
-            return;
+    @Override public boolean removeBlock(String id) {
+        String n = normalize(id);
+        boolean ok = n != null ? selected.remove(n) : selected.remove(id.toLowerCase(Locale.ROOT));
+        if (ok && opacity.get()) scheduleReload();
+        return ok;
+    }
+    public void loadBlocks(String csv) {
+        selected.clear();
+        if (csv == null || csv.isBlank()) return;
+        for (String p : csv.split(",")) {
+            String n = normalize(p.trim());
+            if (n != null) selected.add(n);
         }
-        if (++tick % 8 != 0) return;
-        rescan();
+    }
+    public String saveBlocks() { return String.join(",", selected); }
+
+    public void presetValuables() {
+        selected.clear();
+        for (String s : List.of(
+                "minecraft:diamond_ore", "minecraft:deepslate_diamond_ore",
+                "minecraft:ancient_debris",
+                "minecraft:emerald_ore", "minecraft:deepslate_emerald_ore",
+                "minecraft:gold_ore", "minecraft:deepslate_gold_ore", "minecraft:nether_gold_ore",
+                "minecraft:iron_ore", "minecraft:deepslate_iron_ore")) selected.add(s);
+    }
+    public void presetAllOres() {
+        selected.clear();
+        for (String s : List.of(
+                "minecraft:diamond_ore", "minecraft:deepslate_diamond_ore", "minecraft:ancient_debris",
+                "minecraft:emerald_ore", "minecraft:deepslate_emerald_ore",
+                "minecraft:iron_ore", "minecraft:deepslate_iron_ore",
+                "minecraft:gold_ore", "minecraft:deepslate_gold_ore", "minecraft:nether_gold_ore",
+                "minecraft:copper_ore", "minecraft:deepslate_copper_ore",
+                "minecraft:coal_ore", "minecraft:deepslate_coal_ore",
+                "minecraft:redstone_ore", "minecraft:deepslate_redstone_ore",
+                "minecraft:lapis_ore", "minecraft:deepslate_lapis_ore",
+                "minecraft:nether_quartz_ore")) selected.add(s);
+    }
+
+    @Override
+    public List<String> searchRegistry(String query, int limit) {
+        String q = query == null ? "" : query.toLowerCase(Locale.ROOT).trim();
+        List<String> out = new ArrayList<>();
+        try {
+            for (Block block : BuiltInRegistries.BLOCK) {
+                Identifier id;
+                try { id = BuiltInRegistries.BLOCK.getKey(block); } catch (Throwable t) { continue; }
+                if (id == null) continue;
+                String path = id.getPath();
+                String full = id.toString();
+                boolean oreLike = path.contains("ore") || path.contains("debris") || path.contains("raw_");
+                if (!oreLike && q.isEmpty()) continue;
+                if (!q.isEmpty() && !path.contains(q) && !full.contains(q)) continue;
+                if (selected.contains(full)) continue;
+                out.add(full);
+                if (out.size() >= limit) break;
+            }
+        } catch (Throwable ignored) {}
+        return out;
+    }
+
+    private static String normalize(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        String s = raw.trim().toLowerCase(Locale.ROOT);
+        if (!s.contains(":")) s = "minecraft:" + s;
+        return s;
+    }
+
+    private boolean matchesSelected(BlockState st) {
+        if (selected.isEmpty()) return false;
+        try {
+            Identifier id = BuiltInRegistries.BLOCK.getKey(st.getBlock());
+            if (id != null && selected.contains(id.toString())) return true;
+        } catch (Throwable ignored) {}
+        String n = st.getBlock().toString().toLowerCase(Locale.ROOT);
+        for (String s : selected) {
+            String path = s.contains(":") ? s.substring(s.indexOf(':') + 1) : s;
+            if (n.contains(path)) return true;
+        }
+        return false;
+    }
+
+    @Override public void onEnable() {
+        hits.clear(); building.clear(); scanDx = scanDz = 0;
+        lastOpacity = opacity.get();
+        if (fullbright.get()) applyGamma(true);
+        if (opacity.get()) scheduleReload();
+    }
+    @Override public void onDisable() {
+        hits.clear(); building.clear();
+        applyGamma(false);
+        if (lastOpacity) scheduleReload();
+        lastOpacity = false;
+    }
+
+    @Override public void onTick() {
+        if (fullbright.get()) applyGamma(true);
+        boolean op = opacity.get();
+        if (op != lastOpacity) { lastOpacity = op; scheduleReload(); }
+        if (!esp.get() && !tracers.get()) { hits.clear(); return; }
+        progressiveScan();
+    }
+
+    private void progressiveScan() {
+        Minecraft mc = mc();
+        if (mc == null || mc.level == null || mc.player == null) return;
+        int r = Math.min(range.getInt(), 80);
+        BlockPos o = mc.player.blockPosition();
+        int cR = Math.max(1, r >> 4);
+        int minY = Math.max(mc.level.getMinY(), o.getY() - r);
+        int maxY = Math.min(mc.level.getMaxY(), o.getY() + r);
+        double r2 = (double) r * r;
+        for (int n = 0; n < 3; n++) {
+            int dcx = scanDx - cR;
+            int dcz = scanDz - cR;
+            LevelChunk chunk = mc.level.getChunkSource().getChunk((o.getX() >> 4) + dcx, (o.getZ() >> 4) + dcz, false);
+            if (chunk != null) {
+                int x0 = chunk.getPos().getMinBlockX();
+                int z0 = chunk.getPos().getMinBlockZ();
+                for (int y = minY; y <= maxY; y += 2)
+                    for (int x = 0; x < 16; x += 2)
+                        for (int z = 0; z < 16; z += 2) {
+                            BlockPos pos = new BlockPos(x0 + x, y, z0 + z);
+                            if (pos.distSqr(o) > r2) continue;
+                            BlockState st = chunk.getBlockState(pos);
+                            if (!matchesSelected(st)) continue;
+                            if (building.size() < maxHits.getInt())
+                                building.add(new Hit(pos.immutable(), colorFor(st), shortLabel(st)));
+                        }
+            }
+            scanDz++;
+            if (scanDz > cR * 2) {
+                scanDz = 0; scanDx++;
+                if (scanDx > cR * 2) {
+                    hits.clear(); hits.addAll(building); building.clear();
+                    scanDx = 0; scanDz = 0;
+                }
+            }
+        }
+    }
+
+    private int colorFor(BlockState st) {
+        String n = st.getBlock().toString().toLowerCase(Locale.ROOT);
+        if (n.contains("diamond")) return 0x5CDBFF;
+        if (n.contains("debris")) return 0xC4A484;
+        if (n.contains("emerald")) return 0x17C964;
+        if (n.contains("gold")) return 0xFFD700;
+        if (n.contains("iron")) return 0xD8D8D8;
+        if (n.contains("copper")) return 0xE07A3F;
+        if (n.contains("redstone")) return 0xFF3333;
+        if (n.contains("lapis")) return 0x3366FF;
+        if (n.contains("coal")) return 0x555555;
+        if (n.contains("quartz")) return 0xF0F0F0;
+        return 0xAAFFAA;
+    }
+    private String shortLabel(BlockState st) {
+        try {
+            Identifier id = BuiltInRegistries.BLOCK.getKey(st.getBlock());
+            if (id != null) return id.getPath().replace("_ore", "").replace("deepslate_", "ds_");
+        } catch (Throwable ignored) {}
+        return "ore";
     }
 
     private void applyGamma(boolean on) {
@@ -102,12 +246,8 @@ public class XRay extends Module {
             if (mc == null || mc.options == null) return;
             var gamma = mc.options.gamma();
             if (on) {
-                if (oldGamma == null) {
-                    try { oldGamma = gamma.get(); } catch (Throwable t) { oldGamma = 1.0; }
-                }
-                try { gamma.set(16.0); } catch (Throwable t) {
-                    try { gamma.set(1.0); } catch (Throwable ignored) {}
-                }
+                if (oldGamma == null) try { oldGamma = gamma.get(); } catch (Throwable t) { oldGamma = 1.0; }
+                try { gamma.set(16.0); } catch (Throwable t) { try { gamma.set(1.0); } catch (Throwable ignored) {} }
             } else if (oldGamma != null) {
                 try { gamma.set(oldGamma); } catch (Throwable ignored) {}
                 oldGamma = null;
@@ -115,109 +255,18 @@ public class XRay extends Module {
         } catch (Throwable ignored) {}
     }
 
-    private void reloadChunks() {
-        try {
-            Minecraft mc = mc();
-            if (mc == null || mc.levelRenderer == null) return;
-            Object lr = mc.levelRenderer;
-            for (String name : new String[]{"allChanged", "reload", "rebuildAllChunks"}) {
-                try {
-                    var m = lr.getClass().getMethod(name);
-                    m.invoke(lr);
-                    return;
-                } catch (Throwable ignored) {}
-            }
-        } catch (Throwable ignored) {}
-    }
-
-    private void rescan() {
-        hits.clear();
+    private void scheduleReload() {
         Minecraft mc = mc();
-        if (mc == null || mc.level == null || mc.player == null) return;
-
-        int r = Math.min(range.getInt(), 96);
-        BlockPos o = mc.player.blockPosition();
-        int cR = (r >> 4) + 1;
-        int cx0 = o.getX() >> 4;
-        int cz0 = o.getZ() >> 4;
-        int minY = Math.max(mc.level.getMinY(), o.getY() - r);
-        int maxY = Math.min(mc.level.getMaxY(), o.getY() + r);
-        double r2 = (double) r * r;
-        int budget = 40_000;
-        int checked = 0;
-
-        for (int dcx = -cR; dcx <= cR; dcx++) {
-            for (int dcz = -cR; dcz <= cR; dcz++) {
-                LevelChunk chunk = mc.level.getChunkSource().getChunk(cx0 + dcx, cz0 + dcz, false);
-                if (chunk == null) continue;
-                int x0 = chunk.getPos().getMinBlockX();
-                int z0 = chunk.getPos().getMinBlockZ();
-                for (int y = minY; y <= maxY; y++) {
-                    for (int x = 0; x < 16; x++) {
-                        for (int z = 0; z < 16; z++) {
-                            if (++checked > budget) return;
-                            BlockPos pos = new BlockPos(x0 + x, y, z0 + z);
-                            if (pos.distSqr(o) > r2) continue;
-                            BlockState st = chunk.getBlockState(pos);
-                            int col = match(st);
-                            if (col == 0) continue;
-                            hits.add(new Hit(pos.immutable(), col, labelFor(st)));
-                        }
-                    }
+        if (mc == null) return;
+        mc.execute(() -> {
+            try {
+                Object lr = mc.levelRenderer;
+                if (lr == null) return;
+                for (String name : new String[]{"allChanged", "reload", "rebuildAllChunks"}) {
+                    try { lr.getClass().getMethod(name).invoke(lr); return; } catch (Throwable ignored) {}
                 }
-            }
-        }
-    }
-
-    private static String blockId(BlockState st) {
-        try {
-            return st.getBlock().toString().toLowerCase();
-        } catch (Throwable t) {
-            return "";
-        }
-    }
-
-    private int match(BlockState st) {
-        try {
-            if (diamonds.get() && (st.is(Blocks.DIAMOND_ORE) || st.is(Blocks.DEEPSLATE_DIAMOND_ORE))) return 0x5CDBFF;
-            if (ancientDebris.get() && st.is(Blocks.ANCIENT_DEBRIS)) return 0x4A3728;
-            if (iron.get() && (st.is(Blocks.IRON_ORE) || st.is(Blocks.DEEPSLATE_IRON_ORE))) return 0xD8D8D8;
-            if (gold.get() && (st.is(Blocks.GOLD_ORE) || st.is(Blocks.DEEPSLATE_GOLD_ORE) || st.is(Blocks.NETHER_GOLD_ORE))) return 0xFFD700;
-            if (copper.get() && (st.is(Blocks.COPPER_ORE) || st.is(Blocks.DEEPSLATE_COPPER_ORE))) return 0xE07A3F;
-            if (coal.get() && (st.is(Blocks.COAL_ORE) || st.is(Blocks.DEEPSLATE_COAL_ORE))) return 0x2B2B2B;
-            if (redstone.get() && (st.is(Blocks.REDSTONE_ORE) || st.is(Blocks.DEEPSLATE_REDSTONE_ORE))) return 0xFF2222;
-            if (lapis.get() && (st.is(Blocks.LAPIS_ORE) || st.is(Blocks.DEEPSLATE_LAPIS_ORE))) return 0x1E4BFF;
-            if (emerald.get() && (st.is(Blocks.EMERALD_ORE) || st.is(Blocks.DEEPSLATE_EMERALD_ORE))) return 0x17C964;
-            if (quartz.get() && st.is(Blocks.NETHER_QUARTZ_ORE)) return 0xE8E8E8;
-        } catch (Throwable ignored) {}
-
-        String n = blockId(st);
-        if (diamonds.get() && n.contains("diamond_ore")) return 0x5CDBFF;
-        if (ancientDebris.get() && n.contains("ancient_debris")) return 0x4A3728;
-        if (iron.get() && n.contains("iron_ore")) return 0xD8D8D8;
-        if (gold.get() && n.contains("gold_ore")) return 0xFFD700;
-        if (copper.get() && n.contains("copper_ore")) return 0xE07A3F;
-        if (coal.get() && n.contains("coal_ore")) return 0x2B2B2B;
-        if (redstone.get() && n.contains("redstone_ore")) return 0xFF2222;
-        if (lapis.get() && n.contains("lapis_ore")) return 0x1E4BFF;
-        if (emerald.get() && n.contains("emerald_ore")) return 0x17C964;
-        if (quartz.get() && n.contains("quartz_ore")) return 0xE8E8E8;
-        return 0;
-    }
-
-    private String labelFor(BlockState st) {
-        String n = blockId(st);
-        if (n.contains("diamond")) return "Diamond";
-        if (n.contains("debris")) return "Debris";
-        if (n.contains("iron")) return "Iron";
-        if (n.contains("gold")) return "Gold";
-        if (n.contains("copper")) return "Copper";
-        if (n.contains("coal")) return "Coal";
-        if (n.contains("redstone")) return "Redstone";
-        if (n.contains("lapis")) return "Lapis";
-        if (n.contains("emerald")) return "Emerald";
-        if (n.contains("quartz")) return "Quartz";
-        return "Ore";
+            } catch (Throwable ignored) {}
+        });
     }
 
     @Override
@@ -225,43 +274,30 @@ public class XRay extends Module {
         if ((!esp.get() && !tracers.get()) || hits.isEmpty()) return;
         Minecraft mc = mc();
         if (mc == null || mc.font == null || mc.getWindow() == null) return;
-
         int cx = mc.getWindow().getGuiScaledWidth() / 2;
         int cy = mc.getWindow().getGuiScaledHeight() / 2;
-
         for (Hit h : hits) {
-            double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE;
-            double maxX = -Double.MAX_VALUE, maxY = -Double.MAX_VALUE;
+            double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE, maxX = -Double.MAX_VALUE, maxY = -Double.MAX_VALUE;
             int visible = 0;
             for (int i = 0; i < 8; i++) {
-                double bx = h.pos.getX() + ((i & 1) == 0 ? 0.02 : 0.98);
-                double by = h.pos.getY() + ((i & 2) == 0 ? 0.02 : 0.98);
-                double bz = h.pos.getZ() + ((i & 4) == 0 ? 0.02 : 0.98);
                 double[] p = new double[2];
-                if (!EspProjection.worldToScreen(bx, by, bz, p)) continue;
-                minX = Math.min(minX, p[0]);
-                minY = Math.min(minY, p[1]);
-                maxX = Math.max(maxX, p[0]);
-                maxY = Math.max(maxY, p[1]);
+                if (!EspProjection.worldToScreen(
+                        h.pos.getX() + ((i & 1) == 0 ? 0.02 : 0.98),
+                        h.pos.getY() + ((i & 2) == 0 ? 0.02 : 0.98),
+                        h.pos.getZ() + ((i & 4) == 0 ? 0.02 : 0.98), p)) continue;
+                minX = Math.min(minX, p[0]); minY = Math.min(minY, p[1]);
+                maxX = Math.max(maxX, p[0]); maxY = Math.max(maxY, p[1]);
                 visible++;
             }
             if (visible < 2) continue;
-            if (maxX - minX < 4) {
-                double c = (minX + maxX) * 0.5;
-                minX = c - 2; maxX = c + 2;
-            }
-            if (maxY - minY < 4) {
-                double c = (minY + maxY) * 0.5;
-                minY = c - 2; maxY = c + 2;
-            }
+            if (maxX - minX < 4) { double c = (minX + maxX) * 0.5; minX = c - 2; maxX = c + 2; }
+            if (maxY - minY < 4) { double c = (minY + maxY) * 0.5; minY = c - 2; maxY = c + 2; }
             int col = h.color | 0xFF000000;
             if (esp.get()) {
                 EspDraw.box(g, minX, minY, maxX, maxY, col, 1);
-                EspDraw.label(g, mc.font, h.label, (minX + maxX) * 0.5, minY - 11, col);
+                EspDraw.label(g, mc.font, h.label, (minX + maxX) * 0.5, minY - 10, col);
             }
-            if (tracers.get()) {
-                EspDraw.line(g, cx, cy, (minX + maxX) * 0.5, (minY + maxY) * 0.5, col);
-            }
+            if (tracers.get()) EspDraw.line(g, cx, cy, (minX + maxX) * 0.5, (minY + maxY) * 0.5, col);
         }
     }
 
