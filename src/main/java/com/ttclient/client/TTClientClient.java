@@ -8,6 +8,7 @@ import com.ttclient.modules.ModuleManager;
 import com.ttclient.modules.client.ClickGUIModule;
 import com.ttclient.modules.client.StreamerMode;
 import com.ttclient.modules.misc.AutoChatGame;
+import com.ttclient.modules.player.Freecam;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -20,6 +21,7 @@ import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RenderGuiEvent;
+import net.neoforged.neoforge.client.event.ViewportEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import org.lwjgl.glfw.GLFW;
 
@@ -68,6 +70,14 @@ public class TTClientClient {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
         modules.onTick();
+    }
+
+    @SubscribeEvent
+    public void onCameraAngles(ViewportEvent.ComputeCameraAngles event) {
+        Freecam fc = modules != null ? modules.getModule(Freecam.class) : null;
+        if (fc != null && fc.isEnabled()) {
+            fc.onCameraAngles(event);
+        }
     }
 
     @SubscribeEvent
@@ -128,7 +138,6 @@ public class TTClientClient {
         if (event.getAction() != GLFW.GLFW_PRESS) return;
 
         int button = event.getButton();
-        // Only side/extra buttons for module toggles (avoid breaking LMB/RMB)
         if (button != GLFW.GLFW_MOUSE_BUTTON_4 && button != GLFW.GLFW_MOUSE_BUTTON_5
                 && button != GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
             return;
