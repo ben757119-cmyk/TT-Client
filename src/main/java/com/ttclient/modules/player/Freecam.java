@@ -269,17 +269,13 @@ public class Freecam extends Module {
     private void applyGamma(Minecraft mc) {
         try {
             var opt = mc.options;
-            Object gammaOpt = null;
-            try { gammaOpt = opt.getClass().getMethod("gamma").invoke(opt); } catch (Throwable ignored) {}
+            Object gammaOpt = opt.getClass().getMethod("gamma").invoke(opt);
             if (gammaOpt != null) {
                 if (oldGamma == null) {
-                    try {
-                        Object v = gammaOpt.getClass().getMethod("get").invoke(gammaOpt);
-                        if (v instanceof Number n) oldGamma = n.doubleValue();
-                    } catch (Throwable ignored) {}
+                    Object v = gammaOpt.getClass().getMethod("get").invoke(gammaOpt);
+                    if (v instanceof Number n) oldGamma = n.doubleValue();
                 }
                 try { gammaOpt.getClass().getMethod("set", double.class).invoke(gammaOpt, 16.0); } catch (Throwable ignored) {}
-                try { gammaOpt.getClass().getMethod("set", Double.class).invoke(gammaOpt, 16.0); } catch (Throwable ignored) {}
             }
         } catch (Throwable ignored) {}
     }
@@ -289,8 +285,7 @@ public class Freecam extends Module {
         Minecraft mc = mc();
         if (mc == null) { oldGamma = null; return; }
         try {
-            var opt = mc.options;
-            Object gammaOpt = opt.getClass().getMethod("gamma").invoke(opt);
+            Object gammaOpt = mc.options.getClass().getMethod("gamma").invoke(mc.options);
             gammaOpt.getClass().getMethod("set", double.class).invoke(gammaOpt, oldGamma.doubleValue());
         } catch (Throwable ignored) {}
         oldGamma = null;
@@ -299,7 +294,15 @@ public class Freecam extends Module {
     private void reloadChunks() {
         try {
             Minecraft mc = Minecraft.getInstance();
-            if (mc != null && mc.levelRenderer != null) mc.levelRenderer.allChanged();
+            if (mc == null || mc.levelRenderer == null) return;
+            Object lr = mc.levelRenderer;
+            for (String name : new String[]{"allChanged", "reloadAll", "rebuildAllChunks", "setNeedsFullRenderChunkUpdate"}) {
+                try {
+                    var m = lr.getClass().getMethod(name);
+                    m.invoke(lr);
+                    return;
+                } catch (Throwable ignored) {}
+            }
         } catch (Throwable ignored) {}
     }
 
