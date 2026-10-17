@@ -34,6 +34,7 @@ public class ModuleManager {
         register(new Criticals());
         register(new Reach());
         register(new Rage());
+        register(new Shredder());
         register(new Hitboxes());
         register(new AutoCrystal());
         register(new Surround());
@@ -141,7 +142,6 @@ public class ModuleManager {
         register(new LiquidPlace());
         register(new NewChunks());
 
-        // Basefind (DonutSMP-style)
         register(new BaseScanner());
         register(new KelpFinder());
         register(new GeodeFinder());
