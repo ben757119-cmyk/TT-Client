@@ -2,17 +2,19 @@ package com.ttclient.mixin;
 
 import com.ttclient.modules.player.Freecam;
 import net.minecraft.client.Camera;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.level.BlockGetter;
-import net.minecraft.world.phys.Vec3;
+import net.minecraft.client.Minecraft;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArgs;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 
 @Mixin(Camera.class)
 public abstract class MixinCamera {
+
+    @Shadow private boolean detached;
 
     @Shadow
     protected abstract void setPosition(double x, double y, double z);
@@ -20,48 +22,95 @@ public abstract class MixinCamera {
     @Shadow
     protected abstract void setRotation(float yRot, float xRot);
 
-    @Inject(
-            method = "setup(Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/world/entity/Entity;ZZF)V",
-            at = @At("TAIL"),
+    private static float pt() {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            try {
+                return mc.getDeltaTracker().getGameTimeDeltaPartialTick(false);
+            } catch (Throwable t) {
+                try { return mc.getFrameTime(); } catch (Throwable t2) { return 1.0f; }
+            }
+        } catch (Throwable t) {
+            return 1.0f;
+        }
+    }
+
+    @Inject(method = "setup", at = @At("HEAD"), require = 0)
+    private void ttclient$detach(CallbackInfo ci) {
+        if (Freecam.isActive()) {
+            try { this.detached = true; } catch (Throwable ignored) {}
+        }
+    }
+
+    @ModifyArgs(
+            method = "setup",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Camera;setPosition(DDD)V"),
             require = 0
     )
-    private void ttclient$freecamSetupBlockGetter(BlockGetter level, Entity entity, boolean thirdPerson,
-                                                   boolean inverseView, float partialTick, CallbackInfo ci) {
-        apply();
+    private void ttclient$posSetup(Args args) {
+        applyPos(args);
     }
 
-    @Inject(
-            method = "setup(Lnet/minecraft/world/level/Level;Lnet/minecraft/world/entity/Entity;ZZF)V",
-            at = @At("TAIL"),
+    @ModifyArgs(
+            method = "setup",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Camera;setRotation(FF)V"),
             require = 0
     )
-    private void ttclient$freecamSetupLevel(CallbackInfo ci) {
-        apply();
+    private void ttclient$rotSetup(Args args) {
+        applyRot(args);
     }
 
-    @Inject(method = "setup", at = @At("TAIL"), require = 0)
-    private void ttclient$freecamSetupAny(CallbackInfo ci) {
-        apply();
+    @ModifyArgs(
+            method = "alignWithEntity",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Camera;setPosition(DDD)V"),
+            require = 0
+    )
+    private void ttclient$posAlign(Args args) {
+        applyPos(args);
     }
 
-    private void apply() {
+    @ModifyArgs(
+            method = "alignWithEntity",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Camera;setRotation(FF)V"),
+            require = 0
+    )
+    private void ttclient$rotAlign(Args args) {
+        applyRot(args);
+    }
+
+    @Inject(method = "setup", at = @At("RETURN"), require = 0)
+    private void ttclient$setupReturn(CallbackInfo ci) {
         if (!Freecam.isActive()) return;
         Freecam fc = Freecam.get();
         if (fc == null) return;
+        float p = pt();
         try {
-            setPosition(fc.getCamX(), fc.getCamY(), fc.getCamZ());
+            setPosition(fc.getX(p), fc.getY(p), fc.getZ(p));
+            setRotation(fc.getYaw(p), fc.getPitch(p));
         } catch (Throwable ignored) {}
+        try { this.detached = true; } catch (Throwable ignored) {}
+    }
+
+    private static void applyPos(Args args) {
+        if (!Freecam.isActive()) return;
+        Freecam fc = Freecam.get();
+        if (fc == null) return;
+        float p = pt();
         try {
-            setRotation(fc.getCamYaw(), fc.getCamPitch());
+            args.set(0, fc.getX(p));
+            args.set(1, fc.getY(p));
+            args.set(2, fc.getZ(p));
         } catch (Throwable ignored) {}
+    }
+
+    private static void applyRot(Args args) {
+        if (!Freecam.isActive()) return;
+        Freecam fc = Freecam.get();
+        if (fc == null) return;
+        float p = pt();
         try {
-            Camera self = (Camera) (Object) this;
-            for (var f : Camera.class.getDeclaredFields()) {
-                if (f.getType() == Vec3.class) {
-                    f.setAccessible(true);
-                    f.set(self, new Vec3(fc.getCamX(), fc.getCamY(), fc.getCamZ()));
-                }
-            }
+            args.set(0, fc.getYaw(p));
+            args.set(1, fc.getPitch(p));
         } catch (Throwable ignored) {}
     }
 }
