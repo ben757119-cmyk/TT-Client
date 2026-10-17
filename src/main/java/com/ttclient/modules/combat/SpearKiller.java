@@ -171,7 +171,6 @@ public class SpearKiller extends Module {
             Vec3 boost = dir.scale(perTick);
 
             p.setDeltaMovement(boost.x, Math.max(boost.y, -0.05), boost.z);
-            p.hasImpulse = true;
         } catch (Throwable ignored) {}
     }
 
@@ -217,12 +216,9 @@ public class SpearKiller extends Module {
     public static boolean isSpear(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
         try {
-            String n = stack.getItem().toString().toLowerCase();
-            if (n.contains("spear")) return true;
-            var key = stack.getItem().builtInRegistryHolder().key().location().getPath();
-            return key != null && key.toLowerCase().contains("spear");
-        } catch (Throwable t) {
             return stack.getItem().toString().toLowerCase().contains("spear");
+        } catch (Throwable t) {
+            return false;
         }
     }
 
