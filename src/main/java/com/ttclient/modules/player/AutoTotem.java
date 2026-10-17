@@ -12,8 +12,10 @@ import net.minecraft.world.item.Items;
 
 /**
  * Auto-equip Totem of Undying to offhand.
- * Uses 26.2-correct packets: SetCarriedItem + SWAP_ITEM_WITH_OFFHAND,
- * and handleContainerInput(ContainerInput.SWAP) for inventory totems.
+ *
+ * Silent only: uses inventory SWAP → offhand (button 40).
+ * Never selects a hotbar slot / never sends F-key swap.
+ * Works for hotbar AND main-inventory totems.
  */
 public class AutoTotem extends Module {
     public final NumberSetting delay = addSetting(new NumberSetting(
@@ -28,7 +30,7 @@ public class AutoTotem extends Module {
     private int cooldown;
 
     public AutoTotem() {
-        super("AutoTotem", "Auto equip totem in offhand", Category.PLAYER);
+        super("AutoTotem", "Silent auto totem (no hotbar switch)", Category.PLAYER);
     }
 
     @Override
@@ -48,7 +50,6 @@ public class AutoTotem extends Module {
         }
 
         if (p.getOffhandItem().is(Items.TOTEM_OF_UNDYING)) return;
-
         if (!shouldEquip(p)) return;
         if (shouldPause(mc)) return;
 
@@ -58,13 +59,12 @@ public class AutoTotem extends Module {
             return;
         }
 
-        boolean ok = InvUtils.swapToOffhand(p, slot);
+        boolean ok = InvUtils.swapToOffhandSilent(p, slot);
         cooldown = ok ? Math.max(1, delay.getInt()) : 2;
     }
 
     private boolean shouldEquip(LocalPlayer p) {
         if (p.getOffhandItem().is(Items.TOTEM_OF_UNDYING)) return false;
-
         if (onlyEmpty.get() && !p.getOffhandItem().isEmpty()) return false;
 
         float hp = p.getHealth() + p.getAbsorptionAmount();
