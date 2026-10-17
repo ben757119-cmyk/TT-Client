@@ -2,31 +2,62 @@ package com.ttclient.modules.player;
 
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
-import com.ttclient.modules.movement.Fly;
 import com.ttclient.settings.BoolSetting;
 import com.ttclient.settings.NumberSetting;
+import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.phys.Vec3;
+import org.lwjgl.glfw.GLFW;
 
 /**
- * Free-fly through blocks at the player entity (client).
- * True camera-only freecam needs mixins; this is a solid no-clip fly that restores on disable.
- * Movement is yaw-based only — same speed every horizontal direction.
+ * True freecam: body stays where you enabled it (server still sees that spot).
+ * Only the camera flies with WASD / space / sneak — through walls, no body move.
+ *
+ * Anti-ban design:
+ * - Player entity is snapped back to origin every tick
+ * - Velocity forced to zero
+ * - Movement keys do not move the player; they only move the free camera
  */
 public class Freecam extends Module {
-    public final NumberSetting speed = addSetting(new NumberSetting("Speed", "Move speed", 1.5, 0.2, 5.0, 0.1));
-    public final BoolSetting restore = addSetting(new BoolSetting("Restore", "Teleport back when disabled", true));
+    public final NumberSetting speed = addSetting(new NumberSetting(
+            "Speed", "Camera fly speed", 1.5, 0.1, 10.0, 0.1));
+    public final NumberSetting vSpeed = addSetting(new NumberSetting(
+            "VSpeed", "Vertical camera speed multiplier", 1.0, 0.2, 3.0, 0.1));
+    public final BoolSetting freezeRot = addSetting(new BoolSetting(
+            "FreezeBodyLook", "Lock body head rotation (usually leave off)", false));
 
-    private double sx, sy, sz;
-    private float syaw, spitch;
+    private double originX, originY, originZ;
+    private float originYaw, originPitch;
     private boolean saved;
-    private boolean wasFlying;
-    private boolean wasMayfly;
+
+    private double camX, camY, camZ;
+    private float camYaw, camPitch;
 
     public Freecam() {
-        super("Freecam", "No-clip free fly; restores position when off", Category.PLAYER);
+        super("Freecam", "Detach camera only — body stays put", Category.PLAYER);
+        setKeyBind(GLFW.GLFW_KEY_F4);
     }
+
+    public static Freecam get() {
+        try {
+            var mods = com.ttclient.client.TTClientClient.modules;
+            if (mods == null) return null;
+            return mods.getModule(Freecam.class);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    public boolean active() {
+        return isEnabled() && saved;
+    }
+
+    public double getCamX() { return camX; }
+    public double getCamY() { return camY; }
+    public double getCamZ() { return camZ; }
+    public float getCamYaw() { return camYaw; }
+    public float getCamPitch() { return camPitch; }
 
     @Override
     public void onEnable() {
@@ -36,75 +67,170 @@ public class Freecam extends Module {
             return;
         }
         LocalPlayer p = mc.player;
-        sx = p.getX();
-        sy = p.getY();
-        sz = p.getZ();
-        syaw = p.getYRot();
-        spitch = p.getXRot();
+        originX = p.getX();
+        originY = p.getY();
+        originZ = p.getZ();
+        originYaw = p.getYRot();
+        originPitch = p.getXRot();
+
+        camX = p.getX();
+        camY = p.getY() + p.getEyeHeight();
+        camZ = p.getZ();
+        camYaw = p.getYRot();
+        camPitch = p.getXRot();
         saved = true;
 
-        wasFlying = p.getAbilities().flying;
-        wasMayfly = p.getAbilities().mayfly;
-
-        p.getAbilities().mayfly = true;
-        p.getAbilities().flying = true;
-        p.noPhysics = true;
         p.setDeltaMovement(Vec3.ZERO);
         p.fallDistance = 0;
-        p.setOnGround(false);
     }
 
     @Override
     public void onDisable() {
         Minecraft mc = mc();
-        if (mc == null || mc.player == null) return;
+        if (mc == null || mc.player == null) {
+            saved = false;
+            return;
+        }
         LocalPlayer p = mc.player;
-
-        p.noPhysics = false;
-        p.setDeltaMovement(Vec3.ZERO);
-
-        if (!p.isCreative() && !p.isSpectator()) {
-            p.getAbilities().flying = wasFlying;
-            p.getAbilities().mayfly = wasMayfly;
-        } else {
-            p.getAbilities().flying = wasFlying;
-            p.getAbilities().mayfly = wasMayfly;
-        }
-
-        if (restore.get() && saved) {
+        if (saved) {
             try {
-                p.snapTo(sx, sy, sz, syaw, spitch);
+                p.snapTo(originX, originY, originZ, originYaw, originPitch);
             } catch (Throwable t) {
-                p.setPos(sx, sy, sz);
-                p.setYRot(syaw);
-                p.setXRot(spitch);
+                p.setPos(originX, originY, originZ);
+                p.setYRot(originYaw);
+                p.setXRot(originPitch);
             }
-            p.setDeltaMovement(Vec3.ZERO);
         }
+        p.setDeltaMovement(Vec3.ZERO);
+        p.noPhysics = false;
         saved = false;
     }
 
     @Override
     public void onTick() {
         Minecraft mc = mc();
-        if (mc == null || mc.player == null || mc.options == null) return;
+        if (mc == null || mc.player == null || !saved) return;
         LocalPlayer p = mc.player;
 
-        // Keep state every tick (server/other logic can clear it)
-        p.getAbilities().mayfly = true;
-        p.getAbilities().flying = true;
-        p.noPhysics = true;
-        p.fallDistance = 0;
-        p.setOnGround(false);
+        camYaw = p.getYRot();
+        camPitch = p.getXRot();
 
-        double s = speed.get() * 0.5;
-        Vec3 horiz = Fly.horizontalMove(p.getYRot(), s, mc);
-        double my = 0;
-        if (mc.options.keyJump.isDown()) my += s;
-        if (mc.options.keyShift.isDown()) my -= s;
+        updateCameraMotion(mc);
+        freezeBody(p);
+        applyCamera(mc);
+    }
 
-        // Apply velocity and force position (helps when noPhysics alone is ignored)
-        p.setDeltaMovement(horiz.x, my, horiz.z);
-        p.setPos(p.getX() + horiz.x, p.getY() + my, p.getZ() + horiz.z);
+    private void updateCameraMotion(Minecraft mc) {
+        double sp = speed.get();
+        double vsp = sp * vSpeed.get();
+
+        float yaw = camYaw;
+        double rad = Math.toRadians(yaw);
+        double sin = Math.sin(rad);
+        double cos = Math.cos(rad);
+
+        double dx = 0, dy = 0, dz = 0;
+
+        try {
+            if (mc.options.keyUp.isDown()) {
+                dx -= sin * sp;
+                dz += cos * sp;
+            }
+            if (mc.options.keyDown.isDown()) {
+                dx += sin * sp;
+                dz -= cos * sp;
+            }
+            if (mc.options.keyLeft.isDown()) {
+                dx -= cos * sp;
+                dz -= sin * sp;
+            }
+            if (mc.options.keyRight.isDown()) {
+                dx += cos * sp;
+                dz += sin * sp;
+            }
+            if (mc.options.keyJump.isDown()) {
+                dy += vsp;
+            }
+            if (mc.options.keyShift.isDown()) {
+                dy -= vsp;
+            }
+        } catch (Throwable ignored) {}
+
+        camX += dx;
+        camY += dy;
+        camZ += dz;
+    }
+
+    private void freezeBody(LocalPlayer p) {
+        try {
+            p.setDeltaMovement(Vec3.ZERO);
+            p.fallDistance = 0;
+            p.noPhysics = false;
+
+            float yaw = freezeRot.get() ? originYaw : camYaw;
+            float pitch = freezeRot.get() ? originPitch : camPitch;
+            try {
+                p.snapTo(originX, originY, originZ, yaw, pitch);
+            } catch (Throwable t) {
+                p.setPos(originX, originY, originZ);
+                p.setYRot(yaw);
+                p.setXRot(pitch);
+            }
+
+            p.setOnGround(true);
+
+            try {
+                var input = p.input;
+                if (input != null) {
+                    try { input.forwardImpulse = 0; } catch (Throwable ignored) {}
+                    try { input.leftImpulse = 0; } catch (Throwable ignored) {}
+                    try { input.jumping = false; } catch (Throwable ignored) {}
+                    try { input.shiftKeyDown = false; } catch (Throwable ignored) {}
+                }
+            } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {}
+    }
+
+    public void applyCamera(Minecraft mc) {
+        try {
+            Camera cam = null;
+            try {
+                cam = mc.gameRenderer.mainCamera();
+            } catch (Throwable t) {
+                try {
+                    cam = (Camera) mc.gameRenderer.getClass().getMethod("getMainCamera").invoke(mc.gameRenderer);
+                } catch (Throwable ignored) {}
+            }
+            if (cam == null) return;
+
+            try {
+                cam.setPosition(camX, camY, camZ);
+            } catch (Throwable t) {
+                try {
+                    var m = Camera.class.getMethod("setPosition", double.class, double.class, double.class);
+                    m.invoke(cam, camX, camY, camZ);
+                } catch (Throwable ignored) {}
+            }
+
+            try {
+                var m = Camera.class.getMethod("setRotation", float.class, float.class);
+                m.invoke(cam, camYaw, camPitch);
+            } catch (Throwable t) {
+                try {
+                    var m = Camera.class.getMethod("setRotation", float.class, float.class, float.class);
+                    m.invoke(cam, camYaw, camPitch, 0f);
+                } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    public void onCameraAngles(net.neoforged.neoforge.client.event.ViewportEvent.ComputeCameraAngles event) {
+        if (!active()) return;
+        try {
+            event.setYaw(camYaw);
+            event.setPitch(camPitch);
+        } catch (Throwable ignored) {}
+        Minecraft mc = mc();
+        if (mc != null) applyCamera(mc);
     }
 }
