@@ -1,5 +1,6 @@
 package com.ttclient.modules.combat;
 
+import com.ttclient.client.TTClientClient;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
@@ -14,50 +15,45 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 
 /**
- * Spoofs fall distance so mace hits can deal smash-style damage without falling.
- * Fully effective in singleplayer / weak servers that trust client fallDistance.
+ * MaceHack — every mace hit is a smash, even on the ground.
+ * Hearts: how hard each click feels (spoofed fall + multi-hit).
  */
 public class MaceHack extends Module {
-    public final NumberSetting spoofFall = addSetting(new NumberSetting(
-            "Fall", "Spoofed fall distance for smash", 22.0, 1.0, 50.0, 0.5));
+    public final NumberSetting hearts = addSetting(new NumberSetting(
+            "Hearts", "Target damage per click (hearts)", 10.0, 1.0, 50.0, 0.5));
+    public final NumberSetting fall = addSetting(new NumberSetting(
+            "Fall", "Spoofed fall distance (smash scale)", 25.0, 1.0, 80.0, 0.5));
+    public final BoolSetting autoFall = addSetting(new BoolSetting(
+            "AutoFallFromHearts", "Scale fall from Hearts setting", true));
     public final BoolSetting always = addSetting(new BoolSetting(
-            "Always", "Keep fall spoofed while holding mace", true));
-    public final BoolSetting onHit = addSetting(new BoolSetting(
-            "OnHit", "Spoof right before you attack", true));
-    public final BoolSetting autoSwing = addSetting(new BoolSetting(
-            "Aura", "Also attack nearest player with spoofed smash", false));
+            "AlwaysSpoof", "Keep fall spoofed while holding mace", true));
+    public final BoolSetting onClick = addSetting(new BoolSetting(
+            "OnClick", "Smash when you left-click with mace", true));
+    public final BoolSetting multiHit = addSetting(new BoolSetting(
+            "MultiHit", "Extra hits to reach Hearts", true));
+    public final BoolSetting onlyPlayers = addSetting(new BoolSetting(
+            "OnlyPlayers", "Only players", true));
     public final NumberSetting range = addSetting(new NumberSetting(
-            "Range", "Aura range", 4.5, 2.0, 6.0, 0.1));
+            "Range", "Target range", 6.0, 2.0, 64.0, 0.1));
+    public final BoolSetting useRage = addSetting(new BoolSetting(
+            "UseRage", "Use Rage reach when on", true));
+    public final BoolSetting aura = addSetting(new BoolSetting(
+            "Aura", "Auto-attack nearest while holding mace", false));
     public final NumberSetting cooldown = addSetting(new NumberSetting(
-            "Cooldown", "Aura ticks between hits", 12, 0, 30, 1));
+            "Cooldown", "Ticks between aura cycles", 2, 0, 30, 1));
 
     private int timer;
 
     public MaceHack() {
-        super("MaceHack", "Mace smash damage without falling", Category.COMBAT);
-    }
-
-    public static void applySpoof(LocalPlayer p, float fall) {
-        if (p == null) return;
-        try {
-            p.fallDistance = fall;
-        } catch (Throwable ignored) {}
-        try {
-            p.setOnGround(false);
-        } catch (Throwable ignored) {}
-        try {
-            var v = p.getDeltaMovement();
-            if (v.y > -0.08) {
-                p.setDeltaMovement(v.x, Math.min(v.y, -0.1), v.z);
-            }
-        } catch (Throwable ignored) {}
+        super("MaceHack", "Mace smash without falling — set hearts per hit", Category.COMBAT);
     }
 
     public static boolean isActive() {
         try {
-            var mods = com.ttclient.client.TTClientClient.modules;
+            var mods = TTClientClient.modules;
             if (mods == null) return false;
             MaceHack h = mods.getModule(MaceHack.class);
             return h != null && h.isEnabled();
@@ -68,83 +64,152 @@ public class MaceHack extends Module {
 
     public static float spoofAmount() {
         try {
-            var mods = com.ttclient.client.TTClientClient.modules;
-            if (mods == null) return 22f;
+            var mods = TTClientClient.modules;
+            if (mods == null) return 25f;
             MaceHack h = mods.getModule(MaceHack.class);
-            if (h == null) return 22f;
-            return (float) h.spoofFall.get().doubleValue();
+            if (h == null || !h.isEnabled()) return 25f;
+            return h.fallValue();
         } catch (Throwable t) {
-            return 22f;
+            return 25f;
         }
     }
 
+    public static void applySpoof(LocalPlayer p, float fallDist) {
+        if (p == null) return;
+        try { p.fallDistance = fallDist; } catch (Throwable ignored) {}
+        try { p.setOnGround(false); } catch (Throwable ignored) {}
+        try {
+            var v = p.getDeltaMovement();
+            p.setDeltaMovement(v.x, Math.min(v.y, -0.5), v.z);
+        } catch (Throwable ignored) {}
+    }
+
     private float fallValue() {
-        return (float) spoofFall.get().doubleValue();
+        if (autoFall.get()) {
+            double h = hearts.get();
+            return (float) Math.min(80.0, Math.max(fall.get(), h * 2.5));
+        }
+        return (float) fall.get();
+    }
+
+    private int hitCount() {
+        if (!multiHit.get()) return 1;
+        int n = (int) Math.ceil(hearts.get());
+        return Math.max(1, Math.min(n, 25));
     }
 
     @Override
     public void onTick() {
         Minecraft mc = mc();
-        if (mc == null || mc.player == null || mc.gameMode == null) return;
+        if (mc == null || mc.player == null || mc.level == null || mc.gameMode == null) return;
         LocalPlayer p = mc.player;
 
-        boolean holdingMace = InvUtils.isMace(p.getMainHandItem());
-        if (!holdingMace) {
-            int m = InvUtils.findHotbarMace(p);
-            if (m >= 0 && autoSwing.get()) {
-                InvUtils.selectHotbar(p, m);
-                holdingMace = true;
+        if (!InvUtils.isMace(p.getMainHandItem())) return;
+
+        float f = fallValue();
+        if (always.get()) applySpoof(p, f);
+
+        boolean clicking = false;
+        try { clicking = mc.options.keyAttack.isDown(); } catch (Throwable ignored) {}
+
+        if (onClick.get() && clicking) {
+            LivingEntity target = resolveTarget(mc, p);
+            if (target != null) {
+                smash(mc, p, target, f);
+                return;
             }
         }
 
-        if (!holdingMace) return;
-
-        float fall = fallValue();
-
-        if (always.get()) {
-            applySpoof(p, fall);
+        if (aura.get()) {
+            if (timer > 0) { timer--; return; }
+            LivingEntity target = resolveTarget(mc, p);
+            if (target != null) {
+                smash(mc, p, target, f);
+                timer = cooldown.getInt();
+            }
         }
-
-        if (onHit.get() && mc.options != null && mc.options.keyAttack.isDown()) {
-            applySpoof(p, fall);
-        }
-
-        if (!autoSwing.get()) return;
-        if (timer > 0) { timer--; return; }
-
-        LivingEntity target = findTarget(mc, p);
-        if (target == null) {
-            try {
-                HitResult hr = mc.hitResult;
-                if (hr instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity le && le.isAlive()) {
-                    target = le;
-                }
-            } catch (Throwable ignored) {}
-        }
-        if (target == null) return;
-
-        applySpoof(p, fall);
-        try {
-            mc.gameMode.attack(p, target);
-            p.swing(InteractionHand.MAIN_HAND);
-        } catch (Throwable ignored) {}
-        applySpoof(p, fall);
-        timer = cooldown.getInt();
     }
 
-    private LivingEntity findTarget(Minecraft mc, LocalPlayer p) {
-        double r = range.get();
+    private void smash(Minecraft mc, LocalPlayer p, LivingEntity target, float fallDist) {
+        lookAt(p, target);
+        int n = hitCount();
+        for (int i = 0; i < n; i++) {
+            applySpoof(p, fallDist);
+            try {
+                mc.gameMode.attack(p, target);
+                p.swing(InteractionHand.MAIN_HAND);
+            } catch (Throwable ignored) {}
+        }
+        applySpoof(p, fallDist);
+    }
+
+    private LivingEntity resolveTarget(Minecraft mc, LocalPlayer p) {
+        LivingEntity cross = crosshair(mc);
+        if (cross != null) return cross;
+
+        double r = effectiveRange();
         LivingEntity best = null;
         double bestD = r * r;
         AABB box = p.getBoundingBox().inflate(r);
+        Vec3 look = p.getLookAngle();
+        Vec3 eye = p.getEyePosition();
         for (Entity e : mc.level.getEntities(p, box)) {
-            if (!(e instanceof Player pl) || pl == p || !pl.isAlive()) continue;
-            double d = p.distanceToSqr(pl);
-            if (d < bestD) {
-                bestD = d;
-                best = pl;
-            }
+            if (!(e instanceof LivingEntity living) || !living.isAlive() || living == p) continue;
+            if (onlyPlayers.get() && !(living instanceof Player)) continue;
+            Vec3 to = living.position().add(0, living.getBbHeight() * 0.5, 0).subtract(eye);
+            if (to.lengthSqr() < 1.0e-6) continue;
+            if (look.dot(to.normalize()) < 0.35) continue;
+            double d = p.distanceToSqr(living);
+            if (d <= bestD) { bestD = d; best = living; }
         }
         return best;
+    }
+
+    private double effectiveRange() {
+        double r = range.get();
+        if (useRage.get() && TTClientClient.modules != null) {
+            Rage rage = TTClientClient.modules.getModule(Rage.class);
+            if (rage != null && rage.isEnabled()) {
+                try { r = Math.max(r, Math.min(rage.reach.get(), 64.0)); }
+                catch (Throwable ignored) {}
+            }
+        }
+        return r;
+    }
+
+    private LivingEntity crosshair(Minecraft mc) {
+        try {
+            Entity e = mc.crosshairPickEntity;
+            if (e instanceof LivingEntity living && living.isAlive()) {
+                if (onlyPlayers.get() && !(living instanceof Player)) return null;
+                return living;
+            }
+        } catch (Throwable ignored) {}
+        try {
+            HitResult hr = mc.hitResult;
+            if (hr instanceof EntityHitResult ehr) {
+                Entity e = ehr.getEntity();
+                if (e instanceof LivingEntity living && living.isAlive()) {
+                    if (onlyPlayers.get() && !(living instanceof Player)) return null;
+                    return living;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private static void lookAt(LocalPlayer p, LivingEntity target) {
+        try {
+            Vec3 eye = p.getEyePosition();
+            Vec3 aim = target.position().add(0, target.getBbHeight() * 0.5, 0);
+            Vec3 d = aim.subtract(eye);
+            double horiz = Math.sqrt(d.x * d.x + d.z * d.z);
+            float yaw = (float) (Math.toDegrees(Math.atan2(d.z, d.x)) - 90.0);
+            float pitch = (float) (-Math.toDegrees(Math.atan2(d.y, horiz)));
+            p.setYRot(yaw);
+            p.setXRot(pitch);
+            p.yRotO = yaw;
+            p.xRotO = pitch;
+        } catch (Throwable ignored) {}
     }
 }
