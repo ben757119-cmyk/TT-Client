@@ -24,9 +24,8 @@ import java.util.List;
  * Opacity: hides non-ore blocks client-side so ores pop (singleplayer / no anti-xray).
  * ESP: boxes/tracers on every ore block currently loaded on the client.
  *
- * Server anti-xray (Paper engine-mode / orebfuscation) never sends hidden ores to the
- * client — nothing can see blocks the server withheld. ESP still shows every ore
- * the server did send (cave-adjacent ores, exposed veins, etc.).
+ * Server anti-xray never sends hidden ores — nothing can invent those.
+ * ESP still shows every ore the server did send.
  */
 public class XRay extends Module {
     public final BoolSetting opacity = addSetting(new BoolSetting(
@@ -132,8 +131,15 @@ public class XRay extends Module {
     private void reloadChunks() {
         try {
             Minecraft mc = mc();
-            if (mc != null && mc.levelRenderer != null) {
-                mc.levelRenderer.allChanged();
+            if (mc == null || mc.levelRenderer == null) return;
+            Object lr = mc.levelRenderer;
+            // 26.2 may rename allChanged — try common names via reflection
+            for (String name : new String[]{"allChanged", "reload", "rebuildAllChunks", "setNeedsFullRenderChunkUpdate"}) {
+                try {
+                    var m = lr.getClass().getMethod(name);
+                    m.invoke(lr);
+                    return;
+                } catch (Throwable ignored) {}
             }
         } catch (Throwable ignored) {}
     }
