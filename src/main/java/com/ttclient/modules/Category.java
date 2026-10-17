@@ -6,6 +6,7 @@ public enum Category {
     PLAYER("Player", 0x5555FF),
     RENDER("Render", 0xFF55FF),
     WORLD("World", 0x55FFFF),
+    BASEFIND("Basefind", 0xFFAA00),
     MISC("Misc", 0xFFFF55),
     CLIENT("Client", 0xAAAAAA);
 
