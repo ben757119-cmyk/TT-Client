@@ -17,10 +17,6 @@ import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
-/**
- * MaceHack — every mace hit is a smash, even on the ground.
- * Hearts: how hard each click feels (spoofed fall + multi-hit).
- */
 public class MaceHack extends Module {
     public final NumberSetting hearts = addSetting(new NumberSetting(
             "Hearts", "Target damage per click (hearts)", 10.0, 1.0, 50.0, 0.5));
@@ -76,7 +72,6 @@ public class MaceHack extends Module {
 
     public static void applySpoof(LocalPlayer p, float fallDist) {
         if (p == null) return;
-        // fallDistance mapping differs across 26.x — use reflection only
         setFallDistance(p, fallDist);
         try { p.setOnGround(false); } catch (Throwable ignored) {}
         try {
@@ -90,7 +85,7 @@ public class MaceHack extends Module {
             for (Class<?> c = p.getClass(); c != null; c = c.getSuperclass()) {
                 for (var f : c.getDeclaredFields()) {
                     String n = f.getName().toLowerCase();
-                    if (f.getType() == float.class && (n.contains("fall") || n.equals("o") || n.contains("falldistance"))) {
+                    if (f.getType() == float.class && (n.contains("fall") || n.contains("falldistance"))) {
                         f.setAccessible(true);
                         f.setFloat(p, fallDist);
                         return;
@@ -109,16 +104,17 @@ public class MaceHack extends Module {
     }
 
     private float fallValue() {
+        double base = fall.get().doubleValue();
         if (autoFall.get()) {
-            double h = hearts.get();
-            return (float) Math.min(80.0, Math.max(fall.get(), h * 2.5));
+            double h = hearts.get().doubleValue();
+            return (float) Math.min(80.0, Math.max(base, h * 2.5));
         }
-        return (float) fall.get();
+        return (float) base;
     }
 
     private int hitCount() {
         if (!multiHit.get()) return 1;
-        int n = (int) Math.ceil(hearts.get());
+        int n = (int) Math.ceil(hearts.get().doubleValue());
         return Math.max(1, Math.min(n, 25));
     }
 
@@ -190,11 +186,11 @@ public class MaceHack extends Module {
     }
 
     private double effectiveRange() {
-        double r = range.get();
+        double r = range.get().doubleValue();
         if (useRage.get() && TTClientClient.modules != null) {
             Rage rage = TTClientClient.modules.getModule(Rage.class);
             if (rage != null && rage.isEnabled()) {
-                try { r = Math.max(r, Math.min(rage.reach.get(), 64.0)); }
+                try { r = Math.max(r, Math.min(rage.reach.get().doubleValue(), 64.0)); }
                 catch (Throwable ignored) {}
             }
         }
