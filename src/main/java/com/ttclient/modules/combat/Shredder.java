@@ -18,11 +18,6 @@ import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
-/**
- * Shredder — sword shred + mace attribute swap.
- * Every cycle: max-strength sword hits, then mace smash, swap back.
- * Uses Rage reach when Rage is on.
- */
 public class Shredder extends Module {
     public final NumberSetting range = addSetting(new NumberSetting(
             "Range", "Attack range (Rage overrides when on)", 6.0, 3.0, 64.0, 0.1));
@@ -88,7 +83,6 @@ public class Shredder extends Module {
             int n = Math.max(1, hits.getInt());
             for (int i = 0; i < n; i++) {
                 try {
-                    try { p.attackStrengthTicker = 1000; } catch (Throwable ignored) {}
                     mc.gameMode.attack(p, target);
                     p.swing(InteractionHand.MAIN_HAND);
                 } catch (Throwable ignored) {}
@@ -105,7 +99,6 @@ public class Shredder extends Module {
             }
             for (int i = 0; i < maceHits.getInt(); i++) {
                 try {
-                    try { p.attackStrengthTicker = 1000; } catch (Throwable ignored) {}
                     mc.gameMode.attack(p, target);
                     p.swing(InteractionHand.MAIN_HAND);
                 } catch (Throwable ignored) {}
