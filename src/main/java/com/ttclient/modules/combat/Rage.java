@@ -26,7 +26,7 @@ import net.minecraft.world.phys.AABB;
  */
 public class Rage extends Module {
     public final NumberSetting reach = addSetting(new NumberSetting(
-            "Reach", "Attack / interact reach", 256.0, 6.0, 256.0, 1.0));
+            "Reach", "Attack / interact reach", 256.0, 6.0, 1000.0, 1.0));
     public final BoolSetting entities = addSetting(new BoolSetting(
             "Entities", "Boost entity interaction range attribute", true));
     public final BoolSetting blocks = addSetting(new BoolSetting(
@@ -43,7 +43,7 @@ public class Rage extends Module {
     private int timer;
 
     public Rage() {
-        super("Rage", "256 reach — attribute + long-range attacks", Category.COMBAT);
+        super("Rage", "Up to 1000 reach — attribute + long-range attacks", Category.COMBAT);
     }
 
     @Override
@@ -89,14 +89,12 @@ public class Rage extends Module {
             AttributeInstance inst = p.getAttribute(Attributes.ENTITY_INTERACTION_RANGE);
             if (inst != null) {
                 if (oldEntity == 3.0 || inst.getBaseValue() != r) {
-                    // remember first non-rage base if still default-ish
                     double cur = inst.getBaseValue();
                     if (cur < 10) oldEntity = cur;
                 }
                 try {
                     inst.setBaseValue(r);
                 } catch (Throwable t) {
-                    // Some builds clamp to attribute max (64)
                     try { inst.setBaseValue(Math.min(r, 64)); } catch (Throwable ignored) {}
                 }
             }
@@ -137,7 +135,6 @@ public class Rage extends Module {
         for (Entity e : mc.level.getEntities(self, box)) {
             if (!(e instanceof LivingEntity living) || !living.isAlive() || living == self) continue;
             if (playersOnly.get() && !(living instanceof Player)) continue;
-            // skip friendly animals if playersOnly is off? allow all living
             double d = self.distanceToSqr(living);
             if (d <= bestD) {
                 bestD = d;
