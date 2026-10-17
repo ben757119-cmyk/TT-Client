@@ -10,8 +10,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Opacity-style XRay: non-ore blocks stop occluding and can be made invisible.
- * Only affects client rendering of blocks the server already sent.
+ * Opacity XRay: non-ores stop occluding and become invisible client-side.
+ * require=0 so a missing method does not hard-crash the game.
  */
 @Mixin(BlockBehaviour.BlockStateBase.class)
 public abstract class MixinBlockStateBase {
@@ -19,18 +19,38 @@ public abstract class MixinBlockStateBase {
     @Inject(method = "canOcclude", at = @At("HEAD"), cancellable = true, require = 0)
     private void ttclient$canOcclude(CallbackInfoReturnable<Boolean> cir) {
         if (!XRay.isOpacityActive()) return;
-        BlockState self = (BlockState) (Object) this;
-        if (!XRay.isOre(self)) {
-            cir.setReturnValue(false);
-        }
+        try {
+            BlockState self = (BlockState) (Object) this;
+            if (!XRay.isOre(self)) cir.setReturnValue(false);
+        } catch (Throwable ignored) {}
     }
 
     @Inject(method = "getRenderShape", at = @At("HEAD"), cancellable = true, require = 0)
     private void ttclient$getRenderShape(CallbackInfoReturnable<RenderShape> cir) {
         if (!XRay.isOpacityActive()) return;
-        BlockState self = (BlockState) (Object) this;
-        if (!XRay.isOre(self) && XRay.shouldHideNonOres()) {
-            cir.setReturnValue(RenderShape.INVISIBLE);
-        }
+        try {
+            BlockState self = (BlockState) (Object) this;
+            if (!XRay.isOre(self) && XRay.shouldHideNonOres()) {
+                cir.setReturnValue(RenderShape.INVISIBLE);
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    @Inject(method = "isSolidRender", at = @At("HEAD"), cancellable = true, require = 0)
+    private void ttclient$isSolidRender(CallbackInfoReturnable<Boolean> cir) {
+        if (!XRay.isOpacityActive()) return;
+        try {
+            BlockState self = (BlockState) (Object) this;
+            if (!XRay.isOre(self)) cir.setReturnValue(false);
+        } catch (Throwable ignored) {}
+    }
+
+    @Inject(method = "propagatesSkylightDown", at = @At("HEAD"), cancellable = true, require = 0)
+    private void ttclient$skylight(CallbackInfoReturnable<Boolean> cir) {
+        if (!XRay.isOpacityActive()) return;
+        try {
+            BlockState self = (BlockState) (Object) this;
+            if (!XRay.isOre(self)) cir.setReturnValue(true);
+        } catch (Throwable ignored) {}
     }
 }
