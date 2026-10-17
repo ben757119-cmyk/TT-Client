@@ -7,9 +7,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyArgs;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 
 @Mixin(Camera.class)
 public abstract class MixinCamera {
@@ -30,51 +28,8 @@ public abstract class MixinCamera {
         }
     }
 
-    @Inject(method = "setup", at = @At("HEAD"), require = 0)
-    private void ttclient$detach(CallbackInfo ci) {
-        if (Freecam.isActive()) {
-            try { this.detached = true; } catch (Throwable ignored) {}
-        }
-    }
-
-    @ModifyArgs(
-            method = "setup",
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Camera;setPosition(DDD)V"),
-            require = 0
-    )
-    private void ttclient$posSetup(Args args) {
-        applyPos(args);
-    }
-
-    @ModifyArgs(
-            method = "setup",
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Camera;setRotation(FF)V"),
-            require = 0
-    )
-    private void ttclient$rotSetup(Args args) {
-        applyRot(args);
-    }
-
-    @ModifyArgs(
-            method = "alignWithEntity",
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Camera;setPosition(DDD)V"),
-            require = 0
-    )
-    private void ttclient$posAlign(Args args) {
-        applyPos(args);
-    }
-
-    @ModifyArgs(
-            method = "alignWithEntity",
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Camera;setRotation(FF)V"),
-            require = 0
-    )
-    private void ttclient$rotAlign(Args args) {
-        applyRot(args);
-    }
-
     @Inject(method = "setup", at = @At("RETURN"), require = 0)
-    private void ttclient$setupReturn(CallbackInfo ci) {
+    private void ttclient$freecam(CallbackInfo ci) {
         if (!Freecam.isActive()) return;
         Freecam fc = Freecam.get();
         if (fc == null) return;
@@ -83,29 +38,13 @@ public abstract class MixinCamera {
             setPosition(fc.getX(p), fc.getY(p), fc.getZ(p));
             setRotation(fc.getYaw(p), fc.getPitch(p));
         } catch (Throwable ignored) {}
-        try { this.detached = true; } catch (Throwable ignored) {}
-    }
-
-    private static void applyPos(Args args) {
-        if (!Freecam.isActive()) return;
-        Freecam fc = Freecam.get();
-        if (fc == null) return;
-        float p = pt();
         try {
-            args.set(0, fc.getX(p));
-            args.set(1, fc.getY(p));
-            args.set(2, fc.getZ(p));
+            this.detached = true;
         } catch (Throwable ignored) {}
-    }
-
-    private static void applyRot(Args args) {
-        if (!Freecam.isActive()) return;
-        Freecam fc = Freecam.get();
-        if (fc == null) return;
-        float p = pt();
         try {
-            args.set(0, fc.getYaw(p));
-            args.set(1, fc.getPitch(p));
+            CameraAccessor a = (CameraAccessor) (Object) this;
+            a.ttclient$setPos(fc.getX(p), fc.getY(p), fc.getZ(p));
+            a.ttclient$setRot(fc.getYaw(p), fc.getPitch(p));
         } catch (Throwable ignored) {}
     }
 }
