@@ -15,8 +15,10 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 /**
- * Inventory helpers for NeoForge/Minecraft 26.2+.
- * Offhand swap uses F-key packet; inv moves use handleContainerInput + ContainerInput.
+ * Inventory helpers for NeoForge / Minecraft 26.2+.
+ *
+ * AutoTotem path never changes the selected hotbar slot.
+ * It only uses handleContainerInput(SWAP, button=40) so offhand swaps are silent.
  */
 public final class InvUtils {
     private InvUtils() {}
@@ -103,7 +105,6 @@ public final class InvUtils {
     public static int toMenuSlot(int invIndex) {
         if (invIndex >= 0 && invIndex < 9) return 36 + invIndex;
         if (invIndex >= 9 && invIndex < 36) return invIndex;
-        if (invIndex == 40) return 45;
         return -1;
     }
 
@@ -140,50 +141,33 @@ public final class InvUtils {
         if (p.getOffhandItem().is(Items.TOTEM_OF_UNDYING)) return true;
         int slot = findItemSlot(p, Items.TOTEM_OF_UNDYING);
         if (slot < 0) return false;
-        return swapToOffhand(p, slot);
+        return swapToOffhandSilent(p, slot);
     }
 
     public static boolean moveToOffhand(LocalPlayer p, Item item) {
         if (p.getOffhandItem().is(item)) return true;
         int slot = findItemSlot(p, item);
         if (slot < 0) return false;
-        return swapToOffhand(p, slot);
+        return swapToOffhandSilent(p, slot);
+    }
+
+    /** Silent offhand swap — never changes selected hotbar. */
+    public static boolean swapToOffhandSilent(LocalPlayer p, int invIndex) {
+        if (p == null || invIndex < 0) return false;
+        if (p.getInventory().getItem(invIndex).isEmpty()) return false;
+        return clickSwapToOffhand(p, invIndex);
     }
 
     public static boolean swapToOffhand(LocalPlayer p, int invIndex) {
-        if (p == null || invIndex < 0) return false;
-        if (p.getInventory().getItem(invIndex).isEmpty()) return false;
-
-        if (invIndex < 9) {
-            return swapHotbarOffhand(p, invIndex);
-        }
-
-        if (clickSwapToOffhand(p, invIndex)) return true;
-
-        int empty = findEmptyHotbar(p);
-        if (empty >= 0 && clickSwapSlots(p, invIndex, empty)) {
-            return swapHotbarOffhand(p, empty);
-        }
-        return false;
+        return swapToOffhandSilent(p, invIndex);
     }
 
+    /** Legacy F-key path — AutoTotem must not use this. */
     public static boolean swapHotbarOffhand(LocalPlayer p, int hotbarSlot) {
         if (hotbarSlot < 0 || hotbarSlot > 8) return false;
-
         int prev = p.getInventory().getSelectedSlot();
         selectHotbar(p, hotbarSlot);
-
         boolean ok = sendSwapOffhandPacket(p);
-
-        if (ok) {
-            try {
-                ItemStack main = p.getInventory().getItem(hotbarSlot).copy();
-                ItemStack off = p.getOffhandItem().copy();
-                p.setItemInHand(InteractionHand.OFF_HAND, main);
-                p.getInventory().setItem(hotbarSlot, off);
-            } catch (Throwable ignored) {}
-        }
-
         if (prev != hotbarSlot) {
             selectHotbar(p, prev);
         }
@@ -220,18 +204,14 @@ public final class InvUtils {
     public static boolean clickSwapToOffhand(LocalPlayer p, int invIndex) {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.gameMode == null) return false;
+
         int menuSlot = toMenuSlot(invIndex);
         if (menuSlot < 0) return false;
+
         int syncId = inventorySyncId(p);
         if (syncId < 0) return false;
 
         if (containerClick(mc, syncId, menuSlot, 40, ContainerInput.SWAP, p)) {
-            try {
-                ItemStack stack = p.getInventory().getItem(invIndex).copy();
-                ItemStack off = p.getOffhandItem().copy();
-                p.setItemInHand(InteractionHand.OFF_HAND, stack);
-                p.getInventory().setItem(invIndex, off);
-            } catch (Throwable ignored) {}
             return true;
         }
 
@@ -241,16 +221,6 @@ public final class InvUtils {
             return true;
         }
         return false;
-    }
-
-    private static boolean clickSwapSlots(LocalPlayer p, int fromInv, int toHotbar) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc == null || mc.gameMode == null) return false;
-        int from = toMenuSlot(fromInv);
-        if (from < 0 || toHotbar < 0 || toHotbar > 8) return false;
-        int syncId = inventorySyncId(p);
-        if (syncId < 0) return false;
-        return containerClick(mc, syncId, from, toHotbar, ContainerInput.SWAP, p);
     }
 
     private static int inventorySyncId(LocalPlayer p) {
