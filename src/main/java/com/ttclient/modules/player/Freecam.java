@@ -7,22 +7,27 @@ import com.ttclient.settings.NumberSetting;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
 
 public class Freecam extends Module {
-    public final NumberSetting speed = addSetting(new NumberSetting("Speed", "Fly speed", 3.0, 0.2, 30.0, 0.1));
-    public final NumberSetting vSpeed = addSetting(new NumberSetting("VSpeed", "Vertical mult", 1.0, 0.2, 3.0, 0.1));
+    public final NumberSetting speed = addSetting(new NumberSetting("Speed", "Fly speed", 1.0, 0.1, 10.0, 0.1));
+    public final NumberSetting speed2 = addSetting(new NumberSetting("Speed2", "Sprint mult", 2.0, 1.0, 5.0, 0.1));
+
+    private static volatile boolean activeCache;
+
+    private double posX, posY, posZ;
+    private double prevX, prevY, prevZ;
+    private float yaw, pitch;
+    private float prevYaw, prevPitch;
 
     private double originX, originY, originZ;
     private float originYaw, originPitch;
     private boolean saved;
-    private static volatile boolean activeCache = false;
-    private double camX, camY, camZ;
-    private float camYaw, camPitch;
 
     public Freecam() {
-        super("Freecam", "Detach camera from body (F4)", Category.PLAYER);
+        super("Freecam", "Meteor-style detached camera (F4)", Category.PLAYER);
         setKeyBind(GLFW.GLFW_KEY_F4);
     }
 
@@ -35,36 +40,34 @@ public class Freecam extends Module {
         }
     }
 
-    public boolean active() { return activeCache; }
     public static boolean isActive() { return activeCache; }
-    public double getCamX() { return camX; }
-    public double getCamY() { return camY; }
-    public double getCamZ() { return camZ; }
-    public float getCamYaw() { return camYaw; }
-    public float getCamPitch() { return camPitch; }
+
+    public double getX(float tickDelta) { return Mth.lerp(tickDelta, prevX, posX); }
+    public double getY(float tickDelta) { return Mth.lerp(tickDelta, prevY, posY); }
+    public double getZ(float tickDelta) { return Mth.lerp(tickDelta, prevZ, posZ); }
+    public float getYaw(float tickDelta) { return Mth.lerp(tickDelta, prevYaw, yaw); }
+    public float getPitch(float tickDelta) { return Mth.lerp(tickDelta, prevPitch, pitch); }
+
+    public double getCamX() { return posX; }
+    public double getCamY() { return posY; }
+    public double getCamZ() { return posZ; }
+    public float getCamYaw() { return yaw; }
+    public float getCamPitch() { return pitch; }
 
     public static void forceCamera(Camera cam) {
         if (cam == null || !activeCache) return;
         Freecam fc = get();
         if (fc == null || !fc.saved) return;
+        float pt = 1f;
         try {
-            CameraAccessor acc = (CameraAccessor) (Object) cam;
-            acc.ttclient$invokeSetPosition(fc.camX, fc.camY, fc.camZ);
-            acc.ttclient$invokeSetRotation(fc.camYaw, fc.camPitch);
-            return;
+            pt = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false);
         } catch (Throwable ignored) {}
+        double x = fc.getX(pt), y = fc.getY(pt), z = fc.getZ(pt);
+        float yw = fc.getYaw(pt), pi = fc.getPitch(pt);
         try {
-            for (var f : Camera.class.getDeclaredFields()) {
-                if (f.getType() == Vec3.class) {
-                    f.setAccessible(true);
-                    f.set(cam, new Vec3(fc.camX, fc.camY, fc.camZ));
-                } else if (f.getType() == float.class) {
-                    String n = f.getName().toLowerCase();
-                    f.setAccessible(true);
-                    if (n.contains("yrot") || n.equals("yaw")) f.setFloat(cam, fc.camYaw);
-                    else if (n.contains("xrot") || n.equals("pitch")) f.setFloat(cam, fc.camPitch);
-                }
-            }
+            CameraAccessor a = (CameraAccessor) (Object) cam;
+            a.ttclient$setPos(x, y, z);
+            a.ttclient$setRot(yw, pi);
         } catch (Throwable ignored) {}
     }
 
@@ -77,11 +80,21 @@ public class Freecam extends Module {
         LocalPlayer p = mc.player;
         originX = p.getX(); originY = p.getY(); originZ = p.getZ();
         originYaw = p.getYRot(); originPitch = p.getXRot();
-        camX = p.getX();
-        camY = p.getY() + p.getEyeHeight();
-        camZ = p.getZ();
-        camYaw = p.getYRot();
-        camPitch = p.getXRot();
+
+        double x = p.getX();
+        double y = p.getY() + p.getEyeHeight();
+        double z = p.getZ();
+        try {
+            Camera c = mc.gameRenderer.mainCamera();
+            Vec3 cp = c.position();
+            x = cp.x; y = cp.y; z = cp.z;
+        } catch (Throwable ignored) {}
+
+        posX = prevX = x;
+        posY = prevY = y;
+        posZ = prevZ = z;
+        yaw = prevYaw = p.getYRot();
+        pitch = prevPitch = p.getXRot();
         saved = true;
         activeCache = true;
         p.setDeltaMovement(Vec3.ZERO);
@@ -89,6 +102,7 @@ public class Freecam extends Module {
 
     @Override
     public void onDisable() {
+        activeCache = false;
         Minecraft mc = mc();
         if (mc != null && mc.player != null && saved) {
             LocalPlayer p = mc.player;
@@ -100,22 +114,63 @@ public class Freecam extends Module {
             p.setDeltaMovement(Vec3.ZERO);
         }
         saved = false;
-        activeCache = false;
     }
 
     @Override
     public void onTick() {
+        if (!saved || !activeCache) return;
         Minecraft mc = mc();
-        if (mc == null || mc.player == null || !saved) return;
+        if (mc == null || mc.player == null) return;
         LocalPlayer p = mc.player;
-        camYaw = p.getYRot();
-        camPitch = p.getXRot();
-        moveCamera(mc);
+
+        prevYaw = yaw;
+        prevPitch = pitch;
+        yaw = p.getYRot();
+        pitch = p.getXRot();
+
+        prevX = posX;
+        prevY = posY;
+        prevZ = posZ;
+
+        double s = speed.get().doubleValue();
+        try {
+            if (mc.options.keySprint.isDown()) s *= speed2.get().doubleValue();
+        } catch (Throwable ignored) {}
+
+        double radYaw = Math.toRadians(yaw);
+        double radPitch = Math.toRadians(pitch);
+        double cosPitch = Math.cos(radPitch);
+
+        double forward = 0, strafe = 0, vertical = 0;
+        try {
+            if (mc.options.keyUp.isDown()) forward += 1;
+            if (mc.options.keyDown.isDown()) forward -= 1;
+            if (mc.options.keyLeft.isDown()) strafe += 1;
+            if (mc.options.keyRight.isDown()) strafe -= 1;
+            if (mc.options.keyJump.isDown()) vertical += 1;
+            if (mc.options.keyShift.isDown()) vertical -= 1;
+        } catch (Throwable ignored) {}
+
+        double len = Math.sqrt(forward * forward + strafe * strafe);
+        if (len > 1.0e-6) { forward /= len; strafe /= len; }
+
+        double fx = -Math.sin(radYaw) * cosPitch;
+        double fy = -Math.sin(radPitch);
+        double fz = Math.cos(radYaw) * cosPitch;
+        double rx = Math.cos(radYaw);
+        double rz = Math.sin(radYaw);
+
+        posX += (fx * forward + rx * strafe) * s;
+        posY += (fy * forward + vertical) * s;
+        posZ += (fz * forward + rz * strafe) * s;
+
         try {
             p.setDeltaMovement(Vec3.ZERO);
-            p.fallDistance = 0;
-            try { p.snapTo(originX, originY, originZ, camYaw, camPitch); }
-            catch (Throwable t) { p.setPos(originX, originY, originZ); }
+            try { p.snapTo(originX, originY, originZ, originYaw, originPitch); }
+            catch (Throwable t) {
+                p.setPos(originX, originY, originZ);
+                p.setYRot(originYaw); p.setXRot(originPitch);
+            }
             try {
                 Object in = p.input;
                 if (in != null) {
@@ -128,36 +183,22 @@ public class Freecam extends Module {
                 }
             } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
-        try {
-            Camera cam = null;
-            try { cam = mc.gameRenderer.mainCamera(); } catch (Throwable ignored) {}
-            if (cam != null) forceCamera(cam);
-        } catch (Throwable ignored) {}
-    }
 
-    private void moveCamera(Minecraft mc) {
-        double sp = speed.get();
-        double vsp = sp * vSpeed.get();
-        double yawRad = Math.toRadians(camYaw);
-        double sin = Math.sin(yawRad);
-        double cos = Math.cos(yawRad);
-        double dx = 0, dy = 0, dz = 0;
         try {
-            if (mc.options.keyUp.isDown()) { dx -= sin * sp; dz += cos * sp; }
-            if (mc.options.keyDown.isDown()) { dx += sin * sp; dz -= cos * sp; }
-            if (mc.options.keyLeft.isDown()) { dx -= cos * sp; dz -= sin * sp; }
-            if (mc.options.keyRight.isDown()) { dx += cos * sp; dz += sin * sp; }
-            if (mc.options.keyJump.isDown()) dy += vsp;
-            if (mc.options.keyShift.isDown()) dy -= vsp;
+            p.setYRot(yaw);
+            p.setXRot(pitch);
         } catch (Throwable ignored) {}
-        camX += dx; camY += dy; camZ += dz;
     }
 
     public void onCameraAngles(net.neoforged.neoforge.client.event.ViewportEvent.ComputeCameraAngles event) {
-        if (!active()) return;
+        if (!activeCache) return;
+        float pt = 1f;
         try {
-            event.setYaw(camYaw);
-            event.setPitch(camPitch);
+            pt = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false);
+        } catch (Throwable ignored) {}
+        try {
+            event.setYaw(getYaw(pt));
+            event.setPitch(getPitch(pt));
         } catch (Throwable ignored) {}
     }
 }
