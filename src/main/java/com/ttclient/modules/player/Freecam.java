@@ -17,6 +17,7 @@ public class Freecam extends Module {
     private double originX, originY, originZ;
     private float originYaw, originPitch;
     private boolean saved;
+    private static volatile boolean activeCache = false;
     private double camX, camY, camZ;
     private float camYaw, camPitch;
 
@@ -34,7 +35,8 @@ public class Freecam extends Module {
         }
     }
 
-    public boolean active() { return isEnabled() && saved; }
+    public boolean active() { return activeCache; }
+    public static boolean isActive() { return activeCache; }
     public double getCamX() { return camX; }
     public double getCamY() { return camY; }
     public double getCamZ() { return camZ; }
@@ -42,9 +44,9 @@ public class Freecam extends Module {
     public float getCamPitch() { return camPitch; }
 
     public static void forceCamera(Camera cam) {
-        if (cam == null) return;
+        if (cam == null || !activeCache) return;
         Freecam fc = get();
-        if (fc == null || !fc.active()) return;
+        if (fc == null || !fc.saved) return;
         try {
             CameraAccessor acc = (CameraAccessor) (Object) cam;
             acc.ttclient$invokeSetPosition(fc.camX, fc.camY, fc.camZ);
@@ -81,6 +83,7 @@ public class Freecam extends Module {
         camYaw = p.getYRot();
         camPitch = p.getXRot();
         saved = true;
+        activeCache = true;
         p.setDeltaMovement(Vec3.ZERO);
     }
 
@@ -97,6 +100,7 @@ public class Freecam extends Module {
             p.setDeltaMovement(Vec3.ZERO);
         }
         saved = false;
+        activeCache = false;
     }
 
     @Override
