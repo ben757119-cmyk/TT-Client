@@ -178,16 +178,6 @@ public class Freecam extends Module {
             }
 
             p.setOnGround(true);
-
-            try {
-                var input = p.input;
-                if (input != null) {
-                    try { input.forwardImpulse = 0; } catch (Throwable ignored) {}
-                    try { input.leftImpulse = 0; } catch (Throwable ignored) {}
-                    try { input.jumping = false; } catch (Throwable ignored) {}
-                    try { input.shiftKeyDown = false; } catch (Throwable ignored) {}
-                }
-            } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
     }
 
@@ -203,21 +193,31 @@ public class Freecam extends Module {
             }
             if (cam == null) return;
 
+            // setPosition is protected in 26.2 — use reflection
             try {
-                cam.setPosition(camX, camY, camZ);
+                var m = Camera.class.getDeclaredMethod("setPosition", double.class, double.class, double.class);
+                m.setAccessible(true);
+                m.invoke(cam, camX, camY, camZ);
             } catch (Throwable t) {
                 try {
-                    var m = Camera.class.getMethod("setPosition", double.class, double.class, double.class);
-                    m.invoke(cam, camX, camY, camZ);
+                    for (var f : Camera.class.getDeclaredFields()) {
+                        if (f.getType() == Vec3.class) {
+                            f.setAccessible(true);
+                            f.set(cam, new Vec3(camX, camY, camZ));
+                            break;
+                        }
+                    }
                 } catch (Throwable ignored) {}
             }
 
             try {
-                var m = Camera.class.getMethod("setRotation", float.class, float.class);
+                var m = Camera.class.getDeclaredMethod("setRotation", float.class, float.class);
+                m.setAccessible(true);
                 m.invoke(cam, camYaw, camPitch);
             } catch (Throwable t) {
                 try {
-                    var m = Camera.class.getMethod("setRotation", float.class, float.class, float.class);
+                    var m = Camera.class.getDeclaredMethod("setRotation", float.class, float.class, float.class);
+                    m.setAccessible(true);
                     m.invoke(cam, camYaw, camPitch, 0f);
                 } catch (Throwable ignored) {}
             }
