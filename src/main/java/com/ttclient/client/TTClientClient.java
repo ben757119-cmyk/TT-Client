@@ -21,6 +21,7 @@ import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RenderGuiEvent;
+import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.client.event.ViewportEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import org.lwjgl.glfw.GLFW;
@@ -30,8 +31,6 @@ public class TTClientClient {
 
     public static ModuleManager modules;
     public static ConfigManager config;
-
-    /** Mouse binds stored as 2000 + GLFW mouse button index. */
     public static final int MOUSE_BIND_BASE = 2000;
 
     public TTClientClient() {
@@ -47,21 +46,12 @@ public class TTClientClient {
     }
 
     private static Screen currentScreen(Minecraft mc) {
-        try {
-            return mc.gui.screen();
-        } catch (Throwable t) {
-            return null;
-        }
+        try { return mc.gui.screen(); } catch (Throwable t) { return null; }
     }
 
     private static void openScreen(Minecraft mc, Screen screen) {
-        try {
-            mc.gui.setScreen(screen);
-            return;
-        } catch (Throwable ignored) {}
-        try {
-            Minecraft.class.getMethod("setScreen", Screen.class).invoke(mc, screen);
-        } catch (Throwable ignored) {}
+        try { mc.gui.setScreen(screen); return; } catch (Throwable ignored) {}
+        try { Minecraft.class.getMethod("setScreen", Screen.class).invoke(mc, screen); } catch (Throwable ignored) {}
     }
 
     @SubscribeEvent
@@ -75,9 +65,14 @@ public class TTClientClient {
     @SubscribeEvent
     public void onCameraAngles(ViewportEvent.ComputeCameraAngles event) {
         Freecam fc = modules != null ? modules.getModule(Freecam.class) : null;
-        if (fc != null && fc.isEnabled()) {
-            fc.onCameraAngles(event);
-        }
+        if (fc != null && fc.isEnabled()) fc.onCameraAngles(event);
+    }
+
+    @SubscribeEvent
+    public void onRenderLevel(RenderLevelStageEvent event) {
+        Freecam fc = modules != null ? modules.getModule(Freecam.class) : null;
+        if (fc == null || !fc.active()) return;
+        try { Freecam.applyTo(event.getCamera()); } catch (Throwable ignored) {}
     }
 
     @SubscribeEvent
@@ -89,10 +84,8 @@ public class TTClientClient {
     public void onKey(InputEvent.Key event) {
         if (modules == null) return;
         if (event.getAction() != GLFW.GLFW_PRESS) return;
-
         int key = event.getKey();
         if (key <= 0 || key == GLFW.GLFW_KEY_UNKNOWN) return;
-
         Minecraft mc = Minecraft.getInstance();
         Screen screen = currentScreen(mc);
 
@@ -120,10 +113,8 @@ public class TTClientClient {
         }
 
         if (screen != null) return;
-
         for (Module mod : modules.getModules()) {
-            if (mod instanceof ClickGUIModule) continue;
-            if (mod instanceof StreamerMode) continue;
+            if (mod instanceof ClickGUIModule || mod instanceof StreamerMode) continue;
             int bind = mod.getKeyBind();
             if (bind > 0 && bind < MOUSE_BIND_BASE && bind == key) {
                 mod.toggle();
@@ -136,17 +127,11 @@ public class TTClientClient {
     public void onMouse(InputEvent.MouseButton.Post event) {
         if (modules == null) return;
         if (event.getAction() != GLFW.GLFW_PRESS) return;
-
         int button = event.getButton();
         if (button != GLFW.GLFW_MOUSE_BUTTON_4 && button != GLFW.GLFW_MOUSE_BUTTON_5
-                && button != GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
-            return;
-        }
-
+                && button != GLFW.GLFW_MOUSE_BUTTON_MIDDLE) return;
         Minecraft mc = Minecraft.getInstance();
-        Screen screen = currentScreen(mc);
-        if (screen != null) return;
-
+        if (currentScreen(mc) != null) return;
         int code = MOUSE_BIND_BASE + button;
         for (Module mod : modules.getModules()) {
             if (mod instanceof ClickGUIModule) continue;
@@ -179,7 +164,6 @@ public class TTClientClient {
             } catch (Throwable ignored) {}
         }
         if (text == null) return;
-
         AutoChatGame game = modules.getModule(AutoChatGame.class);
         if (game != null && game.isEnabled()) game.handleChat(text);
     }
@@ -190,13 +174,10 @@ public class TTClientClient {
             String msg = event.getMessage();
             if (msg == null) return;
             if (!msg.trim().startsWith(ClientCommands.PREFIX)) return;
-
             event.setCanceled(true);
             ClientCommands.handle(msg);
         } catch (Throwable t) {
-            try {
-                event.setCanceled(true);
-            } catch (Throwable ignored) {}
+            try { event.setCanceled(true); } catch (Throwable ignored) {}
         }
     }
 }
