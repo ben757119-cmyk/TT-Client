@@ -14,43 +14,44 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Spear Killer — charge spear + inject relative velocity for max charge damage.
- *
- * Spear charge damage scales with relative velocity (blocks/sec × material multiplier).
- * This holds a charge and boosts client velocity toward the target so hits land hard.
- * Strongest in singleplayer / servers that trust client motion for spear charge.
+ * Spear Killer — every spear hit packs extreme relative velocity so charge damage is huge.
+ * Vanilla spear charge scales with relative speed vs the target.
  */
 public class SpearKiller extends Module {
     public final NumberSetting range = addSetting(new NumberSetting(
-            "Range", "Target range (spear sweet spot ~2–4.5)", 4.5, 2.0, 16.0, 0.1));
+            "Range", "Auto-target range", 6.0, 2.0, 64.0, 0.1));
     public final BoolSetting useRage = addSetting(new BoolSetting(
             "UseRageRange", "Use Rage reach when Rage is on", true));
     public final NumberSetting velocity = addSetting(new NumberSetting(
-            "Velocity", "Injected relative speed toward target (b/s)", 40.0, 5.0, 120.0, 1.0));
+            "Velocity", "Relative speed injected toward target (blocks/sec)", 100.0, 20.0, 250.0, 5.0));
+    public final NumberSetting hits = addSetting(new NumberSetting(
+            "Hits", "Attacks per cycle (more = more dmg)", 4, 1, 12, 1));
     public final NumberSetting cooldown = addSetting(new NumberSetting(
-            "Cooldown", "Ticks between attack attempts", 2, 0, 20, 1));
+            "Cooldown", "Ticks between attack cycles", 1, 0, 15, 1));
     public final BoolSetting onlyPlayers = addSetting(new BoolSetting(
             "OnlyPlayers", "Only target players", true));
     public final BoolSetting autoSwitch = addSetting(new BoolSetting(
-            "AutoSwitch", "Switch to a spear in hotbar", true));
+            "AutoSwitch", "Switch to spear in hotbar", true));
     public final BoolSetting switchBack = addSetting(new BoolSetting(
-            "SwitchBack", "Restore hotbar slot when disabled / no target", true));
+            "SwitchBack", "Restore slot when off / no target", true));
+    public final BoolSetting autoAttack = addSetting(new BoolSetting(
+            "AutoAttack", "Auto-attack targets in range", true));
+    public final BoolSetting onManualHit = addSetting(new BoolSetting(
+            "BoostManual", "Also boost when you click-attack with a spear", true));
     public final BoolSetting holdCharge = addSetting(new BoolSetting(
-            "HoldCharge", "Hold use to keep spear charged", true));
-    public final BoolSetting jabFallback = addSetting(new BoolSetting(
-            "JabFallback", "Also jab-attack while charged", true));
-    public final NumberSetting minDist = addSetting(new NumberSetting(
-            "MinDist", "Min distance (spear deadzone ~2)", 1.8, 0.5, 3.5, 0.1));
+            "HoldCharge", "Keep spear charged between hits", true));
 
     private int timer;
     private int prevSlot = -1;
     private boolean keyForced;
 
     public SpearKiller() {
-        super("SpearKiller", "Charge spear + velocity for insta-kill hits", Category.COMBAT);
+        super("SpearKiller", "Spear hits deal massive charge damage", Category.COMBAT);
     }
 
     @Override
@@ -72,10 +73,21 @@ public class SpearKiller extends Module {
 
         if (timer > 0) timer--;
 
+        boolean manual = false;
+        try {
+            manual = onManualHit.get() && mc.options.keyAttack.isDown();
+        } catch (Throwable ignored) {}
+
         LivingEntity target = findTarget(mc, p);
+
+        if (manual) {
+            LivingEntity cross = crosshairLiving(mc);
+            if (cross != null) target = cross;
+        }
+
         if (target == null) {
             releaseUse();
-            if (switchBack.get()) restoreSlot();
+            if (switchBack.get() && !manual) restoreSlot();
             return;
         }
 
@@ -91,16 +103,44 @@ public class SpearKiller extends Module {
             forceUse(mc, p);
         }
 
-        if (timer > 0) return;
+        boolean shouldSwing = (autoAttack.get() || manual) && timer <= 0;
+        if (!shouldSwing) return;
 
-        if (jabFallback.get()) {
+        try {
+            if (p.isUsingItem()) {
+                p.releaseUsingItem();
+            }
+        } catch (Throwable ignored) {}
+
+        int n = Math.max(1, hits.getInt());
+        for (int i = 0; i < n; i++) {
+            injectVelocity(p, target);
             try {
                 mc.gameMode.attack(p, target);
                 p.swing(InteractionHand.MAIN_HAND);
             } catch (Throwable ignored) {}
         }
 
+        if (holdCharge.get()) {
+            forceUse(mc, p);
+        }
+
         timer = Math.max(0, cooldown.getInt());
+    }
+
+    private LivingEntity crosshairLiving(Minecraft mc) {
+        try {
+            Entity e = mc.crosshairPickEntity;
+            if (e instanceof LivingEntity living && living.isAlive()) return living;
+        } catch (Throwable ignored) {}
+        try {
+            HitResult hr = mc.hitResult;
+            if (hr != null && hr.getType() == HitResult.Type.ENTITY) {
+                Entity e = ((EntityHitResult) hr).getEntity();
+                if (e instanceof LivingEntity living && living.isAlive()) return living;
+            }
+        } catch (Throwable ignored) {}
+        return null;
     }
 
     private double effectiveRange() {
@@ -108,7 +148,9 @@ public class SpearKiller extends Module {
         if (useRage.get() && TTClientClient.modules != null) {
             Rage rage = TTClientClient.modules.getModule(Rage.class);
             if (rage != null && rage.isEnabled()) {
-                r = Math.max(r, Math.min(rage.reach.get(), 64.0));
+                try {
+                    r = Math.max(r, Math.min(rage.reach.get(), 64.0));
+                } catch (Throwable ignored) {}
             }
         }
         return r;
@@ -116,8 +158,6 @@ public class SpearKiller extends Module {
 
     private LivingEntity findTarget(Minecraft mc, LocalPlayer self) {
         double r = effectiveRange();
-        double min = minDist.get();
-        double minSq = min * min;
         LivingEntity best = null;
         double bestD = r * r;
         AABB box = self.getBoundingBox().inflate(r);
@@ -125,7 +165,6 @@ public class SpearKiller extends Module {
             if (!(e instanceof LivingEntity living) || !living.isAlive() || living == self) continue;
             if (onlyPlayers.get() && !(living instanceof Player)) continue;
             double d = self.distanceToSqr(living);
-            if (d < minSq) continue;
             if (d <= bestD) {
                 bestD = d;
                 best = living;
@@ -142,7 +181,11 @@ public class SpearKiller extends Module {
         if (slot < 0) return false;
 
         if (prevSlot < 0) {
-            prevSlot = p.getInventory().getSelectedSlot();
+            try {
+                prevSlot = p.getInventory().getSelectedSlot();
+            } catch (Throwable t) {
+                prevSlot = 0;
+            }
         }
         InvUtils.selectHotbar(p, slot);
         return isSpear(p.getMainHandItem());
@@ -160,17 +203,15 @@ public class SpearKiller extends Module {
     private void injectVelocity(LocalPlayer p, LivingEntity target) {
         try {
             Vec3 from = p.getEyePosition();
-            Vec3 to = target.position().add(0, target.getBbHeight() * 0.5, 0);
+            Vec3 to = target.position().add(0, target.getBbHeight() * 0.45, 0);
             Vec3 dir = to.subtract(from);
             double len = dir.length();
             if (len < 1.0e-4) return;
             dir = dir.scale(1.0 / len);
 
-            double bps = velocity.get();
-            double perTick = bps / 20.0;
+            double perTick = velocity.get() / 20.0;
             Vec3 boost = dir.scale(perTick);
-
-            p.setDeltaMovement(boost.x, Math.max(boost.y, -0.05), boost.z);
+            p.setDeltaMovement(boost.x, boost.y, boost.z);
         } catch (Throwable ignored) {}
     }
 
