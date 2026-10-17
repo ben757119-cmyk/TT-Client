@@ -5,7 +5,9 @@
   "compatibilityLevel": "JAVA_21",
   "client": [
     "MixinBlockStateBase",
-    "MixinCamera"
+    "MixinCamera",
+    "CameraAccessor",
+    "MixinGameRenderer"
   ],
   "injectors": {
     "defaultRequire": 0
