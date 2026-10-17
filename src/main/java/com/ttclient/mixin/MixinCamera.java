@@ -45,8 +45,9 @@ public abstract class MixinCamera {
     }
 
     private void apply() {
+        if (!Freecam.isActive()) return;
         Freecam fc = Freecam.get();
-        if (fc == null || !fc.active()) return;
+        if (fc == null) return;
         try {
             setPosition(fc.getCamX(), fc.getCamY(), fc.getCamZ());
         } catch (Throwable ignored) {}

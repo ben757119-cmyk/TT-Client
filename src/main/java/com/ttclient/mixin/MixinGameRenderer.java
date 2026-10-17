@@ -14,8 +14,7 @@ public abstract class MixinGameRenderer {
 
     @Inject(method = "renderLevel", at = @At("HEAD"), require = 0)
     private void ttclient$freecamBeforeLevel(CallbackInfo ci) {
-        Freecam fc = Freecam.get();
-        if (fc == null || !fc.active()) return;
+        if (!Freecam.isActive()) return;
         try {
             Minecraft mc = Minecraft.getInstance();
             Camera cam = null;
