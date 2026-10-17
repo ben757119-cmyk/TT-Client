@@ -18,35 +18,24 @@ import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
-/**
- * Spear Killer — every spear hit packs extreme relative velocity so charge damage is huge.
- * Vanilla spear charge scales with relative speed vs the target.
- */
 public class SpearKiller extends Module {
     public final NumberSetting range = addSetting(new NumberSetting(
-            "Range", "Auto-target range", 6.0, 2.0, 64.0, 0.1));
+            "Range", "Auto-target range", 8.0, 2.0, 64.0, 0.1));
     public final BoolSetting useRage = addSetting(new BoolSetting(
             "UseRageRange", "Use Rage reach when Rage is on", true));
     public final NumberSetting velocity = addSetting(new NumberSetting(
-            "Velocity", "Relative speed injected toward target (blocks/sec)", 100.0, 20.0, 250.0, 5.0));
+            "Velocity", "Relative speed (b/s) injected each hit", 200.0, 40.0, 400.0, 10.0));
     public final NumberSetting hits = addSetting(new NumberSetting(
-            "Hits", "Attacks per cycle (more = more dmg)", 4, 1, 12, 1));
-    public final NumberSetting cooldown = addSetting(new NumberSetting(
-            "Cooldown", "Ticks between attack cycles", 1, 0, 15, 1));
+            "Hits", "Attacks every tick", 8, 1, 20, 1));
     public final BoolSetting onlyPlayers = addSetting(new BoolSetting(
             "OnlyPlayers", "Only target players", true));
     public final BoolSetting autoSwitch = addSetting(new BoolSetting(
             "AutoSwitch", "Switch to spear in hotbar", true));
     public final BoolSetting switchBack = addSetting(new BoolSetting(
-            "SwitchBack", "Restore slot when off / no target", true));
+            "SwitchBack", "Restore slot when off", true));
     public final BoolSetting autoAttack = addSetting(new BoolSetting(
-            "AutoAttack", "Auto-attack targets in range", true));
-    public final BoolSetting onManualHit = addSetting(new BoolSetting(
-            "BoostManual", "Also boost when you click-attack with a spear", true));
-    public final BoolSetting holdCharge = addSetting(new BoolSetting(
-            "HoldCharge", "Keep spear charged between hits", true));
+            "AutoAttack", "Auto-attack in range", true));
 
-    private int timer;
     private int prevSlot = -1;
     private boolean keyForced;
 
@@ -58,7 +47,6 @@ public class SpearKiller extends Module {
     public void onDisable() {
         releaseUse();
         restoreSlot();
-        timer = 0;
         prevSlot = -1;
     }
 
@@ -71,23 +59,13 @@ public class SpearKiller extends Module {
         }
         LocalPlayer p = mc.player;
 
-        if (timer > 0) timer--;
-
-        boolean manual = false;
-        try {
-            manual = onManualHit.get() && mc.options.keyAttack.isDown();
-        } catch (Throwable ignored) {}
-
         LivingEntity target = findTarget(mc, p);
-
-        if (manual) {
-            LivingEntity cross = crosshairLiving(mc);
-            if (cross != null) target = cross;
-        }
+        LivingEntity cross = crosshairLiving(mc);
+        if (cross != null) target = cross;
 
         if (target == null) {
             releaseUse();
-            if (switchBack.get() && !manual) restoreSlot();
+            if (switchBack.get()) restoreSlot();
             return;
         }
 
@@ -97,19 +75,15 @@ public class SpearKiller extends Module {
         }
 
         lookAt(p, target);
-        injectVelocity(p, target);
+        forceUse(mc, p);
 
-        if (holdCharge.get()) {
-            forceUse(mc, p);
+        if (!autoAttack.get()) {
+            injectVelocity(p, target);
+            return;
         }
 
-        boolean shouldSwing = (autoAttack.get() || manual) && timer <= 0;
-        if (!shouldSwing) return;
-
         try {
-            if (p.isUsingItem()) {
-                p.releaseUsingItem();
-            }
+            if (p.isUsingItem()) p.releaseUsingItem();
         } catch (Throwable ignored) {}
 
         int n = Math.max(1, hits.getInt());
@@ -121,11 +95,7 @@ public class SpearKiller extends Module {
             } catch (Throwable ignored) {}
         }
 
-        if (holdCharge.get()) {
-            forceUse(mc, p);
-        }
-
-        timer = Math.max(0, cooldown.getInt());
+        forceUse(mc, p);
     }
 
     private LivingEntity crosshairLiving(Minecraft mc) {
@@ -148,9 +118,8 @@ public class SpearKiller extends Module {
         if (useRage.get() && TTClientClient.modules != null) {
             Rage rage = TTClientClient.modules.getModule(Rage.class);
             if (rage != null && rage.isEnabled()) {
-                try {
-                    r = Math.max(r, Math.min(rage.reach.get(), 64.0));
-                } catch (Throwable ignored) {}
+                try { r = Math.max(r, Math.min(rage.reach.get(), 64.0)); }
+                catch (Throwable ignored) {}
             }
         }
         return r;
@@ -165,10 +134,7 @@ public class SpearKiller extends Module {
             if (!(e instanceof LivingEntity living) || !living.isAlive() || living == self) continue;
             if (onlyPlayers.get() && !(living instanceof Player)) continue;
             double d = self.distanceToSqr(living);
-            if (d <= bestD) {
-                bestD = d;
-                best = living;
-            }
+            if (d <= bestD) { bestD = d; best = living; }
         }
         return best;
     }
@@ -176,16 +142,10 @@ public class SpearKiller extends Module {
     private boolean ensureSpear(LocalPlayer p) {
         if (isSpear(p.getMainHandItem())) return true;
         if (!autoSwitch.get()) return false;
-
         int slot = findSpearHotbar(p);
         if (slot < 0) return false;
-
         if (prevSlot < 0) {
-            try {
-                prevSlot = p.getInventory().getSelectedSlot();
-            } catch (Throwable t) {
-                prevSlot = 0;
-            }
+            try { prevSlot = p.getInventory().getSelectedSlot(); } catch (Throwable t) { prevSlot = 0; }
         }
         InvUtils.selectHotbar(p, slot);
         return isSpear(p.getMainHandItem());
@@ -194,9 +154,7 @@ public class SpearKiller extends Module {
     private void restoreSlot() {
         Minecraft mc = mc();
         if (mc == null || mc.player == null) return;
-        if (switchBack.get() && prevSlot >= 0 && prevSlot <= 8) {
-            InvUtils.selectHotbar(mc.player, prevSlot);
-        }
+        if (switchBack.get() && prevSlot >= 0 && prevSlot <= 8) InvUtils.selectHotbar(mc.player, prevSlot);
         prevSlot = -1;
     }
 
@@ -208,8 +166,7 @@ public class SpearKiller extends Module {
             double len = dir.length();
             if (len < 1.0e-4) return;
             dir = dir.scale(1.0 / len);
-
-            double perTick = velocity.get() / 20.0;
+            double perTick = Math.min(velocity.get() / 20.0, 25.0);
             Vec3 boost = dir.scale(perTick);
             p.setDeltaMovement(boost.x, boost.y, boost.z);
         } catch (Throwable ignored) {}
@@ -234,9 +191,7 @@ public class SpearKiller extends Module {
         try {
             mc.options.keyUse.setDown(true);
             keyForced = true;
-            if (!p.isUsingItem()) {
-                mc.gameMode.useItem(p, InteractionHand.MAIN_HAND);
-            }
+            if (!p.isUsingItem()) mc.gameMode.useItem(p, InteractionHand.MAIN_HAND);
         } catch (Throwable ignored) {}
     }
 
@@ -246,9 +201,7 @@ public class SpearKiller extends Module {
             Minecraft mc = mc();
             if (mc != null) {
                 mc.options.keyUse.setDown(false);
-                if (mc.player != null && mc.player.isUsingItem()) {
-                    mc.player.releaseUsingItem();
-                }
+                if (mc.player != null && mc.player.isUsingItem()) mc.player.releaseUsingItem();
             }
         } catch (Throwable ignored) {}
         keyForced = false;
@@ -256,17 +209,12 @@ public class SpearKiller extends Module {
 
     public static boolean isSpear(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
-        try {
-            return stack.getItem().toString().toLowerCase().contains("spear");
-        } catch (Throwable t) {
-            return false;
-        }
+        try { return stack.getItem().toString().toLowerCase().contains("spear"); }
+        catch (Throwable t) { return false; }
     }
 
     public static int findSpearHotbar(LocalPlayer p) {
-        for (int i = 0; i < 9; i++) {
-            if (isSpear(p.getInventory().getItem(i))) return i;
-        }
+        for (int i = 0; i < 9; i++) if (isSpear(p.getInventory().getItem(i))) return i;
         return -1;
     }
 }

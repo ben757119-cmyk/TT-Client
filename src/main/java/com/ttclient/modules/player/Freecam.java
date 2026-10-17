@@ -1,8 +1,8 @@
 package com.ttclient.modules.player;
 
+import com.ttclient.mixin.CameraAccessor;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
-import com.ttclient.settings.BoolSetting;
 import com.ttclient.settings.NumberSetting;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
@@ -11,9 +11,8 @@ import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
 
 public class Freecam extends Module {
-    public final NumberSetting speed = addSetting(new NumberSetting("Speed", "Fly speed", 2.5, 0.2, 25.0, 0.1));
+    public final NumberSetting speed = addSetting(new NumberSetting("Speed", "Fly speed", 3.0, 0.2, 30.0, 0.1));
     public final NumberSetting vSpeed = addSetting(new NumberSetting("VSpeed", "Vertical mult", 1.0, 0.2, 3.0, 0.1));
-    public final BoolSetting freezeLook = addSetting(new BoolSetting("FreezeBodyLook", "Lock body look", false));
 
     private double originX, originY, originZ;
     private float originYaw, originPitch;
@@ -22,7 +21,7 @@ public class Freecam extends Module {
     private float camYaw, camPitch;
 
     public Freecam() {
-        super("Freecam", "Detach camera — body stays put", Category.PLAYER);
+        super("Freecam", "Detach camera from body (F4)", Category.PLAYER);
         setKeyBind(GLFW.GLFW_KEY_F4);
     }
 
@@ -30,7 +29,9 @@ public class Freecam extends Module {
         try {
             var mods = com.ttclient.client.TTClientClient.modules;
             return mods == null ? null : mods.getModule(Freecam.class);
-        } catch (Throwable t) { return null; }
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     public boolean active() { return isEnabled() && saved; }
@@ -40,48 +41,32 @@ public class Freecam extends Module {
     public float getCamYaw() { return camYaw; }
     public float getCamPitch() { return camPitch; }
 
-    public static void applyTo(Camera cam) {
+    public static void forceCamera(Camera cam) {
         if (cam == null) return;
         Freecam fc = get();
         if (fc == null || !fc.active()) return;
         try {
-            boolean ok = false;
-            try {
-                var m = Camera.class.getDeclaredMethod("setPosition", double.class, double.class, double.class);
-                m.setAccessible(true);
-                m.invoke(cam, fc.camX, fc.camY, fc.camZ);
-                ok = true;
-            } catch (Throwable ignored) {}
-            if (!ok) {
-                try {
-                    var m = Camera.class.getDeclaredMethod("setPosition", Vec3.class);
-                    m.setAccessible(true);
-                    m.invoke(cam, new Vec3(fc.camX, fc.camY, fc.camZ));
-                    ok = true;
-                } catch (Throwable ignored) {}
-            }
-            if (!ok) {
-                for (var f : Camera.class.getDeclaredFields()) {
-                    if (f.getType() == Vec3.class) {
-                        f.setAccessible(true);
-                        f.set(cam, new Vec3(fc.camX, fc.camY, fc.camZ));
-                        break;
-                    }
+            CameraAccessor acc = (CameraAccessor) (Object) cam;
+            acc.ttclient$invokeSetPosition(fc.camX, fc.camY, fc.camZ);
+            acc.ttclient$invokeSetRotation(fc.camYaw, fc.camPitch);
+            return;
+        } catch (Throwable ignored) {}
+        try {
+            for (var f : Camera.class.getDeclaredFields()) {
+                if (f.getType() == Vec3.class) {
+                    f.setAccessible(true);
+                    f.set(cam, new Vec3(fc.camX, fc.camY, fc.camZ));
+                } else if (f.getType() == float.class) {
+                    String n = f.getName().toLowerCase();
+                    f.setAccessible(true);
+                    if (n.contains("yrot") || n.equals("yaw")) f.setFloat(cam, fc.camYaw);
+                    else if (n.contains("xrot") || n.equals("pitch")) f.setFloat(cam, fc.camPitch);
                 }
-            }
-            try {
-                var m = Camera.class.getDeclaredMethod("setRotation", float.class, float.class);
-                m.setAccessible(true);
-                m.invoke(cam, fc.camYaw, fc.camPitch);
-            } catch (Throwable t) {
-                try {
-                    var m = Camera.class.getDeclaredMethod("setRotation", float.class, float.class, float.class);
-                    m.setAccessible(true);
-                    m.invoke(cam, fc.camYaw, fc.camPitch, 0f);
-                } catch (Throwable ignored) {}
             }
         } catch (Throwable ignored) {}
     }
+
+    public static void applyTo(Camera cam) { forceCamera(cam); }
 
     @Override
     public void onEnable() {
@@ -119,17 +104,13 @@ public class Freecam extends Module {
         Minecraft mc = mc();
         if (mc == null || mc.player == null || !saved) return;
         LocalPlayer p = mc.player;
-        if (!freezeLook.get()) {
-            camYaw = p.getYRot();
-            camPitch = p.getXRot();
-        }
+        camYaw = p.getYRot();
+        camPitch = p.getXRot();
         moveCamera(mc);
         try {
             p.setDeltaMovement(Vec3.ZERO);
             p.fallDistance = 0;
-            float yaw = freezeLook.get() ? originYaw : camYaw;
-            float pitch = freezeLook.get() ? originPitch : camPitch;
-            try { p.snapTo(originX, originY, originZ, yaw, pitch); }
+            try { p.snapTo(originX, originY, originZ, camYaw, camPitch); }
             catch (Throwable t) { p.setPos(originX, originY, originZ); }
             try {
                 Object in = p.input;
@@ -146,11 +127,7 @@ public class Freecam extends Module {
         try {
             Camera cam = null;
             try { cam = mc.gameRenderer.mainCamera(); } catch (Throwable ignored) {}
-            if (cam == null) {
-                try { cam = (Camera) mc.gameRenderer.getClass().getMethod("getMainCamera").invoke(mc.gameRenderer); }
-                catch (Throwable ignored) {}
-            }
-            if (cam != null) applyTo(cam);
+            if (cam != null) forceCamera(cam);
         } catch (Throwable ignored) {}
     }
 
