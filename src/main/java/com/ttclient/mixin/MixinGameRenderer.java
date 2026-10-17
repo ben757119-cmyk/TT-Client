@@ -11,15 +11,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(GameRenderer.class)
 public abstract class MixinGameRenderer {
-
     @Inject(method = "renderLevel", at = @At("HEAD"), require = 0)
-    private void ttclient$freecamBeforeLevel(CallbackInfo ci) {
+    private void ttclient$fc(CallbackInfo ci) {
         if (!Freecam.isActive()) return;
         try {
-            Minecraft mc = Minecraft.getInstance();
-            Camera cam = null;
-            try { cam = mc.gameRenderer.mainCamera(); } catch (Throwable ignored) {}
-            if (cam == null) return;
+            Camera cam = Minecraft.getInstance().gameRenderer.mainCamera();
             Freecam.forceCamera(cam);
         } catch (Throwable ignored) {}
     }

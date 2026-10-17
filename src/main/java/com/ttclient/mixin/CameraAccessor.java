@@ -7,8 +7,8 @@ import org.spongepowered.asm.mixin.gen.Invoker;
 @Mixin(Camera.class)
 public interface CameraAccessor {
     @Invoker("setPosition")
-    void ttclient$invokeSetPosition(double x, double y, double z);
+    void ttclient$setPos(double x, double y, double z);
 
     @Invoker("setRotation")
-    void ttclient$invokeSetRotation(float yRot, float xRot);
+    void ttclient$setRot(float yRot, float xRot);
 }
