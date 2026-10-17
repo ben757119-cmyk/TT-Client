@@ -76,11 +76,35 @@ public class MaceHack extends Module {
 
     public static void applySpoof(LocalPlayer p, float fallDist) {
         if (p == null) return;
-        try { p.fallDistance = fallDist; } catch (Throwable ignored) {}
+        // fallDistance mapping differs across 26.x — use reflection only
+        setFallDistance(p, fallDist);
         try { p.setOnGround(false); } catch (Throwable ignored) {}
         try {
             var v = p.getDeltaMovement();
             p.setDeltaMovement(v.x, Math.min(v.y, -0.5), v.z);
+        } catch (Throwable ignored) {}
+    }
+
+    private static void setFallDistance(LocalPlayer p, float fallDist) {
+        try {
+            for (Class<?> c = p.getClass(); c != null; c = c.getSuperclass()) {
+                for (var f : c.getDeclaredFields()) {
+                    String n = f.getName().toLowerCase();
+                    if (f.getType() == float.class && (n.contains("fall") || n.equals("o") || n.contains("falldistance"))) {
+                        f.setAccessible(true);
+                        f.setFloat(p, fallDist);
+                        return;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+        try {
+            var m = p.getClass().getMethod("setFallDistance", float.class);
+            m.invoke(p, fallDist);
+        } catch (Throwable ignored) {}
+        try {
+            var m = LivingEntity.class.getMethod("setFallDistance", float.class);
+            m.invoke(p, fallDist);
         } catch (Throwable ignored) {}
     }
 
