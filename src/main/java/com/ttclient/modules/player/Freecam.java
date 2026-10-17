@@ -15,14 +15,11 @@ import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
 
 public class Freecam extends Module {
-    public final NumberSetting speed = addSetting(new NumberSetting("Speed", "Fly speed", 1.0, 0.1, 10.0, 0.1));
-    public final NumberSetting speed2 = addSetting(new NumberSetting("Speed2", "Sprint mult", 2.0, 1.0, 5.0, 0.1));
-    public final BoolSetting wallVision = addSetting(new BoolSetting(
-            "WallVision", "See caves through solid blocks (like spectator)", true));
-    public final BoolSetting onlyInWall = addSetting(new BoolSetting(
-            "OnlyInWall", "Wall vision only when camera is inside a solid block", true));
-    public final BoolSetting fullbright = addSetting(new BoolSetting(
-            "Fullbright", "Brighten world while freecam wall vision is on", true));
+    public final NumberSetting speed = addSetting(new NumberSetting("Speed", "Fly speed", 1.5, 0.1, 15.0, 0.1));
+    public final NumberSetting speed2 = addSetting(new NumberSetting("Speed2", "Sprint mult", 2.5, 1.0, 5.0, 0.1));
+    public final BoolSetting wallVision = addSetting(new BoolSetting("WallVision", "See caves through solid blocks", true));
+    public final BoolSetting onlyInWall = addSetting(new BoolSetting("OnlyInWall", "Wall vision only inside solid blocks", true));
+    public final BoolSetting fullbright = addSetting(new BoolSetting("Fullbright", "Brighten while wall vision active", true));
 
     private static volatile boolean activeCache;
     public static volatile boolean wallVisionCache;
@@ -35,11 +32,11 @@ public class Freecam extends Module {
     private double originX, originY, originZ;
     private float originYaw, originPitch;
     private boolean saved;
-    private boolean lastWall;
+    private boolean chunksDirty;
     private Double oldGamma;
 
     public Freecam() {
-        super("Freecam", "Detached camera + wall/cave vision (F4)", Category.PLAYER);
+        super("Freecam", "Detached camera (F4)", Category.PLAYER);
         setKeyBind(GLFW.GLFW_KEY_F4);
     }
 
@@ -54,11 +51,11 @@ public class Freecam extends Module {
 
     public static boolean isActive() { return activeCache; }
 
-    public double getX(float tickDelta) { return Mth.lerp(tickDelta, prevX, posX); }
-    public double getY(float tickDelta) { return Mth.lerp(tickDelta, prevY, posY); }
-    public double getZ(float tickDelta) { return Mth.lerp(tickDelta, prevZ, posZ); }
-    public float getYaw(float tickDelta) { return Mth.lerp(tickDelta, prevYaw, yaw); }
-    public float getPitch(float tickDelta) { return Mth.lerp(tickDelta, prevPitch, pitch); }
+    public double getX(float td) { return Mth.lerp(td, prevX, posX); }
+    public double getY(float td) { return Mth.lerp(td, prevY, posY); }
+    public double getZ(float td) { return Mth.lerp(td, prevZ, posZ); }
+    public float getYaw(float td) { return Mth.lerp(td, prevYaw, yaw); }
+    public float getPitch(float td) { return Mth.lerp(td, prevPitch, pitch); }
 
     public double getCamX() { return posX; }
     public double getCamY() { return posY; }
@@ -71,9 +68,7 @@ public class Freecam extends Module {
         Freecam fc = get();
         if (fc == null || !fc.saved) return;
         float pt = 1f;
-        try {
-            pt = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false);
-        } catch (Throwable ignored) {}
+        try { pt = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false); } catch (Throwable ignored) {}
         double x = fc.getX(pt), y = fc.getY(pt), z = fc.getZ(pt);
         float yw = fc.getYaw(pt), pi = fc.getPitch(pt);
         try {
@@ -93,7 +88,8 @@ public class Freecam extends Module {
                     || n.contains("spawner") || n.contains("shulker") || n.contains("hopper")
                     || n.contains("portal") || n.contains("bedrock") || n.contains("obsidian")
                     || n.contains("glass") || n.contains("leave") || n.contains("log")
-                    || n.contains("plank") || n.contains("wool") || n.contains("concrete")) {
+                    || n.contains("plank") || n.contains("wool") || n.contains("concrete")
+                    || n.contains("torch") || n.contains("lantern") || n.contains("glow")) {
                 return false;
             }
             return n.contains("stone") || n.contains("deepslate") || n.contains("dirt")
@@ -119,24 +115,16 @@ public class Freecam extends Module {
         LocalPlayer p = mc.player;
         originX = p.getX(); originY = p.getY(); originZ = p.getZ();
         originYaw = p.getYRot(); originPitch = p.getXRot();
-
         double x = p.getX();
         double y = p.getY() + p.getEyeHeight();
         double z = p.getZ();
         try {
-            Camera c = mc.gameRenderer.mainCamera();
-            Vec3 cp = c.position();
+            Vec3 cp = mc.gameRenderer.mainCamera().position();
             x = cp.x; y = cp.y; z = cp.z;
         } catch (Throwable ignored) {}
-
-        posX = prevX = x;
-        posY = prevY = y;
-        posZ = prevZ = z;
-        yaw = prevYaw = p.getYRot();
-        pitch = prevPitch = p.getXRot();
-        saved = true;
-        activeCache = true;
-        lastWall = false;
+        posX = prevX = x; posY = prevY = y; posZ = prevZ = z;
+        yaw = prevYaw = p.getYRot(); pitch = prevPitch = p.getXRot();
+        saved = true; activeCache = true; chunksDirty = false;
         p.setDeltaMovement(Vec3.ZERO);
         updateWallVision(mc, true);
     }
@@ -144,22 +132,22 @@ public class Freecam extends Module {
     @Override
     public void onDisable() {
         activeCache = false;
+        boolean hadWall = wallVisionCache;
         wallVisionCache = false;
         restoreGamma();
-        if (lastWall) reloadChunks();
-        lastWall = false;
-
         Minecraft mc = mc();
         if (mc != null && mc.player != null && saved) {
             LocalPlayer p = mc.player;
-            try { p.snapTo(originX, originY, originZ, originYaw, originPitch); }
-            catch (Throwable t) {
+            try {
                 p.setPos(originX, originY, originZ);
                 p.setYRot(originYaw); p.setXRot(originPitch);
-            }
+                p.yRotO = originYaw; p.xRotO = originPitch;
+            } catch (Throwable ignored) {}
             p.setDeltaMovement(Vec3.ZERO);
         }
         saved = false;
+        if (hadWall || chunksDirty) reloadChunks();
+        chunksDirty = false;
     }
 
     @Override
@@ -168,25 +156,14 @@ public class Freecam extends Module {
         Minecraft mc = mc();
         if (mc == null || mc.player == null) return;
         LocalPlayer p = mc.player;
-
-        prevYaw = yaw;
-        prevPitch = pitch;
-        yaw = p.getYRot();
-        pitch = p.getXRot();
-
-        prevX = posX;
-        prevY = posY;
-        prevZ = posZ;
-
+        prevYaw = yaw; prevPitch = pitch;
+        yaw = p.getYRot(); pitch = p.getXRot();
+        prevX = posX; prevY = posY; prevZ = posZ;
         double s = speed.get().doubleValue();
-        try {
-            if (mc.options.keySprint.isDown()) s *= speed2.get().doubleValue();
-        } catch (Throwable ignored) {}
-
+        try { if (mc.options.keySprint.isDown()) s *= speed2.get().doubleValue(); } catch (Throwable ignored) {}
         double radYaw = Math.toRadians(yaw);
         double radPitch = Math.toRadians(pitch);
         double cosPitch = Math.cos(radPitch);
-
         double forward = 0, strafe = 0, vertical = 0;
         try {
             if (mc.options.keyUp.isDown()) forward += 1;
@@ -196,27 +173,19 @@ public class Freecam extends Module {
             if (mc.options.keyJump.isDown()) vertical += 1;
             if (mc.options.keyShift.isDown()) vertical -= 1;
         } catch (Throwable ignored) {}
-
         double len = Math.sqrt(forward * forward + strafe * strafe);
-        if (len > 1.0e-6) { forward /= len; strafe /= len; }
-
+        if (len > 1e-6) { forward /= len; strafe /= len; }
         double fx = -Math.sin(radYaw) * cosPitch;
         double fy = -Math.sin(radPitch);
         double fz = Math.cos(radYaw) * cosPitch;
         double rx = Math.cos(radYaw);
         double rz = Math.sin(radYaw);
-
         posX += (fx * forward + rx * strafe) * s;
         posY += (fy * forward + vertical) * s;
         posZ += (fz * forward + rz * strafe) * s;
-
         try {
             p.setDeltaMovement(Vec3.ZERO);
-            try { p.snapTo(originX, originY, originZ, originYaw, originPitch); }
-            catch (Throwable t) {
-                p.setPos(originX, originY, originZ);
-                p.setYRot(originYaw); p.setXRot(originPitch);
-            }
+            p.setPos(originX, originY, originZ);
             try {
                 Object in = p.input;
                 if (in != null) {
@@ -229,28 +198,20 @@ public class Freecam extends Module {
                 }
             } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
-
-        try {
-            p.setYRot(yaw);
-            p.setXRot(pitch);
-        } catch (Throwable ignored) {}
-
         updateWallVision(mc, false);
     }
 
-    private void updateWallVision(Minecraft mc, boolean forceReload) {
+    private void updateWallVision(Minecraft mc, boolean force) {
         boolean want = false;
         if (wallVision.get() && activeCache) {
-            if (!onlyInWall.get()) want = true;
-            else want = isCameraInsideSolid(mc);
+            want = !onlyInWall.get() || isCameraInsideSolid(mc);
         }
+        boolean changed = want != wallVisionCache;
         wallVisionCache = want;
-
         if (want && fullbright.get()) applyGamma(mc);
         else if (!want) restoreGamma();
-
-        if (want != lastWall || forceReload) {
-            lastWall = want;
+        if (force || changed) {
+            chunksDirty = true;
             reloadChunks();
         }
     }
@@ -268,8 +229,7 @@ public class Freecam extends Module {
 
     private void applyGamma(Minecraft mc) {
         try {
-            var opt = mc.options;
-            Object gammaOpt = opt.getClass().getMethod("gamma").invoke(opt);
+            Object gammaOpt = mc.options.getClass().getMethod("gamma").invoke(mc.options);
             if (gammaOpt != null) {
                 if (oldGamma == null) {
                     Object v = gammaOpt.getClass().getMethod("get").invoke(gammaOpt);
@@ -296,12 +256,8 @@ public class Freecam extends Module {
             Minecraft mc = Minecraft.getInstance();
             if (mc == null || mc.levelRenderer == null) return;
             Object lr = mc.levelRenderer;
-            for (String name : new String[]{"allChanged", "reloadAll", "rebuildAllChunks", "setNeedsFullRenderChunkUpdate"}) {
-                try {
-                    var m = lr.getClass().getMethod(name);
-                    m.invoke(lr);
-                    return;
-                } catch (Throwable ignored) {}
+            for (String name : new String[]{"allChanged", "reloadAll", "rebuildAllChunks"}) {
+                try { lr.getClass().getMethod(name).invoke(lr); return; } catch (Throwable ignored) {}
             }
         } catch (Throwable ignored) {}
     }
@@ -309,9 +265,7 @@ public class Freecam extends Module {
     public void onCameraAngles(net.neoforged.neoforge.client.event.ViewportEvent.ComputeCameraAngles event) {
         if (!activeCache) return;
         float pt = 1f;
-        try {
-            pt = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false);
-        } catch (Throwable ignored) {}
+        try { pt = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false); } catch (Throwable ignored) {}
         try {
             event.setYaw(getYaw(pt));
             event.setPitch(getPitch(pt));
