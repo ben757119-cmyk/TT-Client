@@ -4,6 +4,7 @@ import com.ttclient.TTClient;
 import com.ttclient.client.TTClientClient;
 import com.ttclient.modules.Module;
 import com.ttclient.modules.render.BlockESP;
+import com.ttclient.modules.world.XRay;
 import com.ttclient.settings.*;
 
 import java.io.*;
@@ -17,11 +18,8 @@ public class ConfigManager {
     public ConfigManager() {
         configDir = Path.of("config", "ttclient");
         configFile = configDir.resolve("config.properties");
-        try {
-            Files.createDirectories(configDir);
-        } catch (IOException e) {
-            TTClient.LOGGER.error("Failed to create config dir", e);
-        }
+        try { Files.createDirectories(configDir); }
+        catch (IOException e) { TTClient.LOGGER.error("Failed to create config dir", e); }
     }
 
     public void save() {
@@ -34,9 +32,8 @@ public class ConfigManager {
             for (Setting<?> s : mod.getSettings()) {
                 props.setProperty(prefix + s.getName().replace(" ", "_"), String.valueOf(s.get()));
             }
-            if (mod instanceof BlockESP be) {
-                props.setProperty(prefix + "blocks", be.saveBlocks());
-            }
+            if (mod instanceof BlockESP be) props.setProperty(prefix + "blocks", be.saveBlocks());
+            if (mod instanceof XRay xr) props.setProperty(prefix + "blocks", xr.saveBlocks());
         }
         try (OutputStream out = Files.newOutputStream(configFile)) {
             props.store(out, "TT Client Config");
@@ -48,12 +45,8 @@ public class ConfigManager {
     public void load() {
         if (!Files.exists(configFile) || TTClientClient.modules == null) return;
         Properties props = new Properties();
-        try (InputStream in = Files.newInputStream(configFile)) {
-            props.load(in);
-        } catch (IOException e) {
-            TTClient.LOGGER.error("Failed to load config", e);
-            return;
-        }
+        try (InputStream in = Files.newInputStream(configFile)) { props.load(in); }
+        catch (IOException e) { TTClient.LOGGER.error("Failed to load config", e); return; }
         for (Module mod : TTClientClient.modules.getModules()) {
             String prefix = mod.getName().replace(" ", "_") + ".";
             String enabled = props.getProperty(prefix + "enabled");
@@ -73,6 +66,10 @@ public class ConfigManager {
             if (mod instanceof BlockESP be) {
                 String blocks = props.getProperty(prefix + "blocks");
                 if (blocks != null) be.loadBlocks(blocks);
+            }
+            if (mod instanceof XRay xr) {
+                String blocks = props.getProperty(prefix + "blocks");
+                if (blocks != null) xr.loadBlocks(blocks);
             }
         }
     }
