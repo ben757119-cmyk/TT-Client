@@ -24,12 +24,7 @@ public abstract class MixinCamera {
 
     private static float pt() {
         try {
-            Minecraft mc = Minecraft.getInstance();
-            try {
-                return mc.getDeltaTracker().getGameTimeDeltaPartialTick(false);
-            } catch (Throwable t) {
-                try { return mc.getFrameTime(); } catch (Throwable t2) { return 1.0f; }
-            }
+            return Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false);
         } catch (Throwable t) {
             return 1.0f;
         }
