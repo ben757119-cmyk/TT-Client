@@ -7,6 +7,7 @@ import com.ttclient.modules.movement.*;
 import com.ttclient.modules.player.*;
 import com.ttclient.modules.render.*;
 import com.ttclient.modules.world.*;
+import com.ttclient.modules.basefind.*;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 import java.util.ArrayList;
@@ -139,6 +140,19 @@ public class ModuleManager {
         register(new FakePlayer());
         register(new LiquidPlace());
         register(new NewChunks());
+
+        // Basefind (DonutSMP-style)
+        register(new BaseScanner());
+        register(new KelpFinder());
+        register(new GeodeFinder());
+        register(new ChestStashFinder());
+        register(new SpawnerFinder());
+        register(new PortalFinder());
+        register(new ShulkerFinder());
+        register(new LecternHallFinder());
+        register(new CropFarmFinder());
+        register(new BeaconFinder());
+        register(new HopperFinder());
 
         register(new FPSBoost());
         register(new MemoryInfo());
