@@ -19,32 +19,26 @@ import net.minecraft.world.phys.Vec3;
 
 public class MaceHack extends Module {
     public final NumberSetting hearts = addSetting(new NumberSetting(
-            "Hearts", "Target damage per click (hearts)", 10.0, 1.0, 50.0, 0.5));
+            "Hearts", "Smash hits per burst", 8.0, 1.0, 30.0, 1.0));
     public final NumberSetting fall = addSetting(new NumberSetting(
-            "Fall", "Spoofed fall distance (smash scale)", 25.0, 1.0, 80.0, 0.5));
-    public final BoolSetting autoFall = addSetting(new BoolSetting(
-            "AutoFallFromHearts", "Scale fall from Hearts setting", true));
+            "Fall", "Spoofed fall distance", 40.0, 5.0, 100.0, 1.0));
     public final BoolSetting always = addSetting(new BoolSetting(
-            "AlwaysSpoof", "Keep fall spoofed while holding mace", true));
-    public final BoolSetting onClick = addSetting(new BoolSetting(
-            "OnClick", "Smash when you left-click with mace", true));
-    public final BoolSetting multiHit = addSetting(new BoolSetting(
-            "MultiHit", "Extra hits to reach Hearts", true));
+            "AlwaysSpoof", "Spoof fall every tick while holding mace", true));
     public final BoolSetting onlyPlayers = addSetting(new BoolSetting(
             "OnlyPlayers", "Only players", true));
     public final NumberSetting range = addSetting(new NumberSetting(
             "Range", "Target range", 6.0, 2.0, 64.0, 0.1));
     public final BoolSetting useRage = addSetting(new BoolSetting(
             "UseRage", "Use Rage reach when on", true));
-    public final BoolSetting aura = addSetting(new BoolSetting(
-            "Aura", "Auto-attack nearest while holding mace", false));
-    public final NumberSetting cooldown = addSetting(new NumberSetting(
-            "Cooldown", "Ticks between aura cycles", 2, 0, 30, 1));
+    public final BoolSetting auto = addSetting(new BoolSetting(
+            "Auto", "Keep smashing nearest target", true));
 
-    private int timer;
+    private int remaining;
+    private int targetId = -1;
+    private boolean wasClick;
 
     public MaceHack() {
-        super("MaceHack", "Mace smash without falling — set hearts per hit", Category.COMBAT);
+        super("MaceHack", "Mace smash on the ground — paced multi-hit", Category.COMBAT);
     }
 
     public static boolean isActive() {
@@ -61,31 +55,36 @@ public class MaceHack extends Module {
     public static float spoofAmount() {
         try {
             var mods = TTClientClient.modules;
-            if (mods == null) return 25f;
+            if (mods == null) return 40f;
             MaceHack h = mods.getModule(MaceHack.class);
-            if (h == null || !h.isEnabled()) return 25f;
-            return h.fallValue();
+            if (h == null || !h.isEnabled()) return 40f;
+            return (float) h.fall.get().doubleValue();
         } catch (Throwable t) {
-            return 25f;
+            return 40f;
         }
     }
 
     public static void applySpoof(LocalPlayer p, float fallDist) {
         if (p == null) return;
-        setFallDistance(p, fallDist);
+        setFall(p, fallDist);
         try { p.setOnGround(false); } catch (Throwable ignored) {}
         try {
             var v = p.getDeltaMovement();
-            p.setDeltaMovement(v.x, Math.min(v.y, -0.5), v.z);
+            p.setDeltaMovement(v.x, -1.2, v.z);
         } catch (Throwable ignored) {}
     }
 
-    private static void setFallDistance(LocalPlayer p, float fallDist) {
+    private static void setFall(LocalPlayer p, float fallDist) {
         try {
-            for (Class<?> c = p.getClass(); c != null; c = c.getSuperclass()) {
+            var m = LivingEntity.class.getMethod("setFallDistance", float.class);
+            m.invoke(p, fallDist);
+            return;
+        } catch (Throwable ignored) {}
+        try {
+            for (Class<?> c = p.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
                 for (var f : c.getDeclaredFields()) {
-                    String n = f.getName().toLowerCase();
-                    if (f.getType() == float.class && (n.contains("fall") || n.contains("falldistance"))) {
+                    if (f.getType() != float.class) continue;
+                    if (f.getName().toLowerCase().contains("fall")) {
                         f.setAccessible(true);
                         f.setFloat(p, fallDist);
                         return;
@@ -93,29 +92,13 @@ public class MaceHack extends Module {
                 }
             }
         } catch (Throwable ignored) {}
-        try {
-            var m = p.getClass().getMethod("setFallDistance", float.class);
-            m.invoke(p, fallDist);
-        } catch (Throwable ignored) {}
-        try {
-            var m = LivingEntity.class.getMethod("setFallDistance", float.class);
-            m.invoke(p, fallDist);
-        } catch (Throwable ignored) {}
     }
 
-    private float fallValue() {
-        double base = fall.get().doubleValue();
-        if (autoFall.get()) {
-            double h = hearts.get().doubleValue();
-            return (float) Math.min(80.0, Math.max(base, h * 2.5));
-        }
-        return (float) base;
-    }
-
-    private int hitCount() {
-        if (!multiHit.get()) return 1;
-        int n = (int) Math.ceil(hearts.get().doubleValue());
-        return Math.max(1, Math.min(n, 25));
+    @Override
+    public void onDisable() {
+        remaining = 0;
+        targetId = -1;
+        wasClick = false;
     }
 
     @Override
@@ -124,49 +107,61 @@ public class MaceHack extends Module {
         if (mc == null || mc.player == null || mc.level == null || mc.gameMode == null) return;
         LocalPlayer p = mc.player;
 
-        if (!InvUtils.isMace(p.getMainHandItem())) return;
-
-        float f = fallValue();
-        if (always.get()) applySpoof(p, f);
-
-        boolean clicking = false;
-        try { clicking = mc.options.keyAttack.isDown(); } catch (Throwable ignored) {}
-
-        if (onClick.get() && clicking) {
-            LivingEntity target = resolveTarget(mc, p);
-            if (target != null) {
-                smash(mc, p, target, f);
+        if (!InvUtils.isMace(p.getMainHandItem())) {
+            int slot = InvUtils.findHotbarMace(p);
+            if (slot >= 0 && (auto.get() || remaining > 0)) {
+                InvUtils.selectHotbar(p, slot);
+            } else {
+                remaining = 0;
                 return;
             }
         }
 
-        if (aura.get()) {
-            if (timer > 0) { timer--; return; }
-            LivingEntity target = resolveTarget(mc, p);
-            if (target != null) {
-                smash(mc, p, target, f);
-                timer = cooldown.getInt();
+        float f = (float) fall.get().doubleValue();
+        if (always.get() || remaining > 0) applySpoof(p, f);
+
+        boolean click = false;
+        try { click = mc.options.keyAttack.isDown(); } catch (Throwable ignored) {}
+        boolean edge = click && !wasClick;
+        wasClick = click;
+
+        if (edge || (auto.get() && remaining <= 0)) {
+            LivingEntity t = resolveTarget(mc, p);
+            if (t != null) {
+                targetId = t.getId();
+                remaining = Math.max(1, (int) Math.round(hearts.get().doubleValue()));
             }
         }
+
+        if (remaining <= 0) return;
+
+        LivingEntity target = findById(mc, targetId);
+        if (target == null || !target.isAlive()) {
+            target = resolveTarget(mc, p);
+            if (target == null) { remaining = 0; return; }
+            targetId = target.getId();
+        }
+
+        applySpoof(p, f);
+        lookAt(p, target);
+        try { mc.gameMode.attack(p, target); } catch (Throwable ignored) {}
+        try { p.swing(InteractionHand.MAIN_HAND); } catch (Throwable ignored) {}
+        applySpoof(p, f);
+        remaining--;
     }
 
-    private void smash(Minecraft mc, LocalPlayer p, LivingEntity target, float fallDist) {
-        lookAt(p, target);
-        int n = hitCount();
-        for (int i = 0; i < n; i++) {
-            applySpoof(p, fallDist);
-            try {
-                mc.gameMode.attack(p, target);
-                p.swing(InteractionHand.MAIN_HAND);
-            } catch (Throwable ignored) {}
-        }
-        applySpoof(p, fallDist);
+    private LivingEntity findById(Minecraft mc, int id) {
+        if (id < 0) return null;
+        try {
+            Entity e = mc.level.getEntity(id);
+            if (e instanceof LivingEntity living && living.isAlive()) return living;
+        } catch (Throwable ignored) {}
+        return null;
     }
 
     private LivingEntity resolveTarget(Minecraft mc, LocalPlayer p) {
         LivingEntity cross = crosshair(mc);
         if (cross != null) return cross;
-
         double r = effectiveRange();
         LivingEntity best = null;
         double bestD = r * r;
@@ -177,8 +172,8 @@ public class MaceHack extends Module {
             if (!(e instanceof LivingEntity living) || !living.isAlive() || living == p) continue;
             if (onlyPlayers.get() && !(living instanceof Player)) continue;
             Vec3 to = living.position().add(0, living.getBbHeight() * 0.5, 0).subtract(eye);
-            if (to.lengthSqr() < 1.0e-6) continue;
-            if (look.dot(to.normalize()) < 0.35) continue;
+            if (to.lengthSqr() < 1e-6) continue;
+            if (look.dot(to.normalize()) < 0.25) continue;
             double d = p.distanceToSqr(living);
             if (d <= bestD) { bestD = d; best = living; }
         }
@@ -207,12 +202,9 @@ public class MaceHack extends Module {
         } catch (Throwable ignored) {}
         try {
             HitResult hr = mc.hitResult;
-            if (hr instanceof EntityHitResult ehr) {
-                Entity e = ehr.getEntity();
-                if (e instanceof LivingEntity living && living.isAlive()) {
-                    if (onlyPlayers.get() && !(living instanceof Player)) return null;
-                    return living;
-                }
+            if (hr instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity living && living.isAlive()) {
+                if (onlyPlayers.get() && !(living instanceof Player)) return null;
+                return living;
             }
         } catch (Throwable ignored) {}
         return null;
