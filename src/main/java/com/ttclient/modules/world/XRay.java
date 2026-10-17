@@ -127,11 +127,6 @@ public class XRay extends Module {
                     return;
                 } catch (Throwable ignored) {}
             }
-            try {
-                var m = lr.getClass().getDeclaredMethod("allChanged");
-                m.setAccessible(true);
-                m.invoke(lr);
-            } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
     }
 
@@ -174,6 +169,14 @@ public class XRay extends Module {
         }
     }
 
+    private static String blockId(BlockState st) {
+        try {
+            return st.getBlock().toString().toLowerCase();
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
     private int match(BlockState st) {
         try {
             if (diamonds.get() && (st.is(Blocks.DIAMOND_ORE) || st.is(Blocks.DEEPSLATE_DIAMOND_ORE))) return 0x5CDBFF;
@@ -188,14 +191,7 @@ public class XRay extends Module {
             if (quartz.get() && st.is(Blocks.NETHER_QUARTZ_ORE)) return 0xE8E8E8;
         } catch (Throwable ignored) {}
 
-        String n;
-        try {
-            n = st.getBlock().builtInRegistryHolder().key().location().getPath();
-        } catch (Throwable t) {
-            n = st.getBlock().toString().toLowerCase();
-        }
-        n = n.toLowerCase();
-
+        String n = blockId(st);
         if (diamonds.get() && n.contains("diamond_ore")) return 0x5CDBFF;
         if (ancientDebris.get() && n.contains("ancient_debris")) return 0x4A3728;
         if (iron.get() && n.contains("iron_ore")) return 0xD8D8D8;
@@ -210,13 +206,7 @@ public class XRay extends Module {
     }
 
     private String labelFor(BlockState st) {
-        String n;
-        try {
-            n = st.getBlock().builtInRegistryHolder().key().location().getPath();
-        } catch (Throwable t) {
-            n = st.getBlock().toString().toLowerCase();
-        }
-        n = n.toLowerCase();
+        String n = blockId(st);
         if (n.contains("diamond")) return "Diamond";
         if (n.contains("debris")) return "Debris";
         if (n.contains("iron")) return "Iron";

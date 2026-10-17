@@ -147,11 +147,17 @@ public class Freecam extends Module {
                     p.setXRot(pitch);
                 }
             }
+            // Zero movement impulses via reflection (26.2 Input field names vary)
             try {
-                p.input.forwardImpulse = 0;
-                p.input.leftImpulse = 0;
-                p.input.jumping = false;
-                p.input.shiftKeyDown = false;
+                Object in = p.input;
+                if (in != null) {
+                    for (var f : in.getClass().getDeclaredFields()) {
+                        f.setAccessible(true);
+                        if (f.getType() == float.class) {
+                            f.setFloat(in, 0f);
+                        }
+                    }
+                }
             } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
     }
