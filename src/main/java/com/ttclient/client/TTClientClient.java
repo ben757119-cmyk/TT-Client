@@ -9,6 +9,7 @@ import com.ttclient.modules.client.ClickGUIModule;
 import com.ttclient.modules.client.StreamerMode;
 import com.ttclient.modules.misc.AutoChatGame;
 import com.ttclient.modules.player.Freecam;
+import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -72,7 +73,28 @@ public class TTClientClient {
     public void onRenderLevel(RenderLevelStageEvent event) {
         Freecam fc = modules != null ? modules.getModule(Freecam.class) : null;
         if (fc == null || !fc.active()) return;
-        try { Freecam.applyTo(event.getCamera()); } catch (Throwable ignored) {}
+        try {
+            Camera cam = null;
+            try {
+                var m = event.getClass().getMethod("getCamera");
+                Object o = m.invoke(event);
+                if (o instanceof Camera c) cam = c;
+            } catch (Throwable ignored) {}
+            if (cam == null) {
+                for (var f : event.getClass().getDeclaredFields()) {
+                    if (Camera.class.isAssignableFrom(f.getType())) {
+                        f.setAccessible(true);
+                        Object o = f.get(event);
+                        if (o instanceof Camera c) { cam = c; break; }
+                    }
+                }
+            }
+            if (cam == null) {
+                Minecraft mc = Minecraft.getInstance();
+                try { cam = mc.gameRenderer.mainCamera(); } catch (Throwable ignored) {}
+            }
+            if (cam != null) Freecam.applyTo(cam);
+        } catch (Throwable ignored) {}
     }
 
     @SubscribeEvent
