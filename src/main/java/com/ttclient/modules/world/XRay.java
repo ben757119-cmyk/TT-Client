@@ -23,9 +23,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-/** Fast progressive ore ESP + optional opacity. Searchable ore list in ClickGUI. */
+/** Fast progressive ore ESP + optional opacity. */
 public class XRay extends Module implements BlockListModule {
-    public final BoolSetting opacity = addSetting(new BoolSetting("Opacity", "Hide non-selected (SLOW toggle — leave OFF on Donut)", false));
+    public final BoolSetting opacity = addSetting(new BoolSetting("Opacity", "Hide non-selected (SLOW — leave OFF on Donut)", false));
     public final BoolSetting esp = addSetting(new BoolSetting("ESP", "Boxes on selected ores", true));
     public final BoolSetting tracers = addSetting(new BoolSetting("Tracers", "Lines to ores", false));
     public final BoolSetting fullbright = addSetting(new BoolSetting("Fullbright", "Brighten while on", true));
@@ -41,8 +41,11 @@ public class XRay extends Module implements BlockListModule {
     public String uiSearch = "";
     public boolean uiSearchFocused;
 
+    /** Mixin hot path — MUST stay a static boolean, never getModule() during meshing. */
+    public static volatile boolean opacityActiveCache = false;
+
     public XRay() {
-        super("XRay", "Ore ESP + optional opacity — pick ores in settings", Category.WORLD);
+        super("XRay", "Ore ESP + optional opacity", Category.WORLD);
         presetValuables();
     }
 
@@ -54,13 +57,13 @@ public class XRay extends Module implements BlockListModule {
     }
 
     public static boolean isOpacityActive() {
-        XRay x = get();
-        return x != null && x.isEnabled() && x.opacity.get();
+        return opacityActiveCache;
     }
-    public static boolean shouldHideNonOres() { return isOpacityActive(); }
+    public static boolean shouldHideNonOres() { return opacityActiveCache; }
     public static boolean isOre(BlockState st) {
+        if (!opacityActiveCache || st == null) return false;
         XRay x = get();
-        return x != null && x.isEnabled() && st != null && x.matchesSelected(st);
+        return x != null && x.matchesSelected(st);
     }
 
     @Override public String getUiSearch() { return uiSearch == null ? "" : uiSearch; }
@@ -162,11 +165,13 @@ public class XRay extends Module implements BlockListModule {
     @Override public void onEnable() {
         hits.clear(); building.clear(); scanDx = scanDz = 0;
         lastOpacity = opacity.get();
+        opacityActiveCache = lastOpacity;
         if (fullbright.get()) applyGamma(true);
         if (opacity.get()) scheduleReload();
     }
     @Override public void onDisable() {
         hits.clear(); building.clear();
+        opacityActiveCache = false;
         applyGamma(false);
         if (lastOpacity) scheduleReload();
         lastOpacity = false;
@@ -175,7 +180,11 @@ public class XRay extends Module implements BlockListModule {
     @Override public void onTick() {
         if (fullbright.get()) applyGamma(true);
         boolean op = opacity.get();
-        if (op != lastOpacity) { lastOpacity = op; scheduleReload(); }
+        if (op != lastOpacity) {
+            lastOpacity = op;
+            opacityActiveCache = op && isEnabled();
+            scheduleReload();
+        }
         if (!esp.get() && !tracers.get()) { hits.clear(); return; }
         progressiveScan();
     }
