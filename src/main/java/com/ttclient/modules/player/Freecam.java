@@ -260,12 +260,7 @@ public class Freecam extends Module {
             if (mc.level == null) return false;
             BlockPos pos = BlockPos.containing(posX, posY, posZ);
             BlockState st = mc.level.getBlockState(pos);
-            if (st.isAir()) return false;
-            try {
-                return st.canOcclude() || !st.getCollisionShape(mc.level, pos).isEmpty();
-            } catch (Throwable t) {
-                return !st.getShape(mc.level, pos).isEmpty();
-            }
+            return st != null && !st.isAir();
         } catch (Throwable t) {
             return false;
         }
@@ -273,15 +268,31 @@ public class Freecam extends Module {
 
     private void applyGamma(Minecraft mc) {
         try {
-            if (oldGamma == null) oldGamma = mc.options.gamma().get();
-            mc.options.gamma().set(16.0);
+            var opt = mc.options;
+            Object gammaOpt = null;
+            try { gammaOpt = opt.getClass().getMethod("gamma").invoke(opt); } catch (Throwable ignored) {}
+            if (gammaOpt != null) {
+                if (oldGamma == null) {
+                    try {
+                        Object v = gammaOpt.getClass().getMethod("get").invoke(gammaOpt);
+                        if (v instanceof Number n) oldGamma = n.doubleValue();
+                    } catch (Throwable ignored) {}
+                }
+                try { gammaOpt.getClass().getMethod("set", double.class).invoke(gammaOpt, 16.0); } catch (Throwable ignored) {}
+                try { gammaOpt.getClass().getMethod("set", Double.class).invoke(gammaOpt, 16.0); } catch (Throwable ignored) {}
+            }
         } catch (Throwable ignored) {}
     }
 
     private void restoreGamma() {
+        if (oldGamma == null) return;
         Minecraft mc = mc();
-        if (mc == null || oldGamma == null) return;
-        try { mc.options.gamma().set(oldGamma); } catch (Throwable ignored) {}
+        if (mc == null) { oldGamma = null; return; }
+        try {
+            var opt = mc.options;
+            Object gammaOpt = opt.getClass().getMethod("gamma").invoke(opt);
+            gammaOpt.getClass().getMethod("set", double.class).invoke(gammaOpt, oldGamma.doubleValue());
+        } catch (Throwable ignored) {}
         oldGamma = null;
     }
 
