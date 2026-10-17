@@ -4,28 +4,23 @@ import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
 import com.ttclient.settings.NumberSetting;
-import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
 
 /**
- * True freecam: body stays where you enabled it (server still sees that spot).
- * Only the camera flies with WASD / space / sneak — through walls, no body move.
- *
- * Anti-ban design:
- * - Player entity is snapped back to origin every tick
- * - Velocity forced to zero
- * - Movement keys do not move the player; they only move the free camera
+ * Detached camera freecam.
+ * Body stays at enable position (server sees that).
+ * Camera flies with WASD / jump / sneak; MixinCamera applies position every frame.
  */
 public class Freecam extends Module {
     public final NumberSetting speed = addSetting(new NumberSetting(
-            "Speed", "Camera fly speed", 1.5, 0.1, 10.0, 0.1));
+            "Speed", "Camera fly speed", 2.0, 0.1, 20.0, 0.1));
     public final NumberSetting vSpeed = addSetting(new NumberSetting(
-            "VSpeed", "Vertical camera speed multiplier", 1.0, 0.2, 3.0, 0.1));
-    public final BoolSetting freezeRot = addSetting(new BoolSetting(
-            "FreezeBodyLook", "Lock body head rotation (usually leave off)", false));
+            "VSpeed", "Vertical speed multiplier", 1.0, 0.2, 3.0, 0.1));
+    public final BoolSetting freezeLook = addSetting(new BoolSetting(
+            "FreezeBodyLook", "Lock body yaw/pitch at enable values", false));
 
     private double originX, originY, originZ;
     private float originYaw, originPitch;
@@ -79,7 +74,6 @@ public class Freecam extends Module {
         camYaw = p.getYRot();
         camPitch = p.getXRot();
         saved = true;
-
         p.setDeltaMovement(Vec3.ZERO);
         p.fallDistance = 0;
     }
@@ -87,12 +81,8 @@ public class Freecam extends Module {
     @Override
     public void onDisable() {
         Minecraft mc = mc();
-        if (mc == null || mc.player == null) {
-            saved = false;
-            return;
-        }
-        LocalPlayer p = mc.player;
-        if (saved) {
+        if (mc != null && mc.player != null && saved) {
+            LocalPlayer p = mc.player;
             try {
                 p.snapTo(originX, originY, originZ, originYaw, originPitch);
             } catch (Throwable t) {
@@ -100,9 +90,8 @@ public class Freecam extends Module {
                 p.setYRot(originYaw);
                 p.setXRot(originPitch);
             }
+            p.setDeltaMovement(Vec3.ZERO);
         }
-        p.setDeltaMovement(Vec3.ZERO);
-        p.noPhysics = false;
         saved = false;
     }
 
@@ -112,48 +101,30 @@ public class Freecam extends Module {
         if (mc == null || mc.player == null || !saved) return;
         LocalPlayer p = mc.player;
 
-        camYaw = p.getYRot();
-        camPitch = p.getXRot();
+        if (!freezeLook.get()) {
+            camYaw = p.getYRot();
+            camPitch = p.getXRot();
+        }
 
-        updateCameraMotion(mc);
-        freezeBody(p);
-        applyCamera(mc);
+        moveCamera(mc);
+        holdBody(p);
     }
 
-    private void updateCameraMotion(Minecraft mc) {
+    private void moveCamera(Minecraft mc) {
         double sp = speed.get();
         double vsp = sp * vSpeed.get();
-
-        float yaw = camYaw;
-        double rad = Math.toRadians(yaw);
-        double sin = Math.sin(rad);
-        double cos = Math.cos(rad);
+        double yawRad = Math.toRadians(camYaw);
+        double sin = Math.sin(yawRad);
+        double cos = Math.cos(yawRad);
 
         double dx = 0, dy = 0, dz = 0;
-
         try {
-            if (mc.options.keyUp.isDown()) {
-                dx -= sin * sp;
-                dz += cos * sp;
-            }
-            if (mc.options.keyDown.isDown()) {
-                dx += sin * sp;
-                dz -= cos * sp;
-            }
-            if (mc.options.keyLeft.isDown()) {
-                dx -= cos * sp;
-                dz -= sin * sp;
-            }
-            if (mc.options.keyRight.isDown()) {
-                dx += cos * sp;
-                dz += sin * sp;
-            }
-            if (mc.options.keyJump.isDown()) {
-                dy += vsp;
-            }
-            if (mc.options.keyShift.isDown()) {
-                dy -= vsp;
-            }
+            if (mc.options.keyUp.isDown()) { dx -= sin * sp; dz += cos * sp; }
+            if (mc.options.keyDown.isDown()) { dx += sin * sp; dz -= cos * sp; }
+            if (mc.options.keyLeft.isDown()) { dx -= cos * sp; dz -= sin * sp; }
+            if (mc.options.keyRight.isDown()) { dx += cos * sp; dz += sin * sp; }
+            if (mc.options.keyJump.isDown()) dy += vsp;
+            if (mc.options.keyShift.isDown()) dy -= vsp;
         } catch (Throwable ignored) {}
 
         camX += dx;
@@ -161,66 +132,27 @@ public class Freecam extends Module {
         camZ += dz;
     }
 
-    private void freezeBody(LocalPlayer p) {
+    private void holdBody(LocalPlayer p) {
         try {
             p.setDeltaMovement(Vec3.ZERO);
             p.fallDistance = 0;
-            p.noPhysics = false;
-
-            float yaw = freezeRot.get() ? originYaw : camYaw;
-            float pitch = freezeRot.get() ? originPitch : camPitch;
+            float yaw = freezeLook.get() ? originYaw : camYaw;
+            float pitch = freezeLook.get() ? originPitch : camPitch;
             try {
                 p.snapTo(originX, originY, originZ, yaw, pitch);
             } catch (Throwable t) {
                 p.setPos(originX, originY, originZ);
-                p.setYRot(yaw);
-                p.setXRot(pitch);
+                if (freezeLook.get()) {
+                    p.setYRot(yaw);
+                    p.setXRot(pitch);
+                }
             }
-
-            p.setOnGround(true);
-        } catch (Throwable ignored) {}
-    }
-
-    public void applyCamera(Minecraft mc) {
-        try {
-            Camera cam = null;
             try {
-                cam = mc.gameRenderer.mainCamera();
-            } catch (Throwable t) {
-                try {
-                    cam = (Camera) mc.gameRenderer.getClass().getMethod("getMainCamera").invoke(mc.gameRenderer);
-                } catch (Throwable ignored) {}
-            }
-            if (cam == null) return;
-
-            // setPosition is protected in 26.2 — use reflection
-            try {
-                var m = Camera.class.getDeclaredMethod("setPosition", double.class, double.class, double.class);
-                m.setAccessible(true);
-                m.invoke(cam, camX, camY, camZ);
-            } catch (Throwable t) {
-                try {
-                    for (var f : Camera.class.getDeclaredFields()) {
-                        if (f.getType() == Vec3.class) {
-                            f.setAccessible(true);
-                            f.set(cam, new Vec3(camX, camY, camZ));
-                            break;
-                        }
-                    }
-                } catch (Throwable ignored) {}
-            }
-
-            try {
-                var m = Camera.class.getDeclaredMethod("setRotation", float.class, float.class);
-                m.setAccessible(true);
-                m.invoke(cam, camYaw, camPitch);
-            } catch (Throwable t) {
-                try {
-                    var m = Camera.class.getDeclaredMethod("setRotation", float.class, float.class, float.class);
-                    m.setAccessible(true);
-                    m.invoke(cam, camYaw, camPitch, 0f);
-                } catch (Throwable ignored) {}
-            }
+                p.input.forwardImpulse = 0;
+                p.input.leftImpulse = 0;
+                p.input.jumping = false;
+                p.input.shiftKeyDown = false;
+            } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
     }
 
@@ -230,7 +162,5 @@ public class Freecam extends Module {
             event.setYaw(camYaw);
             event.setPitch(camPitch);
         } catch (Throwable ignored) {}
-        Minecraft mc = mc();
-        if (mc != null) applyCamera(mc);
     }
 }
