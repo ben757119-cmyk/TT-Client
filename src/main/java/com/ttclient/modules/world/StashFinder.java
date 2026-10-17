@@ -1,5 +1,11 @@
 package com.ttclient.modules.world;
-import com.ttclient.modules.Category; import com.ttclient.modules.Module;
+
+import com.ttclient.modules.Category;
+import com.ttclient.modules.Module;
+
+/** Prefer Basefind → ChestStash for density scanning. */
 public class StashFinder extends Module {
-    public StashFinder() { super("StashFinder", "Detect storage density", Category.WORLD); }
+    public StashFinder() {
+        super("StashFinder", "Use Basefind → ChestStash instead", Category.WORLD);
+    }
 }
