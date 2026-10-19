@@ -8,6 +8,7 @@ import com.ttclient.render.EspDraw;
 import com.ttclient.render.EspProjection;
 import com.ttclient.settings.BoolSetting;
 import com.ttclient.settings.NumberSetting;
+import com.ttclient.util.ChunkMeshReload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.core.BlockPos;
@@ -41,7 +42,6 @@ public class XRay extends Module implements BlockListModule {
     public String uiSearch = "";
     public boolean uiSearchFocused;
 
-    /** Mixin hot path — MUST stay a static boolean, never getModule() during meshing. */
     public static volatile boolean opacityActiveCache = false;
 
     public XRay() {
@@ -77,13 +77,13 @@ public class XRay extends Module implements BlockListModule {
         String n = normalize(id);
         if (n == null) return false;
         boolean ok = selected.add(n);
-        if (ok && opacity.get()) scheduleReload();
+        if (ok && opacity.get()) ChunkMeshReload.request();
         return ok;
     }
     @Override public boolean removeBlock(String id) {
         String n = normalize(id);
         boolean ok = n != null ? selected.remove(n) : selected.remove(id.toLowerCase(Locale.ROOT));
-        if (ok && opacity.get()) scheduleReload();
+        if (ok && opacity.get()) ChunkMeshReload.request();
         return ok;
     }
     public void loadBlocks(String csv) {
@@ -167,13 +167,14 @@ public class XRay extends Module implements BlockListModule {
         lastOpacity = opacity.get();
         opacityActiveCache = lastOpacity;
         if (fullbright.get()) applyGamma(true);
-        if (opacity.get()) scheduleReload();
+        if (opacity.get()) ChunkMeshReload.request();
     }
     @Override public void onDisable() {
         hits.clear(); building.clear();
+        boolean had = lastOpacity || opacityActiveCache;
         opacityActiveCache = false;
         applyGamma(false);
-        if (lastOpacity) scheduleReload();
+        if (had) ChunkMeshReload.request();
         lastOpacity = false;
     }
 
@@ -183,7 +184,7 @@ public class XRay extends Module implements BlockListModule {
         if (op != lastOpacity) {
             lastOpacity = op;
             opacityActiveCache = op && isEnabled();
-            scheduleReload();
+            ChunkMeshReload.request();
         }
         if (!esp.get() && !tracers.get()) { hits.clear(); return; }
         progressiveScan();
@@ -262,20 +263,6 @@ public class XRay extends Module implements BlockListModule {
                 oldGamma = null;
             }
         } catch (Throwable ignored) {}
-    }
-
-    private void scheduleReload() {
-        Minecraft mc = mc();
-        if (mc == null) return;
-        mc.execute(() -> {
-            try {
-                Object lr = mc.levelRenderer;
-                if (lr == null) return;
-                for (String name : new String[]{"allChanged", "reload", "rebuildAllChunks"}) {
-                    try { lr.getClass().getMethod(name).invoke(lr); return; } catch (Throwable ignored) {}
-                }
-            } catch (Throwable ignored) {}
-        });
     }
 
     @Override
