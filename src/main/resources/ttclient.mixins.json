@@ -7,7 +7,9 @@
     "MixinBlockStateBase",
     "MixinCamera",
     "CameraAccessor",
-    "MixinGameRenderer"
+    "MixinGameRenderer",
+    "MixinEntity",
+    "MixinBlock"
   ],
   "injectors": {
     "defaultRequire": 0
