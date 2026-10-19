@@ -10,6 +10,9 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+/**
+ * XRay + Freecam full-depth wall vision (hide terrain so caves show to bedrock).
+ */
 @Mixin(BlockBehaviour.BlockStateBase.class)
 public abstract class MixinBlockStateBase {
 
@@ -26,7 +29,7 @@ public abstract class MixinBlockStateBase {
                 if (!XRay.isOre(self)) cir.setReturnValue(false);
                 return;
             }
-            if (Freecam.wallVisionCache && Freecam.isTerrainFiller(self)) {
+            if (Freecam.wallVisionCache && Freecam.shouldHideForWallVision(self)) {
                 cir.setReturnValue(false);
             }
         } catch (Throwable ignored) {}
@@ -43,7 +46,7 @@ public abstract class MixinBlockStateBase {
                 }
                 return;
             }
-            if (Freecam.wallVisionCache && Freecam.isTerrainFiller(self)) {
+            if (Freecam.wallVisionCache && Freecam.shouldHideForWallVision(self)) {
                 cir.setReturnValue(RenderShape.INVISIBLE);
             }
         } catch (Throwable ignored) {}
@@ -58,7 +61,7 @@ public abstract class MixinBlockStateBase {
                 if (!XRay.isOre(self)) cir.setReturnValue(false);
                 return;
             }
-            if (Freecam.wallVisionCache && Freecam.isTerrainFiller(self)) {
+            if (Freecam.wallVisionCache && Freecam.shouldHideForWallVision(self)) {
                 cir.setReturnValue(false);
             }
         } catch (Throwable ignored) {}
@@ -73,7 +76,7 @@ public abstract class MixinBlockStateBase {
                 if (!XRay.isOre(self)) cir.setReturnValue(true);
                 return;
             }
-            if (Freecam.wallVisionCache && Freecam.isTerrainFiller(self)) {
+            if (Freecam.wallVisionCache && Freecam.shouldHideForWallVision(self)) {
                 cir.setReturnValue(true);
             }
         } catch (Throwable ignored) {}
