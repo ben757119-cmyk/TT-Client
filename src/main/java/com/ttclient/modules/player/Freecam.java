@@ -5,6 +5,7 @@ import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
 import com.ttclient.settings.NumberSetting;
+import com.ttclient.util.ChunkMeshReload;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -15,8 +16,8 @@ import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
 
 /**
- * Meteor-style freecam (1.26.8 behavior) + full-depth wall vision
- * so loaded chunks show through terrain down to bedrock.
+ * Meteor-style freecam + full-depth wall vision.
+ * Mesh rebuild via ChunkMeshReload (immediate + delayed) so toggle does not need block updates.
  */
 public class Freecam extends Module {
     public final NumberSetting speed = addSetting(new NumberSetting("Speed", "Fly speed", 1.0, 0.1, 10.0, 0.1));
@@ -29,7 +30,6 @@ public class Freecam extends Module {
             "Fullbright", "Brighten while wall vision is on", true));
 
     private static volatile boolean activeCache;
-    /** Mixin reads this — terrain hidden while true. */
     public static volatile boolean wallVisionCache;
 
     private double posX, posY, posZ;
@@ -90,7 +90,6 @@ public class Freecam extends Module {
 
     public static void applyTo(Camera cam) { forceCamera(cam); }
 
-    /** Keep list: never hide these during wall vision. */
     private static boolean isKeepVisible(String n) {
         return n.contains("ore") || n.contains("raw_iron") || n.contains("raw_gold") || n.contains("raw_copper")
                 || n.contains("chest") || n.contains("barrel") || n.contains("shulker") || n.contains("hopper")
@@ -100,7 +99,7 @@ public class Freecam extends Module {
                 || n.contains("plank") || n.contains("wool") || n.contains("concrete")
                 || n.contains("torch") || n.contains("lantern") || n.contains("glow") || n.contains("sea_lantern")
                 || n.contains("ladder") || n.contains("rail") || n.contains("sign") || n.contains("banner")
-                || n.contains("door") || n.contains("trapdoor") || n.contains("fence") || n.contains("wall")
+                || n.contains("door") || n.contains("trapdoor") || n.contains("fence")
                 || n.contains("slab") || n.contains("stair") || n.contains("carpet") || n.contains("button")
                 || n.contains("lever") || n.contains("piston") || n.contains("observer") || n.contains("dispenser")
                 || n.contains("dropper") || n.contains("furnace") || n.contains("smoker") || n.contains("blast")
@@ -110,12 +109,13 @@ public class Freecam extends Module {
                 || n.contains("crop") || n.contains("wheat") || n.contains("carrot") || n.contains("potato")
                 || n.contains("amethyst") || n.contains("budding") || n.contains("cluster")
                 || n.contains("sculk_sensor") || n.contains("sculk_shrieker") || n.contains("sculk_catalyst")
-                || n.contains("copper_bulb") || n.contains("crafter") || n.contains("decorated_pot");
+                || n.contains("copper_bulb") || n.contains("crafter") || n.contains("decorated_pot")
+                || n.contains("flower") || n.contains("sapling") || n.contains("mushroom")
+                || n.contains("vine") || n.contains("moss_carpet") || n.contains("hanging_roots");
     }
 
     /**
-     * Full-depth: hide almost all solid terrain so caves/air show through
-     * entire loaded column down toward bedrock.
+     * Name-based only — never call canOcclude() here (mixin re-enters this method).
      */
     public static boolean shouldHideForWallVision(BlockState st) {
         if (st == null || st.isAir()) return false;
@@ -125,47 +125,29 @@ public class Freecam extends Module {
         try {
             String n = st.getBlock().toString().toLowerCase();
             if (isKeepVisible(n)) return false;
-            // Explicit terrain / filler (covers deepslate column to bedrock)
-            if (n.contains("stone") || n.contains("deepslate") || n.contains("dirt")
-                    || n.contains("grass") || n.contains("gravel") || n.contains("sand")
+
+            // Full terrain column including deepslate / cave fillers
+            return n.contains("stone") || n.contains("deepslate") || n.contains("dirt")
+                    || n.contains("grass_block") || n.contains("grass") || n.contains("gravel") || n.contains("sand")
                     || n.contains("andesite") || n.contains("diorite") || n.contains("granite")
                     || n.contains("tuff") || n.contains("calcite") || n.contains("netherrack")
                     || n.contains("basalt") || n.contains("blackstone") || n.contains("end_stone")
                     || n.contains("terracotta") || n.contains("clay") || n.contains("mud")
-                    || n.contains("snow") || n.contains("ice") || n.contains("magma")
-                    || n.contains("soul_sand") || n.contains("soul_soil")
-                    || n.contains("cobble") || n.contains("moss") || n.contains("dripstone")
+                    || n.contains("snow") || n.contains("ice") || n.contains("packed_ice") || n.contains("blue_ice")
+                    || n.contains("magma") || n.contains("soul_sand") || n.contains("soul_soil")
+                    || n.contains("cobble") || n.contains("moss_block") || n.contains("dripstone")
                     || n.contains("sculk") || n.contains("smooth_basalt") || n.contains("packed_mud")
-                    || n.contains("nylium") || n.contains("rooted") || n.contains("podzol")
-                    || n.contains("mycelium") || n.contains("crimson") || n.contains("warped")
-                    || n.contains("nether_wart_block") || n.contains("shroomlight") == false
-                    && (n.contains("block") && (n.contains("iron") || n.contains("gold") || n.contains("copper") || n.contains("diamond") || n.contains("emerald") || n.contains("coal") || n.contains("lapis") || n.contains("redstone") || n.contains("netherite")))) {
-                // metal storage blocks kept? skip — those are rare underground
-            }
-            if (n.contains("stone") || n.contains("deepslate") || n.contains("dirt")
-                    || n.contains("grass") || n.contains("gravel") || n.contains("sand")
-                    || n.contains("andesite") || n.contains("diorite") || n.contains("granite")
-                    || n.contains("tuff") || n.contains("calcite") || n.contains("netherrack")
-                    || n.contains("basalt") || n.contains("blackstone") || n.contains("end_stone")
-                    || n.contains("terracotta") || n.contains("clay") || n.contains("mud")
-                    || n.contains("snow") || n.contains("ice") || n.contains("magma")
-                    || n.contains("soul_sand") || n.contains("soul_soil")
-                    || n.contains("cobble") || n.contains("moss") || n.contains("dripstone")
-                    || n.contains("sculk") || n.contains("smooth_basalt") || n.contains("packed_mud")
-                    || n.contains("nylium") || n.contains("podzol") || n.contains("mycelium")) {
-                return true;
-            }
-            // Any other occluding solid not in keep list
-            try {
-                if (st.canOcclude()) return true;
-            } catch (Throwable ignored) {}
-            return false;
+                    || n.contains("nylium") || n.contains("podzol") || n.contains("mycelium")
+                    || n.contains("rooted_dirt") || n.contains("coarse_dirt") || n.contains("farmland")
+                    || n.contains("infested") || n.contains("powder_snow")
+                    || n.contains("nether_wart_block") || n.contains("warped_wart")
+                    || n.contains("crimson_nylium") || n.contains("warped_nylium")
+                    || n.contains("reinforced_deepslate");
         } catch (Throwable t) {
             return false;
         }
     }
 
-    /** @deprecated use shouldHideForWallVision */
     public static boolean isTerrainFiller(BlockState st) {
         return shouldHideForWallVision(st);
     }
@@ -201,9 +183,9 @@ public class Freecam extends Module {
     @Override
     public void onDisable() {
         activeCache = false;
+        boolean hadWall = wallVisionCache || lastWall;
         wallVisionCache = false;
         restoreGamma();
-        if (lastWall) reloadChunks();
         lastWall = false;
 
         Minecraft mc = mc();
@@ -219,6 +201,7 @@ public class Freecam extends Module {
             p.setDeltaMovement(Vec3.ZERO);
         }
         saved = false;
+        if (hadWall) ChunkMeshReload.request();
     }
 
     @Override
@@ -228,7 +211,6 @@ public class Freecam extends Module {
         if (mc == null || mc.player == null) return;
         LocalPlayer p = mc.player;
 
-        // Look from mouse (same as working 1.26.8)
         prevYaw = yaw;
         prevPitch = pitch;
         yaw = p.getYRot();
@@ -270,7 +252,6 @@ public class Freecam extends Module {
         posY += (fy * forward + vertical) * s;
         posZ += (fz * forward + rz * strafe) * s;
 
-        // Freeze body at origin (1.26.8 style that worked)
         try {
             p.setDeltaMovement(Vec3.ZERO);
             try {
@@ -293,7 +274,6 @@ public class Freecam extends Module {
             } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
 
-        // Re-apply freecam look so next tick still tracks mouse
         try {
             p.setYRot(yaw);
             p.setXRot(pitch);
@@ -316,16 +296,25 @@ public class Freecam extends Module {
 
         if (force || changed) {
             lastWall = want;
-            reloadChunks();
+            // Immediate + delayed mesh rebuilds (fixes "need block updates")
+            ChunkMeshReload.request();
         }
     }
 
     private boolean isCameraInsideSolid(Minecraft mc) {
         try {
             if (mc.level == null) return false;
-            BlockPos pos = BlockPos.containing(posX, posY, posZ);
-            BlockState st = mc.level.getBlockState(pos);
-            return st != null && !st.isAir();
+            // Check feet of camera + a few offsets so partial blocks still count
+            for (double dy = -0.2; dy <= 0.2; dy += 0.2) {
+                for (double dx = -0.2; dx <= 0.2; dx += 0.2) {
+                    for (double dz = -0.2; dz <= 0.2; dz += 0.2) {
+                        BlockPos pos = BlockPos.containing(posX + dx, posY + dy, posZ + dz);
+                        BlockState st = mc.level.getBlockState(pos);
+                        if (st != null && !st.isAir() && st.getFluidState().isEmpty()) return true;
+                    }
+                }
+            }
+            return false;
         } catch (Throwable t) {
             return false;
         }
@@ -353,17 +342,6 @@ public class Freecam extends Module {
             gammaOpt.getClass().getMethod("set", double.class).invoke(gammaOpt, oldGamma.doubleValue());
         } catch (Throwable ignored) {}
         oldGamma = null;
-    }
-
-    private void reloadChunks() {
-        try {
-            Minecraft mc = Minecraft.getInstance();
-            if (mc == null || mc.levelRenderer == null) return;
-            Object lr = mc.levelRenderer;
-            for (String name : new String[]{"allChanged", "reloadAll", "rebuildAllChunks"}) {
-                try { lr.getClass().getMethod(name).invoke(lr); return; } catch (Throwable ignored) {}
-            }
-        } catch (Throwable ignored) {}
     }
 
     public void onCameraAngles(net.neoforged.neoforge.client.event.ViewportEvent.ComputeCameraAngles event) {

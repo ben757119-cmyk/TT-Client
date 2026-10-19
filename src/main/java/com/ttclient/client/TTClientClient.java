@@ -9,6 +9,7 @@ import com.ttclient.modules.client.ClickGUIModule;
 import com.ttclient.modules.client.StreamerMode;
 import com.ttclient.modules.misc.AutoChatGame;
 import com.ttclient.modules.player.Freecam;
+import com.ttclient.util.ChunkMeshReload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -55,6 +56,7 @@ public class TTClientClient {
 
     @SubscribeEvent
     public void onClientTick(ClientTickEvent.Post event) {
+        ChunkMeshReload.tick();
         if (modules == null) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
