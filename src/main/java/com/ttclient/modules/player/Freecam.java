@@ -14,14 +14,22 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
 
+/**
+ * Meteor-style freecam (1.26.8 behavior) + full-depth wall vision
+ * so loaded chunks show through terrain down to bedrock.
+ */
 public class Freecam extends Module {
-    public final NumberSetting speed = addSetting(new NumberSetting("Speed", "Fly speed", 1.5, 0.1, 15.0, 0.1));
-    public final NumberSetting speed2 = addSetting(new NumberSetting("Speed2", "Sprint mult", 2.5, 1.0, 5.0, 0.1));
-    public final BoolSetting wallVision = addSetting(new BoolSetting("WallVision", "See caves through solid blocks", true));
-    public final BoolSetting onlyInWall = addSetting(new BoolSetting("OnlyInWall", "Wall vision only inside solid blocks", true));
-    public final BoolSetting fullbright = addSetting(new BoolSetting("Fullbright", "Brighten while wall vision active", true));
+    public final NumberSetting speed = addSetting(new NumberSetting("Speed", "Fly speed", 1.0, 0.1, 10.0, 0.1));
+    public final NumberSetting speed2 = addSetting(new NumberSetting("Speed2", "Sprint mult", 2.0, 1.0, 5.0, 0.1));
+    public final BoolSetting wallVision = addSetting(new BoolSetting(
+            "WallVision", "See through terrain in loaded chunks (to bedrock)", true));
+    public final BoolSetting onlyInWall = addSetting(new BoolSetting(
+            "OnlyInWall", "Only when camera is inside a solid block", false));
+    public final BoolSetting fullbright = addSetting(new BoolSetting(
+            "Fullbright", "Brighten while wall vision is on", true));
 
     private static volatile boolean activeCache;
+    /** Mixin reads this — terrain hidden while true. */
     public static volatile boolean wallVisionCache;
 
     private double posX, posY, posZ;
@@ -32,11 +40,11 @@ public class Freecam extends Module {
     private double originX, originY, originZ;
     private float originYaw, originPitch;
     private boolean saved;
-    private boolean chunksDirty;
+    private boolean lastWall;
     private Double oldGamma;
 
     public Freecam() {
-        super("Freecam", "Detached camera (F4)", Category.PLAYER);
+        super("Freecam", "Detached camera + full-depth caves (F4)", Category.PLAYER);
         setKeyBind(GLFW.GLFW_KEY_F4);
     }
 
@@ -68,7 +76,9 @@ public class Freecam extends Module {
         Freecam fc = get();
         if (fc == null || !fc.saved) return;
         float pt = 1f;
-        try { pt = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false); } catch (Throwable ignored) {}
+        try {
+            pt = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false);
+        } catch (Throwable ignored) {}
         double x = fc.getX(pt), y = fc.getY(pt), z = fc.getZ(pt);
         float yw = fc.getYaw(pt), pi = fc.getPitch(pt);
         try {
@@ -80,19 +90,43 @@ public class Freecam extends Module {
 
     public static void applyTo(Camera cam) { forceCamera(cam); }
 
-    public static boolean isTerrainFiller(BlockState st) {
+    /** Keep list: never hide these during wall vision. */
+    private static boolean isKeepVisible(String n) {
+        return n.contains("ore") || n.contains("raw_iron") || n.contains("raw_gold") || n.contains("raw_copper")
+                || n.contains("chest") || n.contains("barrel") || n.contains("shulker") || n.contains("hopper")
+                || n.contains("spawner") || n.contains("trial_spawner") || n.contains("vault")
+                || n.contains("portal") || n.contains("bedrock") || n.contains("obsidian")
+                || n.contains("glass") || n.contains("leave") || n.contains("log") || n.contains("stem")
+                || n.contains("plank") || n.contains("wool") || n.contains("concrete")
+                || n.contains("torch") || n.contains("lantern") || n.contains("glow") || n.contains("sea_lantern")
+                || n.contains("ladder") || n.contains("rail") || n.contains("sign") || n.contains("banner")
+                || n.contains("door") || n.contains("trapdoor") || n.contains("fence") || n.contains("wall")
+                || n.contains("slab") || n.contains("stair") || n.contains("carpet") || n.contains("button")
+                || n.contains("lever") || n.contains("piston") || n.contains("observer") || n.contains("dispenser")
+                || n.contains("dropper") || n.contains("furnace") || n.contains("smoker") || n.contains("blast")
+                || n.contains("crafting") || n.contains("anvil") || n.contains("enchant") || n.contains("brewing")
+                || n.contains("beacon") || n.contains("conduit") || n.contains("scaffolding")
+                || n.contains("water") || n.contains("lava") || n.contains("kelp") || n.contains("seagrass")
+                || n.contains("crop") || n.contains("wheat") || n.contains("carrot") || n.contains("potato")
+                || n.contains("amethyst") || n.contains("budding") || n.contains("cluster")
+                || n.contains("sculk_sensor") || n.contains("sculk_shrieker") || n.contains("sculk_catalyst")
+                || n.contains("copper_bulb") || n.contains("crafter") || n.contains("decorated_pot");
+    }
+
+    /**
+     * Full-depth: hide almost all solid terrain so caves/air show through
+     * entire loaded column down toward bedrock.
+     */
+    public static boolean shouldHideForWallVision(BlockState st) {
         if (st == null || st.isAir()) return false;
         try {
+            if (!st.getFluidState().isEmpty()) return false;
+        } catch (Throwable ignored) {}
+        try {
             String n = st.getBlock().toString().toLowerCase();
-            if (n.contains("ore") || n.contains("chest") || n.contains("barrel")
-                    || n.contains("spawner") || n.contains("shulker") || n.contains("hopper")
-                    || n.contains("portal") || n.contains("bedrock") || n.contains("obsidian")
-                    || n.contains("glass") || n.contains("leave") || n.contains("log")
-                    || n.contains("plank") || n.contains("wool") || n.contains("concrete")
-                    || n.contains("torch") || n.contains("lantern") || n.contains("glow")) {
-                return false;
-            }
-            return n.contains("stone") || n.contains("deepslate") || n.contains("dirt")
+            if (isKeepVisible(n)) return false;
+            // Explicit terrain / filler (covers deepslate column to bedrock)
+            if (n.contains("stone") || n.contains("deepslate") || n.contains("dirt")
                     || n.contains("grass") || n.contains("gravel") || n.contains("sand")
                     || n.contains("andesite") || n.contains("diorite") || n.contains("granite")
                     || n.contains("tuff") || n.contains("calcite") || n.contains("netherrack")
@@ -100,12 +134,40 @@ public class Freecam extends Module {
                     || n.contains("terracotta") || n.contains("clay") || n.contains("mud")
                     || n.contains("snow") || n.contains("ice") || n.contains("magma")
                     || n.contains("soul_sand") || n.contains("soul_soil")
-                    || n.contains("cobble") || n.contains("mossy") || n.contains("dripstone")
-                    || (n.contains("sculk") && !n.contains("sensor") && !n.contains("shrieker"))
-                    || n.contains("smooth_basalt") || n.contains("packed_mud");
+                    || n.contains("cobble") || n.contains("moss") || n.contains("dripstone")
+                    || n.contains("sculk") || n.contains("smooth_basalt") || n.contains("packed_mud")
+                    || n.contains("nylium") || n.contains("rooted") || n.contains("podzol")
+                    || n.contains("mycelium") || n.contains("crimson") || n.contains("warped")
+                    || n.contains("nether_wart_block") || n.contains("shroomlight") == false
+                    && (n.contains("block") && (n.contains("iron") || n.contains("gold") || n.contains("copper") || n.contains("diamond") || n.contains("emerald") || n.contains("coal") || n.contains("lapis") || n.contains("redstone") || n.contains("netherite")))) {
+                // metal storage blocks kept? skip — those are rare underground
+            }
+            if (n.contains("stone") || n.contains("deepslate") || n.contains("dirt")
+                    || n.contains("grass") || n.contains("gravel") || n.contains("sand")
+                    || n.contains("andesite") || n.contains("diorite") || n.contains("granite")
+                    || n.contains("tuff") || n.contains("calcite") || n.contains("netherrack")
+                    || n.contains("basalt") || n.contains("blackstone") || n.contains("end_stone")
+                    || n.contains("terracotta") || n.contains("clay") || n.contains("mud")
+                    || n.contains("snow") || n.contains("ice") || n.contains("magma")
+                    || n.contains("soul_sand") || n.contains("soul_soil")
+                    || n.contains("cobble") || n.contains("moss") || n.contains("dripstone")
+                    || n.contains("sculk") || n.contains("smooth_basalt") || n.contains("packed_mud")
+                    || n.contains("nylium") || n.contains("podzol") || n.contains("mycelium")) {
+                return true;
+            }
+            // Any other occluding solid not in keep list
+            try {
+                if (st.canOcclude()) return true;
+            } catch (Throwable ignored) {}
+            return false;
         } catch (Throwable t) {
             return false;
         }
+    }
+
+    /** @deprecated use shouldHideForWallVision */
+    public static boolean isTerrainFiller(BlockState st) {
+        return shouldHideForWallVision(st);
     }
 
     @Override
@@ -115,6 +177,7 @@ public class Freecam extends Module {
         LocalPlayer p = mc.player;
         originX = p.getX(); originY = p.getY(); originZ = p.getZ();
         originYaw = p.getYRot(); originPitch = p.getXRot();
+
         double x = p.getX();
         double y = p.getY() + p.getEyeHeight();
         double z = p.getZ();
@@ -122,9 +185,15 @@ public class Freecam extends Module {
             Vec3 cp = mc.gameRenderer.mainCamera().position();
             x = cp.x; y = cp.y; z = cp.z;
         } catch (Throwable ignored) {}
-        posX = prevX = x; posY = prevY = y; posZ = prevZ = z;
-        yaw = prevYaw = p.getYRot(); pitch = prevPitch = p.getXRot();
-        saved = true; activeCache = true; chunksDirty = false;
+
+        posX = prevX = x;
+        posY = prevY = y;
+        posZ = prevZ = z;
+        yaw = prevYaw = p.getYRot();
+        pitch = prevPitch = p.getXRot();
+        saved = true;
+        activeCache = true;
+        lastWall = false;
         p.setDeltaMovement(Vec3.ZERO);
         updateWallVision(mc, true);
     }
@@ -132,22 +201,24 @@ public class Freecam extends Module {
     @Override
     public void onDisable() {
         activeCache = false;
-        boolean hadWall = wallVisionCache;
         wallVisionCache = false;
         restoreGamma();
+        if (lastWall) reloadChunks();
+        lastWall = false;
+
         Minecraft mc = mc();
         if (mc != null && mc.player != null && saved) {
             LocalPlayer p = mc.player;
             try {
+                p.snapTo(originX, originY, originZ, originYaw, originPitch);
+            } catch (Throwable t) {
                 p.setPos(originX, originY, originZ);
-                p.setYRot(originYaw); p.setXRot(originPitch);
-                p.yRotO = originYaw; p.xRotO = originPitch;
-            } catch (Throwable ignored) {}
+                p.setYRot(originYaw);
+                p.setXRot(originPitch);
+            }
             p.setDeltaMovement(Vec3.ZERO);
         }
         saved = false;
-        if (hadWall || chunksDirty) reloadChunks();
-        chunksDirty = false;
     }
 
     @Override
@@ -156,14 +227,26 @@ public class Freecam extends Module {
         Minecraft mc = mc();
         if (mc == null || mc.player == null) return;
         LocalPlayer p = mc.player;
-        prevYaw = yaw; prevPitch = pitch;
-        yaw = p.getYRot(); pitch = p.getXRot();
-        prevX = posX; prevY = posY; prevZ = posZ;
+
+        // Look from mouse (same as working 1.26.8)
+        prevYaw = yaw;
+        prevPitch = pitch;
+        yaw = p.getYRot();
+        pitch = p.getXRot();
+
+        prevX = posX;
+        prevY = posY;
+        prevZ = posZ;
+
         double s = speed.get().doubleValue();
-        try { if (mc.options.keySprint.isDown()) s *= speed2.get().doubleValue(); } catch (Throwable ignored) {}
+        try {
+            if (mc.options.keySprint.isDown()) s *= speed2.get().doubleValue();
+        } catch (Throwable ignored) {}
+
         double radYaw = Math.toRadians(yaw);
         double radPitch = Math.toRadians(pitch);
         double cosPitch = Math.cos(radPitch);
+
         double forward = 0, strafe = 0, vertical = 0;
         try {
             if (mc.options.keyUp.isDown()) forward += 1;
@@ -173,19 +256,30 @@ public class Freecam extends Module {
             if (mc.options.keyJump.isDown()) vertical += 1;
             if (mc.options.keyShift.isDown()) vertical -= 1;
         } catch (Throwable ignored) {}
+
         double len = Math.sqrt(forward * forward + strafe * strafe);
         if (len > 1e-6) { forward /= len; strafe /= len; }
+
         double fx = -Math.sin(radYaw) * cosPitch;
         double fy = -Math.sin(radPitch);
         double fz = Math.cos(radYaw) * cosPitch;
         double rx = Math.cos(radYaw);
         double rz = Math.sin(radYaw);
+
         posX += (fx * forward + rx * strafe) * s;
         posY += (fy * forward + vertical) * s;
         posZ += (fz * forward + rz * strafe) * s;
+
+        // Freeze body at origin (1.26.8 style that worked)
         try {
             p.setDeltaMovement(Vec3.ZERO);
-            p.setPos(originX, originY, originZ);
+            try {
+                p.snapTo(originX, originY, originZ, originYaw, originPitch);
+            } catch (Throwable t) {
+                p.setPos(originX, originY, originZ);
+                p.setYRot(originYaw);
+                p.setXRot(originPitch);
+            }
             try {
                 Object in = p.input;
                 if (in != null) {
@@ -198,20 +292,30 @@ public class Freecam extends Module {
                 }
             } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
+
+        // Re-apply freecam look so next tick still tracks mouse
+        try {
+            p.setYRot(yaw);
+            p.setXRot(pitch);
+        } catch (Throwable ignored) {}
+
         updateWallVision(mc, false);
     }
 
     private void updateWallVision(Minecraft mc, boolean force) {
         boolean want = false;
         if (wallVision.get() && activeCache) {
-            want = !onlyInWall.get() || isCameraInsideSolid(mc);
+            if (!onlyInWall.get()) want = true;
+            else want = isCameraInsideSolid(mc);
         }
         boolean changed = want != wallVisionCache;
         wallVisionCache = want;
+
         if (want && fullbright.get()) applyGamma(mc);
         else if (!want) restoreGamma();
+
         if (force || changed) {
-            chunksDirty = true;
+            lastWall = want;
             reloadChunks();
         }
     }
@@ -265,7 +369,9 @@ public class Freecam extends Module {
     public void onCameraAngles(net.neoforged.neoforge.client.event.ViewportEvent.ComputeCameraAngles event) {
         if (!activeCache) return;
         float pt = 1f;
-        try { pt = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false); } catch (Throwable ignored) {}
+        try {
+            pt = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false);
+        } catch (Throwable ignored) {}
         try {
             event.setYaw(getYaw(pt));
             event.setPitch(getPitch(pt));
