@@ -1,6 +1,7 @@
 package com.ttclient.modules.client;
 
 import com.ttclient.TTClient;
+import com.ttclient.client.NotificationManager;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
@@ -16,6 +17,7 @@ public class HUD extends Module {
     public final BoolSetting coords = addSetting(new BoolSetting("Coords", "Show coordinates", true));
     public final BoolSetting direction = addSetting(new BoolSetting("Direction", "Show facing", true));
     public final BoolSetting armor = addSetting(new BoolSetting("Armor", "Show armor durability", false));
+    public final BoolSetting toasts = addSetting(new BoolSetting("Toasts", "Animated notifications", true));
 
     public HUD() {
         super("HUD", "Watermark, FPS, coordinates, direction", Category.CLIENT);
@@ -64,6 +66,14 @@ public class HUD extends Module {
                 graphics.text(font, slot.getName() + ": " + left, 4, y, text, false);
                 y += 10;
             }
+        }
+
+        if (toasts.get()) {
+            try {
+                int sw = minecraft.getWindow().getGuiScaledWidth();
+                int sh = minecraft.getWindow().getGuiScaledHeight();
+                NotificationManager.render(graphics, font, sw, sh);
+            } catch (Throwable ignored) {}
         }
     }
 }
