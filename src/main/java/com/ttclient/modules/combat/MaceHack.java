@@ -8,7 +8,6 @@ import com.ttclient.util.InvUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.protocol.Packet;
-import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Items;
@@ -19,10 +18,15 @@ import net.minecraft.world.phys.Vec3;
  *
  * Sequence (before attack packet):
  *   4× Y+0 onGround=false, 1× Y+sqrt(500), 1× Y+0
+ *
+ * Packet construction is pure reflection so mapping differences never break compile.
  */
 public class MaceHack extends Module {
     public final BoolSetting onlyPlayers = addSetting(new BoolSetting(
             "OnlyPlayers", "Only when targeting players", false));
+
+    private static volatile Class<?> posClass;
+    private static volatile java.lang.reflect.Constructor<?> posCtor;
 
     public MaceHack() {
         super("MaceHack", "Mace smash on ground (Wurst packet spoof)", Category.COMBAT);
@@ -39,7 +43,6 @@ public class MaceHack extends Module {
         }
     }
 
-    /** Called from mixin / AttackEntityEvent right before interact packet. */
     public static void onPlayerAttack(Player attacker, Entity target) {
         try {
             if (attacker == null || target == null) return;
@@ -94,53 +97,56 @@ public class MaceHack extends Module {
         sendPos(p, x, y, z, false, horiz);
     }
 
+    private static void resolveCtor() {
+        if (posCtor != null) return;
+        try {
+            if (posClass == null) {
+                posClass = Class.forName("net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$Pos");
+            }
+            for (var c : posClass.getConstructors()) {
+                Class<?>[] pt = c.getParameterTypes();
+                if (pt.length == 5 && pt[0] == double.class) {
+                    posCtor = c;
+                    return;
+                }
+            }
+            for (var c : posClass.getConstructors()) {
+                Class<?>[] pt = c.getParameterTypes();
+                if (pt.length == 3 && Vec3.class.isAssignableFrom(pt[0])) {
+                    posCtor = c;
+                    return;
+                }
+            }
+            for (var c : posClass.getConstructors()) {
+                Class<?>[] pt = c.getParameterTypes();
+                if (pt.length == 4 && pt[0] == double.class) {
+                    posCtor = c;
+                    return;
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
     @SuppressWarnings({"rawtypes", "unchecked"})
     private static void sendPos(LocalPlayer p, double x, double y, double z, boolean onGround, boolean horiz) {
-        Packet pkt = null;
-
-        // Prefer 5-arg Pos(x,y,z,onGround,horizontalCollision) — matches Wurst / 1.21+
         try {
-            pkt = new ServerboundMovePlayerPacket.Pos(x, y, z, onGround, horiz);
-        } catch (Throwable ignored) {
-            pkt = null;
-        }
-
-        if (pkt == null) {
-            try {
-                pkt = new ServerboundMovePlayerPacket.Pos(new Vec3(x, y, z), onGround, horiz);
-            } catch (Throwable ignored) {
-                pkt = null;
+            resolveCtor();
+            if (posCtor == null) return;
+            Class<?>[] pt = posCtor.getParameterTypes();
+            Object built;
+            if (pt.length == 5) {
+                built = posCtor.newInstance(x, y, z, onGround, horiz);
+            } else if (pt.length == 3 && Vec3.class.isAssignableFrom(pt[0])) {
+                built = posCtor.newInstance(new Vec3(x, y, z), onGround, horiz);
+            } else if (pt.length == 4) {
+                built = posCtor.newInstance(x, y, z, onGround);
+            } else {
+                return;
             }
-        }
-
-        if (pkt == null) {
-            try {
-                Class<?> posCl = Class.forName("net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$Pos");
-                for (var c : posCl.getConstructors()) {
-                    Class<?>[] pt = c.getParameterTypes();
-                    Object built = null;
-                    try {
-                        if (pt.length == 5 && pt[0] == double.class) {
-                            built = c.newInstance(x, y, z, onGround, horiz);
-                        } else if (pt.length == 3 && Vec3.class.isAssignableFrom(pt[0])) {
-                            built = c.newInstance(new Vec3(x, y, z), onGround, horiz);
-                        } else if (pt.length == 4 && pt[0] == double.class) {
-                            built = c.newInstance(x, y, z, onGround);
-                        }
-                    } catch (Throwable ignored) {}
-                    if (built instanceof Packet) {
-                        pkt = (Packet) built;
-                        break;
-                    }
-                }
-            } catch (Throwable ignored) {}
-        }
-
-        if (pkt != null) {
-            try {
-                p.connection.send(pkt);
-            } catch (Throwable ignored) {}
-        }
+            if (built instanceof Packet) {
+                p.connection.send((Packet) built);
+            }
+        } catch (Throwable ignored) {}
     }
 
     @Override
