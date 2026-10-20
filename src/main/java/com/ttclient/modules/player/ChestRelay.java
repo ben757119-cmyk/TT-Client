@@ -474,6 +474,7 @@ public class ChestRelay extends Module {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private boolean inventoryClick(Minecraft mc, int containerId, int slot) {
+        if (mc.gameMode == null || mc.player == null) return false;
         try {
             var method = mc.gameMode.getClass().getMethod(
                     "handleInventoryMouseClick",
@@ -511,15 +512,37 @@ public class ChestRelay extends Module {
         if (!visuals.get() || chests.isEmpty()) return;
         Minecraft mc = mc();
         if (mc == null || mc.player == null || mc.level == null) return;
+        double[] scr = new double[2];
         for (int i = 0; i < chests.size(); i++) {
             BlockPos pos = chests.get(i);
             boolean full = fullMarked.contains(pos);
             int col = full ? 0xFFFF5555 : 0xFF00E8A0;
             double minX = pos.getX(), minY = pos.getY(), minZ = pos.getZ();
             double maxX = minX + 1, maxY = minY + 1, maxZ = minZ + 1;
-            EspDraw.box(g, minX, minY, minZ, maxX, maxY, maxZ, col | 0xFF000000, full ? 2 : 1);
+            // Project 8 corners → 2D screen AABB
+            double sxMin = Double.POSITIVE_INFINITY, syMin = Double.POSITIVE_INFINITY;
+            double sxMax = Double.NEGATIVE_INFINITY, syMax = Double.NEGATIVE_INFINITY;
+            int visible = 0;
+            for (int cx = 0; cx < 2; cx++) {
+                for (int cy = 0; cy < 2; cy++) {
+                    for (int cz = 0; cz < 2; cz++) {
+                        double wx = cx == 0 ? minX : maxX;
+                        double wy = cy == 0 ? minY : maxY;
+                        double wz = cz == 0 ? minZ : maxZ;
+                        if (EspProjection.worldToScreen(wx, wy, wz, scr)) {
+                            visible++;
+                            sxMin = Math.min(sxMin, scr[0]);
+                            syMin = Math.min(syMin, scr[1]);
+                            sxMax = Math.max(sxMax, scr[0]);
+                            syMax = Math.max(syMax, scr[1]);
+                        }
+                    }
+                }
+            }
+            if (visible < 2) continue;
+            EspDraw.box(g, sxMin, syMin, sxMax, syMax, col | 0xFF000000, full ? 2 : 1);
             EspDraw.label(g, mc.font, "#" + (i + 1) + (full ? " FULL" : ""),
-                    (minX + maxX) * 0.5, minY - 10, col | 0xFF000000);
+                    (sxMin + sxMax) * 0.5, syMin - 12, col | 0xFF000000);
         }
     }
 }
