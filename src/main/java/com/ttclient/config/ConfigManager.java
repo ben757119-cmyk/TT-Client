@@ -9,11 +9,16 @@ import com.ttclient.settings.*;
 
 import java.io.*;
 import java.nio.file.*;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
 
 public class ConfigManager {
     private final Path configDir;
     private final Path configFile;
+
+    /** Shared layout: category display name -> [x, y, open(1/0)] */
+    public static final Map<String, double[]> PANEL_LAYOUT = new HashMap<>();
 
     public ConfigManager() {
         configDir = Path.of("config", "ttclient");
@@ -34,6 +39,15 @@ public class ConfigManager {
             }
             if (mod instanceof BlockESP be) props.setProperty(prefix + "blocks", be.saveBlocks());
             if (mod instanceof XRay xr) props.setProperty(prefix + "blocks", xr.saveBlocks());
+        }
+        // ClickGUI panel layout (x, y, open)
+        for (Map.Entry<String, double[]> e : PANEL_LAYOUT.entrySet()) {
+            String k = e.getKey();
+            double[] v = e.getValue();
+            if (v == null || v.length < 2) continue;
+            props.setProperty("gui.panel." + k + ".x", String.valueOf(v[0]));
+            props.setProperty("gui.panel." + k + ".y", String.valueOf(v[1]));
+            if (v.length >= 3) props.setProperty("gui.panel." + k + ".open", String.valueOf(v[2] >= 0.5));
         }
         try (OutputStream out = Files.newOutputStream(configFile)) {
             props.store(out, "TT Client Config");
@@ -72,5 +86,23 @@ public class ConfigManager {
                 if (blocks != null) xr.loadBlocks(blocks);
             }
         }
+        // Load ClickGUI panel layout into static map
+        PANEL_LAYOUT.clear();
+        for (String name : props.stringPropertyNames()) {
+            if (!name.startsWith("gui.panel.") || !name.endsWith(".x")) continue;
+            String cat = name.substring("gui.panel.".length(), name.length() - 2);
+            try {
+                double px = Double.parseDouble(props.getProperty("gui.panel." + cat + ".x", "0"));
+                double py = Double.parseDouble(props.getProperty("gui.panel." + cat + ".y", "0"));
+                boolean open = Boolean.parseBoolean(props.getProperty("gui.panel." + cat + ".open", "true"));
+                PANEL_LAYOUT.put(cat, new double[]{px, py, open ? 1.0 : 0.0});
+            } catch (Exception ignored) {}
+        }
+    }
+
+    public void savePanelLayout(Map<String, double[]> layout) {
+        PANEL_LAYOUT.clear();
+        if (layout != null) PANEL_LAYOUT.putAll(layout);
+        save();
     }
 }
