@@ -11,8 +11,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 
 /**
- * Freecam camera redirect — no @Shadow fields (hard-fail on mapping drift).
- * Uses ModifyArgs + CameraAccessor invokers only.
+ * Freecam camera redirect without @Shadow / @Invoker (those hard-crash on mapping drift).
  */
 @Mixin(Camera.class)
 public abstract class MixinCamera {
@@ -25,17 +24,35 @@ public abstract class MixinCamera {
         }
     }
 
-    private static void forceDetached(Camera self) {
+    private static void reflectSetPosRot(Camera self, double x, double y, double z, float yaw, float pitch) {
+        try {
+            for (var m : Camera.class.getDeclaredMethods()) {
+                if (m.getParameterCount() == 3
+                        && m.getParameterTypes()[0] == double.class
+                        && m.getParameterTypes()[1] == double.class
+                        && m.getParameterTypes()[2] == double.class) {
+                    String n = m.getName().toLowerCase();
+                    if (n.contains("pos") || n.contains("setposition") || n.equals("setposition")) {
+                        m.setAccessible(true);
+                        m.invoke(self, x, y, z);
+                    }
+                }
+                if (m.getParameterCount() == 2
+                        && m.getParameterTypes()[0] == float.class
+                        && m.getParameterTypes()[1] == float.class) {
+                    String n = m.getName().toLowerCase();
+                    if (n.contains("rot") || n.contains("setrotation")) {
+                        m.setAccessible(true);
+                        m.invoke(self, yaw, pitch);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
         try {
             for (var f : Camera.class.getDeclaredFields()) {
-                if (f.getType() == boolean.class) {
+                if (f.getType() == boolean.class && f.getName().toLowerCase().contains("detach")) {
                     f.setAccessible(true);
-                    // only flip the detached-like flag if currently false — best-effort
-                    // Prefer field named detached when present
-                    if (f.getName().toLowerCase().contains("detach")) {
-                        f.setBoolean(self, true);
-                        return;
-                    }
+                    f.setBoolean(self, true);
                 }
             }
         } catch (Throwable ignored) {}
@@ -43,7 +60,7 @@ public abstract class MixinCamera {
 
     @Inject(method = {"setup", "alignWithEntity"}, at = @At("HEAD"), require = 0)
     private void ttclient$detachHead(CallbackInfo ci) {
-        if (Freecam.isActive()) forceDetached((Camera) (Object) this);
+        // no-op head; RETURN handler applies pos
     }
 
     @ModifyArgs(
@@ -85,12 +102,6 @@ public abstract class MixinCamera {
         Freecam fc = Freecam.get();
         if (fc == null) return;
         float p = pt();
-        try {
-            Camera self = (Camera) (Object) this;
-            CameraAccessor a = (CameraAccessor) self;
-            a.ttclient$setPos(fc.getX(p), fc.getY(p), fc.getZ(p));
-            a.ttclient$setRot(fc.getYaw(p), fc.getPitch(p));
-            forceDetached(self);
-        } catch (Throwable ignored) {}
+        reflectSetPosRot((Camera) (Object) this, fc.getX(p), fc.getY(p), fc.getZ(p), fc.getYaw(p), fc.getPitch(p));
     }
 }

@@ -5,6 +5,7 @@ import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
 import com.ttclient.settings.NumberSetting;
 import com.ttclient.util.ChunkMeshReload;
+import net.minecraft.client.Camera;
 import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -13,13 +14,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
 
-/**
- * Meteor-style freecam:
- * - Own pos / yaw / pitch (mouse via Entity.turn cancel)
- * - Camera ModifyArgs supply eye
- * - Player body stays put; movement keys only move the camera
- * - Optional wall vision (terrain hide + mesh reload)
- */
+/** Meteor-style freecam — camera via mixins; forceCamera uses reflection (no CameraAccessor required). */
 public class Freecam extends Module {
     public final NumberSetting speed = addSetting(new NumberSetting("Speed", "Camera fly speed", 1.0, 0.1, 10.0, 0.1));
     public final NumberSetting speed2 = addSetting(new NumberSetting("Speed2", "Sprint multiplier", 2.0, 1.0, 5.0, 0.1));
@@ -31,7 +26,6 @@ public class Freecam extends Module {
     private static volatile boolean activeCache;
     public static volatile boolean wallVisionCache;
 
-    // Meteor: pos / prevPos
     private double posX, posY, posZ;
     private double prevX, prevY, prevZ;
     public float yaw, pitch;
@@ -43,7 +37,6 @@ public class Freecam extends Module {
     private boolean saved;
     private Double oldGamma;
 
-    // Meteor key state (not reading options after we force them false)
     private boolean forward, backward, left, right, up, down;
 
     public Freecam() {
@@ -60,9 +53,7 @@ public class Freecam extends Module {
         }
     }
 
-    public static boolean isActive() {
-        return activeCache;
-    }
+    public static boolean isActive() { return activeCache; }
 
     public double getX(float td) { return Mth.lerp(td, prevX, posX); }
     public double getY(float td) { return Mth.lerp(td, prevY, posY); }
@@ -70,7 +61,6 @@ public class Freecam extends Module {
     public float getYaw(float td) { return Mth.lerp(td, lastYaw, yaw); }
     public float getPitch(float td) { return Mth.lerp(td, lastPitch, pitch); }
 
-    /** Called from MixinEntity when mouse moves (Meteor changeLookDirection). */
     public void changeLookDirection(double deltaX, double deltaY) {
         lastYaw = yaw;
         lastPitch = pitch;
@@ -79,8 +69,7 @@ public class Freecam extends Module {
         pitch = Mth.clamp(pitch, -90f, 90f);
     }
 
-    public static void forceCamera(net.minecraft.client.Camera cam) {
-        // kept for GameRenderer fallback
+    public static void forceCamera(Camera cam) {
         if (cam == null || !activeCache) return;
         Freecam fc = get();
         if (fc == null || !fc.saved) return;
@@ -88,10 +77,28 @@ public class Freecam extends Module {
         try {
             pt = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false);
         } catch (Throwable ignored) {}
+        double x = fc.getX(pt), y = fc.getY(pt), z = fc.getZ(pt);
+        float yw = fc.getYaw(pt), pi = fc.getPitch(pt);
         try {
-            com.ttclient.mixin.CameraAccessor a = (com.ttclient.mixin.CameraAccessor) (Object) cam;
-            a.ttclient$setPos(fc.getX(pt), fc.getY(pt), fc.getZ(pt));
-            a.ttclient$setRot(fc.getYaw(pt), fc.getPitch(pt));
+            for (var m : Camera.class.getDeclaredMethods()) {
+                if (m.getParameterCount() == 3
+                        && m.getParameterTypes()[0] == double.class) {
+                    String n = m.getName().toLowerCase();
+                    if (n.contains("pos")) {
+                        m.setAccessible(true);
+                        m.invoke(cam, x, y, z);
+                    }
+                }
+                if (m.getParameterCount() == 2
+                        && m.getParameterTypes()[0] == float.class
+                        && m.getParameterTypes()[1] == float.class) {
+                    String n = m.getName().toLowerCase();
+                    if (n.contains("rot")) {
+                        m.setAccessible(true);
+                        m.invoke(cam, yw, pi);
+                    }
+                }
+            }
         } catch (Throwable ignored) {}
     }
 
@@ -143,26 +150,18 @@ public class Freecam extends Module {
     @Override
     public void onEnable() {
         Minecraft mc = mc();
-        if (mc == null || mc.player == null) {
-            setEnabled(false);
-            return;
-        }
+        if (mc == null || mc.player == null) { setEnabled(false); return; }
         LocalPlayer p = mc.player;
 
-        originX = p.getX();
-        originY = p.getY();
-        originZ = p.getZ();
-        originYaw = p.getYRot();
-        originPitch = p.getXRot();
+        originX = p.getX(); originY = p.getY(); originZ = p.getZ();
+        originYaw = p.getYRot(); originPitch = p.getXRot();
 
         double x = p.getX();
         double y = p.getY() + p.getEyeHeight();
         double z = p.getZ();
         try {
             Vec3 cp = mc.gameRenderer.mainCamera().position();
-            x = cp.x;
-            y = cp.y;
-            z = cp.z;
+            x = cp.x; y = cp.y; z = cp.z;
         } catch (Throwable ignored) {}
 
         posX = prevX = x;
@@ -180,7 +179,6 @@ public class Freecam extends Module {
         saved = true;
         activeCache = true;
 
-        // Seed key state
         try {
             forward = mc.options.keyUp.isDown();
             backward = mc.options.keyDown.isDown();
@@ -220,7 +218,6 @@ public class Freecam extends Module {
                 } catch (Throwable ignored) {}
                 p.setDeltaMovement(Vec3.ZERO);
             }
-            // Release keys so player isn't stuck
             try {
                 mc.options.keyUp.setDown(false);
                 mc.options.keyDown.setDown(false);
@@ -241,29 +238,19 @@ public class Freecam extends Module {
         if (mc == null || mc.player == null) return;
         LocalPlayer p = mc.player;
 
-        // Force first person like Meteor
         try {
             if (mc.options.getCameraType() != CameraType.FIRST_PERSON) {
                 mc.options.setCameraType(CameraType.FIRST_PERSON);
             }
         } catch (Throwable ignored) {}
 
-        // Update key state from options then clear vanilla so body does not walk
         try {
-            if (mc.options.keyUp.isDown()) forward = true;
-            if (mc.options.keyDown.isDown()) backward = true;
-            if (mc.options.keyLeft.isDown()) left = true;
-            if (mc.options.keyRight.isDown()) right = true;
-            if (mc.options.keyJump.isDown()) up = true;
-            if (mc.options.keyShift.isDown()) down = true;
-
-            // Also detect key releases roughly: if option not down, clear
-            if (!mc.options.keyUp.isDown()) forward = false;
-            if (!mc.options.keyDown.isDown()) backward = false;
-            if (!mc.options.keyLeft.isDown()) left = false;
-            if (!mc.options.keyRight.isDown()) right = false;
-            if (!mc.options.keyJump.isDown()) up = false;
-            if (!mc.options.keyShift.isDown()) down = false;
+            forward = mc.options.keyUp.isDown();
+            backward = mc.options.keyDown.isDown();
+            left = mc.options.keyLeft.isDown();
+            right = mc.options.keyRight.isDown();
+            up = mc.options.keyJump.isDown();
+            down = mc.options.keyShift.isDown();
 
             mc.options.keyUp.setDown(false);
             mc.options.keyDown.setDown(false);
@@ -273,46 +260,27 @@ public class Freecam extends Module {
             mc.options.keyShift.setDown(false);
         } catch (Throwable ignored) {}
 
-        prevX = posX;
-        prevY = posY;
-        prevZ = posZ;
-        lastYaw = yaw;
-        lastPitch = pitch;
+        prevX = posX; prevY = posY; prevZ = posZ;
+        lastYaw = yaw; lastPitch = pitch;
 
         double s = speed.get().doubleValue();
         try {
             if (mc.options.keySprint.isDown()) s *= speed2.get().doubleValue();
         } catch (Throwable ignored) {}
 
-        // Meteor horizontal move uses yaw only for forward (pitch separate for up/down on keys)
         Vec3 forwardVec = Vec3.directionFromRotation(0, yaw);
         Vec3 rightVec = Vec3.directionFromRotation(0, yaw + 90);
 
         double velX = 0, velY = 0, velZ = 0;
-        if (forward) {
-            velX += forwardVec.x * s;
-            velZ += forwardVec.z * s;
-        }
-        if (backward) {
-            velX -= forwardVec.x * s;
-            velZ -= forwardVec.z * s;
-        }
-        if (right) {
-            velX += rightVec.x * s;
-            velZ += rightVec.z * s;
-        }
-        if (left) {
-            velX -= rightVec.x * s;
-            velZ -= rightVec.z * s;
-        }
+        if (forward) { velX += forwardVec.x * s; velZ += forwardVec.z * s; }
+        if (backward) { velX -= forwardVec.x * s; velZ -= forwardVec.z * s; }
+        if (right) { velX += rightVec.x * s; velZ += rightVec.z * s; }
+        if (left) { velX -= rightVec.x * s; velZ -= rightVec.z * s; }
         if (up) velY += s;
         if (down) velY -= s;
 
-        posX += velX;
-        posY += velY;
-        posZ += velZ;
+        posX += velX; posY += velY; posZ += velZ;
 
-        // Body frozen at origin — position only, look stays at origin facing (Meteor)
         try {
             p.setDeltaMovement(Vec3.ZERO);
             p.setPos(originX, originY, originZ);
@@ -332,7 +300,6 @@ public class Freecam extends Module {
             } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
 
-        // Wall vision stays on for whole freecam session when enabled
         boolean want = wallVision.get() && activeCache;
         if (want != wallVisionCache) {
             wallVisionCache = want;
@@ -352,9 +319,7 @@ public class Freecam extends Module {
                     Object v = gammaOpt.getClass().getMethod("get").invoke(gammaOpt);
                     if (v instanceof Number n) oldGamma = n.doubleValue();
                 }
-                try {
-                    gammaOpt.getClass().getMethod("set", double.class).invoke(gammaOpt, 16.0);
-                } catch (Throwable ignored) {}
+                try { gammaOpt.getClass().getMethod("set", double.class).invoke(gammaOpt, 16.0); } catch (Throwable ignored) {}
             }
         } catch (Throwable ignored) {}
     }
@@ -362,10 +327,7 @@ public class Freecam extends Module {
     private void restoreGamma() {
         if (oldGamma == null) return;
         Minecraft mc = mc();
-        if (mc == null) {
-            oldGamma = null;
-            return;
-        }
+        if (mc == null) { oldGamma = null; return; }
         try {
             Object gammaOpt = mc.options.getClass().getMethod("gamma").invoke(mc.options);
             gammaOpt.getClass().getMethod("set", double.class).invoke(gammaOpt, oldGamma.doubleValue());

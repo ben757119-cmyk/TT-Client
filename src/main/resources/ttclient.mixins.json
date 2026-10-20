@@ -6,7 +6,6 @@
   "client": [
     "MixinBlockStateBase",
     "MixinCamera",
-    "CameraAccessor",
     "MixinGameRenderer",
     "MixinEntity"
   ],
