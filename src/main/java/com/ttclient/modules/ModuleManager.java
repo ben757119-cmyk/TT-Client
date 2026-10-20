@@ -20,6 +20,7 @@ public class ModuleManager {
 
     public void init() {
         register(new ClickGUIModule());
+        register(new SeizureMode());
         register(new StreamerMode());
         register(new HUD());
         register(new Notifications());

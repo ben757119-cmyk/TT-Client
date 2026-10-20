@@ -14,17 +14,15 @@ import org.lwjgl.glfw.GLFW;
 public class ClickGUIModule extends Module {
     public final ColorSetting accent = addSetting(new ColorSetting("Accent", "Panel accent color", 0xFF00E8A0));
     public final BoolSetting dim = addSetting(new BoolSetting("SolidDim", "Optional solid shade behind panels. Never vanilla blur.", false));
-    public final BoolSetting seizure = addSetting(new BoolSetting(
-            "SeizureMode", "Flashing rainbow accents everywhere (epilepsy warning)", false));
 
     public ClickGUIModule() {
         super("ClickGUI", "Opens the TT Client ClickGUI (Right Shift)", Category.CLIENT);
         setKeyBind(GLFW.GLFW_KEY_RIGHT_SHIFT);
     }
 
-    /** Live accent — solid color or full-speed rainbow when SeizureMode is on. */
+    /** Live accent — solid color or full-speed rainbow when SeizureMode module is on. */
     public int liveAccent() {
-        if (seizure.get()) {
+        if (isSeizure()) {
             float hue = (System.currentTimeMillis() % 1200L) / 1200f;
             int rgb = java.awt.Color.HSBtoRGB(hue, 1f, 1f);
             return 0xFF000000 | (rgb & 0x00FFFFFF);
@@ -45,8 +43,8 @@ public class ClickGUIModule extends Module {
     public static boolean isSeizure() {
         try {
             if (TTClientClient.modules != null) {
-                ClickGUIModule m = TTClientClient.modules.getModule(ClickGUIModule.class);
-                return m != null && m.seizure.get();
+                SeizureMode s = TTClientClient.modules.getModule(SeizureMode.class);
+                if (s != null && s.isEnabled()) return true;
             }
         } catch (Throwable ignored) {}
         return false;
@@ -65,7 +63,6 @@ public class ClickGUIModule extends Module {
         } catch (Throwable t) {
             cur = null;
         }
-        // Open from in-game HUD or title screen
         if (cur == null || cur instanceof TTTitleScreen) {
             try {
                 minecraft.gui.setScreen(new ClickGUIScreen());
