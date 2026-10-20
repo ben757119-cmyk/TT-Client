@@ -7,6 +7,7 @@ import com.ttclient.settings.BoolSetting;
 import com.ttclient.util.InvUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
@@ -16,11 +17,8 @@ import net.minecraft.world.phys.Vec3;
 /**
  * Wurst MaceDMG port for NeoForge 26.2.
  *
- * Vanilla smash needs server-side fallDistance &gt; 1.5.
- * Wurst injects before the attack packet:
+ * Sequence (before attack packet):
  *   4× Y+0 onGround=false, 1× Y+sqrt(500), 1× Y+0
- * See ServerGamePacketListenerImpl.handleMovePlayer — sqrt(500) is the
- * max vertical delta that is not rejected by the movement check.
  */
 public class MaceHack extends Module {
     public final BoolSetting onlyPlayers = addSetting(new BoolSetting(
@@ -61,7 +59,6 @@ public class MaceHack extends Module {
         } catch (Throwable ignored) {}
     }
 
-    /** Public for MaceAura / other combat. */
     public static void spoofBeforeAttack(LocalPlayer p) {
         if (p == null) return;
         if (!isActive()) return;
@@ -80,9 +77,6 @@ public class MaceHack extends Module {
         }
     }
 
-    /**
-     * Exact Wurst sequence. Do not change offsets — server rejects larger Y jumps.
-     */
     private static void sendWurstFallSpoof(LocalPlayer p) {
         if (p == null || p.connection == null) return;
         double x = p.getX();
@@ -91,7 +85,7 @@ public class MaceHack extends Module {
         boolean horiz = false;
         try { horiz = p.horizontalCollision; } catch (Throwable ignored) {}
 
-        double peak = Math.sqrt(500.0); // ~22.36067977
+        double peak = Math.sqrt(500.0);
 
         for (int i = 0; i < 4; i++) {
             sendPos(p, x, y, z, false, horiz);
@@ -100,48 +94,55 @@ public class MaceHack extends Module {
         sendPos(p, x, y, z, false, horiz);
     }
 
+    @SuppressWarnings({"rawtypes", "unchecked"})
     private static void sendPos(LocalPlayer p, double x, double y, double z, boolean onGround, boolean horiz) {
-        // Prefer mapped constructors for 26.2
-        try {
-            p.connection.send(new ServerboundMovePlayerPacket.Pos(x, y, z, onGround, horiz));
-            return;
-        } catch (Throwable ignored) {}
-        try {
-            p.connection.send(new ServerboundMovePlayerPacket.Pos(new Vec3(x, y, z), onGround, horiz));
-            return;
-        } catch (Throwable ignored) {}
-        try {
-            // Some mappings drop horizontalCollision
-            p.connection.send(new ServerboundMovePlayerPacket.Pos(x, y, z, onGround));
-            return;
-        } catch (Throwable ignored) {}
+        Packet pkt = null;
 
-        // Reflection fallback
+        // Prefer 5-arg Pos(x,y,z,onGround,horizontalCollision) — matches Wurst / 1.21+
         try {
-            Class<?> posCl = Class.forName("net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$Pos");
-            for (var c : posCl.getConstructors()) {
-                Class<?>[] pt = c.getParameterTypes();
-                Object pkt = null;
-                try {
-                    if (pt.length == 5 && pt[0] == double.class) {
-                        pkt = c.newInstance(x, y, z, onGround, horiz);
-                    } else if (pt.length == 4 && pt[0] == double.class) {
-                        pkt = c.newInstance(x, y, z, onGround);
-                    } else if (pt.length == 3 && Vec3.class.isAssignableFrom(pt[0])) {
-                        pkt = c.newInstance(new Vec3(x, y, z), onGround, horiz);
-                    } else if (pt.length == 2 && Vec3.class.isAssignableFrom(pt[0])) {
-                        pkt = c.newInstance(new Vec3(x, y, z), onGround);
-                    }
-                } catch (Throwable ignored) {}
-                if (pkt != null) {
-                    p.connection.send((net.minecraft.network.protocol.Packet<?>) pkt);
-                    return;
-                }
+            pkt = new ServerboundMovePlayerPacket.Pos(x, y, z, onGround, horiz);
+        } catch (Throwable ignored) {
+            pkt = null;
+        }
+
+        if (pkt == null) {
+            try {
+                pkt = new ServerboundMovePlayerPacket.Pos(new Vec3(x, y, z), onGround, horiz);
+            } catch (Throwable ignored) {
+                pkt = null;
             }
-        } catch (Throwable ignored) {}
+        }
+
+        if (pkt == null) {
+            try {
+                Class<?> posCl = Class.forName("net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$Pos");
+                for (var c : posCl.getConstructors()) {
+                    Class<?>[] pt = c.getParameterTypes();
+                    Object built = null;
+                    try {
+                        if (pt.length == 5 && pt[0] == double.class) {
+                            built = c.newInstance(x, y, z, onGround, horiz);
+                        } else if (pt.length == 3 && Vec3.class.isAssignableFrom(pt[0])) {
+                            built = c.newInstance(new Vec3(x, y, z), onGround, horiz);
+                        } else if (pt.length == 4 && pt[0] == double.class) {
+                            built = c.newInstance(x, y, z, onGround);
+                        }
+                    } catch (Throwable ignored) {}
+                    if (built instanceof Packet) {
+                        pkt = (Packet) built;
+                        break;
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        if (pkt != null) {
+            try {
+                p.connection.send(pkt);
+            } catch (Throwable ignored) {}
+        }
     }
 
-    // Tick path no longer drives attacks — mixin / event does. Keep empty for Auto optional later.
     @Override
     public void onTick() {}
 }

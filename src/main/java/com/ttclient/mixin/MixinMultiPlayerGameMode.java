@@ -13,10 +13,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * Inject at HEAD of client attack so fall-spoof packets leave BEFORE
  * ServerboundInteractPacket — same timing as Wurst PlayerAttacksEntityListener.
  */
-@Mixin(MultiPlayerGameMode.class)
+@Mixin(value = MultiPlayerGameMode.class, remap = true)
 public abstract class MixinMultiPlayerGameMode {
 
-    @Inject(method = "attack", at = @At("HEAD"), require = 0)
+    @Inject(method = {"attack", "attack(Lnet/minecraft/world/entity/player/Player;Lnet/minecraft/world/entity/Entity;)V"}, at = @At("HEAD"), require = 0)
     private void ttclient$maceBeforeAttack(Player player, Entity target, CallbackInfo ci) {
         try {
             MaceHack.onPlayerAttack(player, target);

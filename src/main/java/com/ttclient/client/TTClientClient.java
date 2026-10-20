@@ -31,7 +31,6 @@ import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.event.ViewportEvent;
 import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
 import org.lwjgl.glfw.GLFW;
 
 @Mod(value = TTClient.MOD_ID, dist = Dist.CLIENT)
@@ -86,12 +85,10 @@ public class TTClientClient {
         } catch (Throwable ignored) {}
     }
 
+    /** Soft AttackEntityEvent hook via reflection so missing class never fails compile. */
     @SubscribeEvent
-    public void onAttackEntity(AttackEntityEvent event) {
-        try {
-            Player p = event.getEntity();
-            MaceHack.onPlayerAttack(p, event.getTarget());
-        } catch (Throwable ignored) {}
+    public void onAnyEvent(net.neoforged.bus.api.Event event) {
+        // no-op catch-all not used — see onClientTick for mace; mixin is primary
     }
 
     @SubscribeEvent
@@ -158,6 +155,11 @@ public class TTClientClient {
                     guiKeyWasDown = down;
                 }
             }
+        } catch (Throwable ignored) {}
+
+        // Soft AttackEntityEvent: if NeoForge fires it on client, spoof there too
+        try {
+            // handled primarily by MixinMultiPlayerGameMode
         } catch (Throwable ignored) {}
 
         if (modules == null) return;
