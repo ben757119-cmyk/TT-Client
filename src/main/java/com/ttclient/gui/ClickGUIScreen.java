@@ -39,38 +39,49 @@ public class ClickGUIScreen extends Screen {
     private NumberSetting typing = null;
     private String typingBuffer = "";
 
-    private static final int PANEL_BG = 0xF00B0D12, HEADER_BG = 0xFF080A0E, TEXT_DIM = 0xFF6B7280, ROW_OFF = 0xFF9CA3AF;
-    private static final int SLIDER_BG = 0xFF141820, SEARCH_BG = 0xF0080A0E, ROW_ON_BG = 0x2200E8A0;
+    // High contrast: near-black dim + solid opaque panels so rounded edges read clearly
+    private static final int PANEL_BG = 0xF8161A24, HEADER_BG = 0xFF0C0E14, TEXT_DIM = 0xFF6B7280, ROW_OFF = 0xFF9CA3AF;
+    private static final int SLIDER_BG = 0xFF1A1E28, SEARCH_BG = 0xF80C0E14, ROW_ON_BG = 0x2800E8A0;
     private static final int ROW_H = 14, SETTING_H = 12, NUMBER_H = 26;
     private static final int SEARCH_X = 10, SEARCH_Y = 8, SEARCH_W = 160, SEARCH_H = 16;
     private static final int PANEL_W = 100, PANEL_GAP = 6, PANEL_START_Y = 8;
     private final List<Particle> particles = new ArrayList<>();
 
-    /** Proper rounded rect — center + sides + 4 corner quarter-circles via pixel fill. */
+    /**
+     * Fast rounded rect — center + side strips + stepped corners (no O(r²) per-pixel fills).
+     * This is the main lag fix for the ClickGUI.
+     */
     private static void roundedFill(GuiGraphicsExtractor g, int x1, int y1, int x2, int y2, int r, int color) {
         if (x2 <= x1 || y2 <= y1) return;
         if (r < 1) { g.fill(x1, y1, x2, y2, color); return; }
         r = Math.min(r, Math.min((x2 - x1) / 2, (y2 - y1) / 2));
+        // body
         g.fill(x1 + r, y1, x2 - r, y2, color);
+        // left / right strips
         g.fill(x1, y1 + r, x1 + r, y2 - r, color);
         g.fill(x2 - r, y1 + r, x2, y2 - r, color);
-        for (int dy = 0; dy < r; dy++) {
-            for (int dx = 0; dx < r; dx++) {
-                if (dx * dx + dy * dy > (r - 0.5f) * (r - 0.5f)) continue;
-                g.fill(x1 + r - 1 - dx, y1 + r - 1 - dy, x1 + r - dx, y1 + r - dy, color);
-                g.fill(x2 - r + dx, y1 + r - 1 - dy, x2 - r + 1 + dx, y1 + r - dy, color);
-                g.fill(x1 + r - 1 - dx, y2 - r + dy, x1 + r - dx, y2 - r + 1 + dy, color);
-                g.fill(x2 - r + dx, y2 - r + dy, x2 - r + 1 + dx, y2 - r + 1 + dy, color);
-            }
+        // stepped corners (cheap approximation of quarter-circles)
+        for (int i = 0; i < r; i++) {
+            int off = r - 1 - (int) Math.sqrt((double) (r * r - (r - 1 - i) * (r - 1 - i)));
+            // top-left
+            g.fill(x1 + off, y1 + i, x1 + r, y1 + i + 1, color);
+            // top-right
+            g.fill(x2 - r, y1 + i, x2 - off, y1 + i + 1, color);
+            // bottom-left
+            g.fill(x1 + off, y2 - 1 - i, x1 + r, y2 - i, color);
+            // bottom-right
+            g.fill(x2 - r, y2 - 1 - i, x2 - off, y2 - i, color);
         }
     }
 
     private static final class Particle {
         float x, y, vy, size;
+        int alpha;
         Particle(float x, float y) {
             this.x = x; this.y = y;
-            this.vy = 0.25f + (float) Math.random() * 0.85f;
-            this.size = 1 + (float) Math.random() * 2;
+            this.vy = 0.18f + (float) Math.random() * 1.15f;
+            this.size = 1f + (float) Math.random() * 4.5f; // 1..5.5 size variation
+            this.alpha = 0x28 + (int) (Math.random() * 0x50);
         }
     }
 
@@ -100,23 +111,30 @@ public class ClickGUIScreen extends Screen {
 
     @Override
     public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-        graphics.fill(0, 0, this.width, this.height, 0x99050A12);
-        graphics.fill(0, 0, this.width, this.height, 0x44060C18);
+        // Heavy dim so panels + rounded edges pop hard against the world
+        graphics.fill(0, 0, this.width, this.height, 0xE002040A);
+        graphics.fill(0, 0, this.width, this.height, 0x66000000);
         if (particles.isEmpty() && this.width > 0) {
-            for (int i = 0; i < 36; i++)
+            for (int i = 0; i < 110; i++)
                 particles.add(new Particle((float) (Math.random() * this.width), (float) (Math.random() * this.height)));
         }
         for (Particle p : particles) {
             p.y += p.vy;
-            if (p.y > this.height) { p.y = -4; p.x = (float) (Math.random() * Math.max(1, this.width)); }
+            if (p.y > this.height) {
+                p.y = -6;
+                p.x = (float) (Math.random() * Math.max(1, this.width));
+                p.vy = 0.18f + (float) Math.random() * 1.15f;
+                p.size = 1f + (float) Math.random() * 4.5f;
+                p.alpha = 0x28 + (int) (Math.random() * 0x50);
+            }
             int s = Math.max(1, (int) p.size);
-            graphics.fill((int) p.x, (int) p.y, (int) p.x + s, (int) p.y + s, 0x5500E8A0);
+            int col = (p.alpha << 24) | 0x00E8A0;
+            graphics.fill((int) p.x, (int) p.y, (int) p.x + s, (int) p.y + s, col);
         }
     }
 
-    @Override protected void extractBlurredBackground(GuiGraphicsExtractor graphics) {
-        try { super.extractBlurredBackground(graphics); } catch (Throwable ignored) {}
-    }
+    // Skip expensive blur — major lag source when GUI is open
+    @Override protected void extractBlurredBackground(GuiGraphicsExtractor graphics) {}
     @Override public void extractTransparentBackground(GuiGraphicsExtractor graphics) {}
     @Override protected void extractMenuBackground(GuiGraphicsExtractor graphics) {}
 
@@ -281,7 +299,8 @@ public class ClickGUIScreen extends Screen {
             int ix = (int) x, iy = (int) y;
             List<Module> mods = filteredModules();
             int bodyH = bodyHeight(mods);
-            roundedFill(g, ix + 2, iy + 2, ix + width + 2, iy + bodyH + 2, 8, 0x55000000);
+            // soft shadow + solid panel so rounded edges read against the dark dim
+            roundedFill(g, ix + 3, iy + 3, ix + width + 3, iy + bodyH + 3, 8, 0x88000000);
             roundedFill(g, ix, iy, ix + width, iy + bodyH, 8, PANEL_BG);
             roundedFill(g, ix, iy, ix + width, iy + headerHeight, 8, HEADER_BG);
             g.fill(ix, iy + headerHeight - 6, ix + width, iy + headerHeight, HEADER_BG);
@@ -393,131 +412,116 @@ public class ClickGUIScreen extends Screen {
                         }
                         my += h;
                     }
-                    if (mouseX >= x && mouseX <= x + width && mouseY >= my && mouseY <= my + SETTING_H && button == 0) {
-                        startBinding(mod);
-                        return true;
+                    if (mouseX >= x && mouseX <= x + width && mouseY >= my && mouseY <= my + SETTING_H) {
+                        if (button == 0) { startBinding(mod); return true; }
                     }
                     my += SETTING_H;
-                    if (mod instanceof BlockESP) my += SETTING_H;
+                    if (mod instanceof BlockESP be) {
+                        if (mouseX >= x && mouseX <= x + width && mouseY >= my && mouseY <= my + SETTING_H) {
+                            be.uiSearchFocused = true;
+                            searchFocused = false;
+                            return true;
+                        }
+                        my += SETTING_H;
+                    }
                 }
             }
             return false;
         }
 
-        public void mouseReleased() { dragging = false; }
-
-        public boolean mouseDragged(double mouseX, double mouseY) {
-            if (dragging) {
+        public boolean mouseDragged(double mouseX, double mouseY, int button) {
+            if (dragging && button == 0) {
                 x = mouseX - dragOffsetX;
                 y = mouseY - dragOffsetY;
                 return true;
             }
             return false;
         }
+
+        public void mouseReleased(int button) {
+            if (button == 0) dragging = false;
+        }
     }
 
     @Override
-    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
-        double mouseX = event.x(), mouseY = event.y();
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
+        double mx = event.x(), my = event.y();
         int button = event.button();
-        if (bindingModule != null && button >= 0) {
-            bindingModule.setKeyBind(2000 + button);
-            bindingModule = null;
-            return true;
-        }
-        if (button == 0 && mouseX >= SEARCH_X && mouseX <= SEARCH_X + SEARCH_W
-                && mouseY >= SEARCH_Y && mouseY <= SEARCH_Y + SEARCH_H) {
+        if (mx >= SEARCH_X && mx <= SEARCH_X + SEARCH_W && my >= SEARCH_Y && my <= SEARCH_Y + SEARCH_H) {
             searchFocused = true;
             commitTyping(true);
             return true;
         }
-        if (button == 0 && searchQuery != null && !searchQuery.isBlank() && manager() != null
-                && mouseX >= SEARCH_X && mouseX <= SEARCH_X + SEARCH_W && mouseY > SEARCH_Y + SEARCH_H + 14) {
-            String q = searchQuery.toLowerCase(Locale.ROOT);
-            int sy = SEARCH_Y + SEARCH_H + 16;
-            for (Module m : manager().getModules()) {
-                if (!m.getName().toLowerCase(Locale.ROOT).contains(q)
-                        && !m.getDescription().toLowerCase(Locale.ROOT).contains(q)) continue;
-                if (mouseY >= sy && mouseY <= sy + 14) { m.toggle(); return true; }
-                sy += 15;
-                if (sy > SEARCH_Y + SEARCH_H + 16 + 15 * 12) break;
-            }
+        searchFocused = false;
+        if (sliding != null) return true;
+        for (Panel p : panelList) if (p.mouseClicked(mx, my, button)) return true;
+        return super.mouseClicked(event, doubled);
+    }
+
+    @Override
+    public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
+        double mx = event.x();
+        if (sliding != null) {
+            applySlider(sliding, mx, sliderTrackX, sliderTrackW);
+            return true;
         }
-        if (button == 0) searchFocused = false;
-        for (int i = panelList.size() - 1; i >= 0; i--)
-            if (panelList.get(i).mouseClicked(mouseX, mouseY, button)) return true;
-        return super.mouseClicked(event, doubleClick);
+        for (Panel p : panelList) if (p.mouseDragged(mx, event.y(), event.button())) return true;
+        return super.mouseDragged(event, dx, dy);
     }
 
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
         sliding = null;
-        for (Panel panel : panelList) panel.mouseReleased();
+        for (Panel p : panelList) p.mouseReleased(event.button());
         return super.mouseReleased(event);
     }
 
     @Override
-    public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
-        if (sliding != null && sliderTrackW > 0) {
-            applySlider(sliding, event.x(), sliderTrackX, sliderTrackW);
+    public boolean keyPressed(KeyEvent event) {
+        int key = event.key();
+        if (bindingModule != null) {
+            if (key == GLFW.GLFW_KEY_ESCAPE) bindingModule.setKeyBind(0);
+            else bindingModule.setKeyBind(key);
+            bindingModule = null;
             return true;
         }
-        for (Panel panel : panelList)
-            if (panel.mouseDragged(event.x(), event.y())) return true;
-        return super.mouseDragged(event, dragX, dragY);
-    }
-
-    @Override
-    public boolean keyPressed(KeyEvent event) {
-        int keyCode = event.key();
         if (typing != null) {
-            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
-                commitTyping(true); return true;
-            }
-            if (keyCode == GLFW.GLFW_KEY_ESCAPE) { commitTyping(false); return true; }
-            if (keyCode == GLFW.GLFW_KEY_BACKSPACE && !typingBuffer.isEmpty()) {
-                typingBuffer = typingBuffer.substring(0, typingBuffer.length() - 1); return true;
-            }
-            if (keyCode >= GLFW.GLFW_KEY_0 && keyCode <= GLFW.GLFW_KEY_9) {
-                typingBuffer += (char) ('0' + (keyCode - GLFW.GLFW_KEY_0)); return true;
-            }
-            if (keyCode >= GLFW.GLFW_KEY_KP_0 && keyCode <= GLFW.GLFW_KEY_KP_9) {
-                typingBuffer += (char) ('0' + (keyCode - GLFW.GLFW_KEY_KP_0)); return true;
-            }
-            if (keyCode == GLFW.GLFW_KEY_PERIOD || keyCode == GLFW.GLFW_KEY_KP_DECIMAL) {
-                if (!typingBuffer.contains(".")) typingBuffer += '.';
+            if (key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER) { commitTyping(true); return true; }
+            if (key == GLFW.GLFW_KEY_ESCAPE) { commitTyping(false); return true; }
+            if (key == GLFW.GLFW_KEY_BACKSPACE && !typingBuffer.isEmpty()) {
+                typingBuffer = typingBuffer.substring(0, typingBuffer.length() - 1);
                 return true;
             }
             return true;
         }
-        if (bindingModule != null) {
-            if (keyCode == GLFW.GLFW_KEY_ESCAPE) bindingModule.setKeyBind(-1);
-            else if (keyCode > 0) bindingModule.setKeyBind(keyCode);
-            bindingModule = null;
+        if (searchFocused) {
+            if (key == GLFW.GLFW_KEY_ESCAPE) { searchQuery = ""; searchFocused = false; return true; }
+            if (key == GLFW.GLFW_KEY_BACKSPACE && !searchQuery.isEmpty()) {
+                searchQuery = searchQuery.substring(0, searchQuery.length() - 1);
+                return true;
+            }
             return true;
         }
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE || keyCode == GLFW.GLFW_KEY_RIGHT_SHIFT) {
-            onClose(); return true;
-        }
-        if (keyCode == GLFW.GLFW_KEY_BACKSPACE && !searchQuery.isEmpty()) {
-            searchQuery = searchQuery.substring(0, searchQuery.length() - 1);
-            searchFocused = true;
-            return true;
-        }
-        if (searchQuery.length() < 32) {
-            if (keyCode >= GLFW.GLFW_KEY_A && keyCode <= GLFW.GLFW_KEY_Z) {
-                searchQuery += (char) ('a' + (keyCode - GLFW.GLFW_KEY_A));
-                searchFocused = true; return true;
-            }
-            if (keyCode >= GLFW.GLFW_KEY_0 && keyCode <= GLFW.GLFW_KEY_9) {
-                searchQuery += (char) ('0' + (keyCode - GLFW.GLFW_KEY_0));
-                searchFocused = true; return true;
-            }
-            if (keyCode == GLFW.GLFW_KEY_SPACE) {
-                searchQuery += ' ';
-                searchFocused = true; return true;
-            }
-        }
+        if (key == GLFW.GLFW_KEY_ESCAPE) { onClose(); return true; }
         return super.keyPressed(event);
+    }
+
+    @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        if (typing != null) {
+            if ((codePoint >= '0' && codePoint <= '9') || codePoint == '.' || codePoint == '-' || codePoint == ',') {
+                typingBuffer += codePoint;
+                return true;
+            }
+            return true;
+        }
+        if (searchFocused) {
+            if (codePoint >= 32 && codePoint != 127) {
+                searchQuery += codePoint;
+                return true;
+            }
+            return true;
+        }
+        return super.charTyped(codePoint, modifiers);
     }
 }
