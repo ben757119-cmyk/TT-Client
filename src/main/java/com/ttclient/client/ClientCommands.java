@@ -20,10 +20,6 @@ public final class ClientCommands {
 
     private ClientCommands() {}
 
-    /**
-     * @return true if fully handled (caller should cancel chat send).
-     *         false for {@code .say} after rewriting to server message — caller sends rewritten text.
-     */
     public static boolean handle(String raw) {
         if (raw == null) return false;
         String msg = raw.trim();
@@ -44,7 +40,6 @@ public final class ClientCommands {
         String cmd = parts.get(0).toLowerCase(Locale.ROOT);
         List<String> args = parts.size() > 1 ? parts.subList(1, parts.size()) : List.of();
 
-        // .say is handled specially by TTClientClient (forwards to server)
         if (cmd.equals("say")) return false;
 
         switch (cmd) {
@@ -62,7 +57,6 @@ public final class ClientCommands {
         return true;
     }
 
-    /** Extract server message for {@code .say hello world} → {@code hello world}. */
     public static String sayPayload(String raw) {
         if (raw == null) return null;
         String msg = raw.trim();
@@ -70,9 +64,7 @@ public final class ClientCommands {
         String body = msg.substring(PREFIX.length()).trim();
         if (!body.toLowerCase(Locale.ROOT).startsWith("say")) return null;
         if (body.length() <= 3) return "";
-        String rest = body.substring(3).trim();
-        // allow ".say hello" after "say"
-        return rest;
+        return body.substring(3).trim();
     }
 
     public static String tabComplete(String buffer) {
@@ -267,35 +259,82 @@ public final class ClientCommands {
         }
     }
 
-    /** Chat only — never notifications. */
+    /** Client-only chat feedback — multiple 26.2-safe paths. */
     public static void chatOnly(String body) {
+        if (body == null) return;
         try {
             Minecraft mc = Minecraft.getInstance();
-            if (mc == null || mc.gui == null) return;
-            Component comp = Component.literal("[TT] " + body);
+            if (mc == null) return;
+            Component comp = Component.literal("§8[§aTT§8] §f" + body.replace('§', '§'));
+            // Prefer displayClientMessage so it always shows in the HUD chat
             try {
-                Object chat = mc.gui.getClass().getMethod("getChat").invoke(mc.gui);
-                chat.getClass().getMethod("addMessage", Component.class).invoke(chat, comp);
-                return;
+                if (mc.player != null) {
+                    mc.player.displayClientMessage(comp, false);
+                    return;
+                }
             } catch (Throwable ignored) {}
             try {
-                // Gui.getChat() alternate
-                for (var m : mc.gui.getClass().getMethods()) {
-                    if (m.getName().equals("getChat") && m.getParameterCount() == 0) {
-                        Object chat = m.invoke(mc.gui);
-                        for (var am : chat.getClass().getMethods()) {
-                            if (am.getName().equals("addMessage") && am.getParameterCount() >= 1) {
-                                am.invoke(chat, comp);
-                                return;
-                            }
+                if (mc.player != null) {
+                    for (var m : mc.player.getClass().getMethods()) {
+                        if (!m.getName().equals("displayClientMessage") && !m.getName().equals("sendSystemMessage")) continue;
+                        if (m.getParameterCount() == 2) {
+                            m.invoke(mc.player, comp, false);
+                            return;
+                        }
+                        if (m.getParameterCount() == 1) {
+                            m.invoke(mc.player, comp);
+                            return;
                         }
                     }
                 }
             } catch (Throwable ignored) {}
+            // Gui chat component
+            try {
+                if (mc.gui != null) {
+                    Object chat = null;
+                    try { chat = mc.gui.getClass().getMethod("getChat").invoke(mc.gui); } catch (Throwable ignored) {}
+                    if (chat == null) {
+                        for (var f : mc.gui.getClass().getDeclaredFields()) {
+                            String cn = f.getType().getName().toLowerCase();
+                            if (cn.contains("chat")) {
+                                f.setAccessible(true);
+                                chat = f.get(mc.gui);
+                                if (chat != null) break;
+                            }
+                        }
+                    }
+                    if (chat != null) {
+                        for (var am : chat.getClass().getMethods()) {
+                            if (!am.getName().equals("addMessage")) continue;
+                            Class<?>[] pt = am.getParameterTypes();
+                            try {
+                                if (pt.length == 1 && Component.class.isAssignableFrom(pt[0])) {
+                                    am.invoke(chat, comp);
+                                    return;
+                                }
+                                if (pt.length >= 1) {
+                                    Object[] args = new Object[pt.length];
+                                    args[0] = comp;
+                                    for (int i = 1; i < pt.length; i++) {
+                                        if (pt[i] == boolean.class) args[i] = false;
+                                        else if (pt[i] == int.class) args[i] = 0;
+                                        else args[i] = null;
+                                    }
+                                    am.invoke(chat, args);
+                                    return;
+                                }
+                            } catch (Throwable ignored) {}
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
+            // Last resort: system toast via notification manager if present
+            try {
+                NotificationManager.push("TT", body.replaceAll("§.", ""));
+            } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
     }
 
-    /** Legacy alias — chat only (no toast spam). */
     public static void chat(String body) {
         chatOnly(body);
     }
