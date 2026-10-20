@@ -14,8 +14,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Clean TT Client title screen — ClickGUI palette, falling particles,
- * watermark + recent updates. Opened via ScreenEvent when CustomMainMenu is on.
+ * Clean TT Client title screen — ClickGUI palette, full-screen particles,
+ * watermark + recent updates.
  */
 public class TTTitleScreen extends Screen {
     private static final int ACCENT = 0xFF00E8A0;
@@ -24,13 +24,14 @@ public class TTTitleScreen extends Screen {
     private static final int BTN_BG = 0xF0161A24;
     private static final int BTN_BG_HOV = 0xF0202630;
     private static final int PANEL = 0xE00C0E14;
+    private static final int PARTICLE_COUNT = 220;
 
     private static final String[] UPDATES = {
+            "v1.29.0  denser particles · branding · anchor lock",
+            "v1.28.9  custom main menu + server watermark",
             "v1.28.8  panel layout saves across relaunch",
-            "v1.28.7  ClickGUI contrast + particle rain",
-            "v1.28.7  ChestRelay settle + hardened loot",
+            "v1.28.7  ClickGUI contrast + ChestRelay loot",
             "v1.28.6  full settings UI restored",
-            "v1.28.5  safer mixins (no ChatScreen crash)",
     };
 
     private final List<Particle> particles = new ArrayList<>();
@@ -50,6 +51,15 @@ public class TTTitleScreen extends Screen {
         return ACCENT;
     }
 
+    private void ensureParticles() {
+        if (width <= 0 || height <= 0) return;
+        while (particles.size() < PARTICLE_COUNT) {
+            particles.add(new Particle(
+                    (float) (Math.random() * width),
+                    (float) (Math.random() * height)));
+        }
+    }
+
     @Override
     protected void init() {
         buttons.clear();
@@ -60,12 +70,8 @@ public class TTTitleScreen extends Screen {
         buttons.add(new MenuButton("Multiplayer", cx, cy + (bh + gap), bw, bh, this::openMultiplayer));
         buttons.add(new MenuButton("Options", cx, cy + 2 * (bh + gap), bw, bh, this::openOptions));
         buttons.add(new MenuButton("Quit", cx, cy + 3 * (bh + gap), bw, bh, this::quitGame));
-        if (particles.isEmpty() && width > 0) {
-            for (int i = 0; i < 90; i++) {
-                particles.add(new Particle((float) (Math.random() * Math.max(1, width)),
-                        (float) (Math.random() * Math.max(1, height))));
-            }
-        }
+        particles.clear();
+        ensureParticles();
     }
 
     @Override public boolean isPauseScreen() { return false; }
@@ -76,20 +82,18 @@ public class TTTitleScreen extends Screen {
         g.fill(0, 0, width, height, 0x66000000);
         g.fill(0, 0, width, 80, 0x1800E8A0);
 
-        if (particles.isEmpty() && width > 0) {
-            for (int i = 0; i < 90; i++)
-                particles.add(new Particle((float) (Math.random() * width), (float) (Math.random() * height)));
-        }
+        ensureParticles();
         int ac = accent() & 0x00FFFFFF;
         for (Particle p : particles) {
             p.y += p.vy;
-            if (p.y > height) {
-                p.y = -6;
+            p.x += p.vx;
+            if (p.y > height + 8) {
+                p.y = -8;
                 p.x = (float) (Math.random() * Math.max(1, width));
-                p.vy = 0.18f + (float) Math.random() * 1.1f;
-                p.size = 1f + (float) Math.random() * 4f;
-                p.alpha = 0x28 + (int) (Math.random() * 0x48);
+                p.respawn();
             }
+            if (p.x < -8) p.x = width + 4;
+            if (p.x > width + 8) p.x = -4;
             int s = Math.max(1, (int) p.size);
             g.fill((int) p.x, (int) p.y, (int) p.x + s, (int) p.y + s, (p.alpha << 24) | ac);
         }
@@ -105,7 +109,7 @@ public class TTTitleScreen extends Screen {
         String title = "TT CLIENT";
         int tw = font.width(title);
         g.text(font, title, width / 2 - tw / 2, height / 2 - 68, ac, false);
-        String sub = "v" + TTClient.VERSION + "  ·  utility client";
+        String sub = "v" + TTClient.VERSION + "  ·  the third";
         g.text(font, sub, width / 2 - font.width(sub) / 2, height / 2 - 54, TEXT_DIM, false);
         int lineW = Math.max(tw, 120);
         g.fill(width / 2 - lineW / 2, height / 2 - 46, width / 2 + lineW / 2, height / 2 - 45, ac & 0x88FFFFFF);
@@ -116,7 +120,7 @@ public class TTTitleScreen extends Screen {
         }
 
         int lx = 12, ly = height - 14 - UPDATES.length * 11 - 28;
-        roundedFill(g, lx - 4, ly - 6, lx + 210, height - 10, 6, PANEL);
+        roundedFill(g, lx - 4, ly - 6, lx + 220, height - 10, 6, PANEL);
         g.fill(lx - 4, ly - 6, lx - 2, height - 10, ac);
         g.text(font, "TT Client  v" + TTClient.VERSION, lx, ly, ac, false);
         g.text(font, "recent updates", lx, ly + 12, TEXT_DIM, false);
@@ -232,13 +236,17 @@ public class TTTitleScreen extends Screen {
     }
 
     private static final class Particle {
-        float x, y, vy, size;
+        float x, y, vx, vy, size;
         int alpha;
         Particle(float x, float y) {
             this.x = x; this.y = y;
-            this.vy = 0.18f + (float) Math.random() * 1.1f;
-            this.size = 1f + (float) Math.random() * 4f;
-            this.alpha = 0x28 + (int) (Math.random() * 0x48);
+            respawn();
+        }
+        void respawn() {
+            this.vy = 0.22f + (float) Math.random() * 1.35f;
+            this.vx = ((float) Math.random() - 0.5f) * 0.35f;
+            this.size = 1f + (float) Math.random() * 4.5f;
+            this.alpha = 0x30 + (int) (Math.random() * 0x55);
         }
     }
 
