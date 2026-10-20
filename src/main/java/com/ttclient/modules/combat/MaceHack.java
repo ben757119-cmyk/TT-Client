@@ -22,12 +22,12 @@ import net.minecraft.world.phys.Vec3;
 /**
  * Mace smash damage — server-side fall distance spoof.
  *
- * Vanilla mace smash requires fallDistance &gt; 1.5 on the *server*.
+ * Vanilla mace smash requires fallDistance > 1.5 on the *server*.
  * Client-only setFallDistance does nothing useful.
  *
  * Wurst MaceDMG approach (proven on 1.21):
  *   before attack, send Pos packets that accumulate fall on the server:
- *     4x same Y onGround=false, 1x Y+sqrt(500) (~22.4), 1x same Y.
+ *     4x same Y onGround=false, 1x Y+height, 1x same Y.
  * See ServerGamePacketListenerImpl.handleMovePlayer for the server check.
  */
 public class MaceHack extends Module {
@@ -71,7 +71,7 @@ public class MaceHack extends Module {
             if (mods == null) return;
             MaceHack h = mods.getModule(MaceHack.class);
             if (h == null || !h.isEnabled()) return;
-            h.sendFallPackets(p, h.height.get());
+            h.sendFallPackets(p, h.height.get().doubleValue());
         } catch (Throwable ignored) {}
     }
 
@@ -81,13 +81,14 @@ public class MaceHack extends Module {
             if (mods == null) return 22f;
             MaceHack h = mods.getModule(MaceHack.class);
             if (h == null || !h.isEnabled()) return 22f;
-            return (float) h.height.get();
+            return (float) h.height.get().doubleValue();
         } catch (Throwable t) {
             return 22f;
         }
     }
 
     /** @deprecated use spoofBeforeAttack — client fall alone does not smash */
+    @Deprecated
     public static void applySpoof(LocalPlayer p, float fallDist) {
         spoofBeforeAttack(p);
     }
@@ -129,11 +130,13 @@ public class MaceHack extends Module {
         LivingEntity target = resolveTarget(mc, p);
         if (target == null) return;
 
+        double h = height.get().doubleValue();
+
         // Packet fall spoof FIRST, then attack — server accumulates fallDistance
-        sendFallPackets(p, height.get());
+        sendFallPackets(p, h);
 
         // Client-side state (helps local prediction / particles)
-        setClientFall(p, (float) height.get());
+        setClientFall(p, (float) h);
 
         try { mc.gameMode.attack(p, target); } catch (Throwable ignored) {}
         try { p.swing(InteractionHand.MAIN_HAND); } catch (Throwable ignored) {}
@@ -153,10 +156,7 @@ public class MaceHack extends Module {
         boolean horiz = false;
         try { horiz = p.horizontalCollision; } catch (Throwable ignored) {}
 
-        // Wurst: 4x zero offset, then sqrt(500)~22.36, then zero.
-        // Generalize: use configured height (clamped) instead of fixed sqrt(500).
         double up = Math.max(1.5, Math.min(fallHeight, 50.0));
-        // Paper/vanilla soft-cap style: small steps then big jump
         for (int i = 0; i < 4; i++) {
             sendPos(p, x, y, z, false, horiz);
         }
@@ -166,16 +166,13 @@ public class MaceHack extends Module {
 
     private void sendPos(LocalPlayer p, double x, double y, double z, boolean onGround, boolean horiz) {
         try {
-            // 26.2: ServerboundMovePlayerPacket.Pos(x, y, z, onGround, horizontalCollision)
             p.connection.send(new ServerboundMovePlayerPacket.Pos(x, y, z, onGround, horiz));
             return;
         } catch (Throwable ignored) {}
         try {
-            // Fallback: Pos(Vec3, onGround, horizontalCollision)
             p.connection.send(new ServerboundMovePlayerPacket.Pos(new Vec3(x, y, z), onGround, horiz));
             return;
         } catch (Throwable ignored) {}
-        // Reflection fallback for mapping drift
         try {
             Class<?> posCl = Class.forName("net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$Pos");
             for (var c : posCl.getConstructors()) {
@@ -186,7 +183,6 @@ public class MaceHack extends Module {
                 } else if (pt.length == 3 && Vec3.class.isAssignableFrom(pt[0])) {
                     pkt = c.newInstance(new Vec3(x, y, z), onGround, horiz);
                 } else if (pt.length == 4 && pt[0] == double.class) {
-                    // older (x,y,z,onGround)
                     pkt = c.newInstance(x, y, z, onGround);
                 }
                 if (pkt != null) {
@@ -248,11 +244,11 @@ public class MaceHack extends Module {
     }
 
     private double effectiveRange() {
-        double r = range.get();
+        double r = range.get().doubleValue();
         if (useRage.get() && TTClientClient.modules != null) {
             Rage rage = TTClientClient.modules.getModule(Rage.class);
             if (rage != null && rage.isEnabled()) {
-                try { r = Math.max(r, Math.min(rage.reach.get(), 16.0)); }
+                try { r = Math.max(r, Math.min(rage.reach.get().doubleValue(), 16.0)); }
                 catch (Throwable ignored) {}
             }
         }
