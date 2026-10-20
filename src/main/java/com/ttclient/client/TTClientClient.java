@@ -39,6 +39,7 @@ public class TTClientClient {
     public static final int MOUSE_BIND_BASE = 2000;
 
     private boolean periodWasDown = false;
+    private boolean guiKeyWasDown = false;
 
     public TTClientClient() {
         modules = new ModuleManager();
@@ -107,7 +108,6 @@ public class TTClientClient {
         } catch (Throwable ignored) {}
     }
 
-    /** Swap vanilla TitleScreen for the clean TT menu when CustomMainMenu is enabled. */
     @SubscribeEvent
     public void onScreenOpen(ScreenEvent.Opening event) {
         try {
@@ -123,35 +123,19 @@ public class TTClientClient {
         } catch (Throwable ignored) {}
     }
 
-    /** TT Client watermark on multiplayer / server selector. */
+    /** TT chrome on multiplayer, connect, loading, inventory, pause, options… */
     @SubscribeEvent
     public void onScreenRender(ScreenEvent.Render.Post event) {
         try {
             Screen s = event.getScreen();
-            if (s == null) return;
-            String n = s.getClass().getName().toLowerCase();
-            boolean multi = n.contains("multiplayer") || n.contains("joinmulti")
-                    || n.contains("serverselect") || n.contains("serverlist");
-            if (!multi) return;
+            if (s == null || !TTBrand.shouldBrand(s)) return;
             GuiGraphicsExtractor g = event.getGuiGraphics();
             if (g == null) return;
-            Minecraft mc = Minecraft.getInstance();
-            if (mc == null || mc.font == null) return;
-            int ac = 0xFF00E8A0;
-            try {
-                if (modules != null) {
-                    ClickGUIModule gui = modules.getModule(ClickGUIModule.class);
-                    if (gui != null) ac = gui.accent.get();
-                }
-            } catch (Throwable ignored) {}
-            String mark = "TT Client  v" + TTClient.VERSION;
-            int pad = 6;
-            int tw = mc.font.width(mark);
-            int x = 8;
-            int y = s.height - 16;
-            g.fill(x - 2, y - 3, x + tw + pad, y + 11, 0xC0080A0E);
-            g.fill(x - 2, y - 3, x, y + 11, ac);
-            g.text(mc.font, mark, x + 2, y, ac, false);
+            String n = s.getClass().getName().toLowerCase();
+            boolean heavy = n.contains("connect") || n.contains("progress") || n.contains("loading")
+                    || n.contains("receiving") || n.contains("download");
+            if (heavy) TTBrand.drawTopBar(g, s);
+            TTBrand.drawWatermark(g, s);
         } catch (Throwable ignored) {}
     }
 
@@ -168,6 +152,28 @@ public class TTClientClient {
                 openChatWith(mc, ".");
             }
             periodWasDown = down;
+        } catch (Throwable ignored) {}
+
+        // Edge-trigger Right Shift so held key / key-repeat does not slam the GUI closed
+        try {
+            if (modules != null) {
+                ClickGUIModule gui = modules.getModule(ClickGUIModule.class);
+                int guiKey = gui != null && gui.getKeyBind() > 0 ? gui.getKeyBind() : GLFW.GLFW_KEY_RIGHT_SHIFT;
+                if (guiKey < MOUSE_BIND_BASE) {
+                    long win = mc.getWindow().handle();
+                    boolean down = GLFW.glfwGetKey(win, guiKey) == GLFW.GLFW_PRESS;
+                    if (down && !guiKeyWasDown) {
+                        Screen screen = currentScreen(mc);
+                        if (screen instanceof ClickGUIScreen) {
+                            openScreen(mc, null);
+                            if (config != null) config.save();
+                        } else if (screen == null) {
+                            openScreen(mc, new ClickGUIScreen());
+                        }
+                    }
+                    guiKeyWasDown = down;
+                }
+            }
         } catch (Throwable ignored) {}
 
         if (modules == null) return;
@@ -210,19 +216,11 @@ public class TTClientClient {
             return;
         }
 
+        // GUI toggle is edge-polled in onClientTick — skip here to avoid double-toggle / random close
         ClickGUIModule gui = modules.getModule(ClickGUIModule.class);
         int guiKey = gui != null ? gui.getKeyBind() : GLFW.GLFW_KEY_RIGHT_SHIFT;
         if (guiKey <= 0) guiKey = GLFW.GLFW_KEY_RIGHT_SHIFT;
-
-        if (key == guiKey) {
-            if (screen instanceof ClickGUIScreen) {
-                openScreen(mc, null);
-                if (config != null) config.save();
-            } else if (screen == null) {
-                openScreen(mc, new ClickGUIScreen());
-            }
-            return;
-        }
+        if (key == guiKey) return;
 
         if (screen != null) return;
         for (Module mod : modules.getModules()) {
