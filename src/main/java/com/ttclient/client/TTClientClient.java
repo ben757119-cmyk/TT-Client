@@ -8,6 +8,7 @@ import com.ttclient.modules.Module;
 import com.ttclient.modules.ModuleManager;
 import com.ttclient.modules.client.ClickGUIModule;
 import com.ttclient.modules.client.StreamerMode;
+import com.ttclient.modules.combat.MaceHack;
 import com.ttclient.modules.misc.AutoChatGame;
 import com.ttclient.modules.player.Freecam;
 import com.ttclient.util.ChunkMeshReload;
@@ -17,6 +18,7 @@ import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.player.Player;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
@@ -29,6 +31,7 @@ import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.event.ViewportEvent;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
 import org.lwjgl.glfw.GLFW;
 
 @Mod(value = TTClient.MOD_ID, dist = Dist.CLIENT)
@@ -80,6 +83,14 @@ public class TTClientClient {
             try {
                 openScreen(mc, ChatScreen.class.getDeclaredConstructor().newInstance());
             } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {}
+    }
+
+    @SubscribeEvent
+    public void onAttackEntity(AttackEntityEvent event) {
+        try {
+            Player p = event.getEntity();
+            MaceHack.onPlayerAttack(p, event.getTarget());
         } catch (Throwable ignored) {}
     }
 
@@ -138,7 +149,6 @@ public class TTClientClient {
                     if (down && !guiKeyWasDown) {
                         Screen screen = currentScreen(mc);
                         if (screen instanceof ClickGUIScreen) {
-                            // Return to title if we opened from menu, else close to game
                             openScreen(mc, null);
                             if (config != null) config.save();
                         } else if (screen == null || screen instanceof TTTitleScreen) {
