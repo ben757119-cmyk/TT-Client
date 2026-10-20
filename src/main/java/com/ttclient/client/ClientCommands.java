@@ -259,80 +259,111 @@ public final class ClientCommands {
         }
     }
 
-    /** Client-only chat feedback — multiple 26.2-safe paths. */
+    /**
+     * Client-only chat feedback for NeoForge 26.2.
+     * No direct displayClientMessage — method is not on LocalPlayer in this mapping.
+     * Uses reflection against player + Gui chat component only.
+     */
     public static void chatOnly(String body) {
         if (body == null) return;
         try {
             Minecraft mc = Minecraft.getInstance();
             if (mc == null) return;
-            Component comp = Component.literal("§8[§aTT§8] §f" + body.replace('§', '§'));
-            // Prefer displayClientMessage so it always shows in the HUD chat
+            Component comp = Component.literal("[TT] " + stripCodesForPlain(body));
+            // Prefer styled component when body already has section signs
             try {
-                if (mc.player != null) {
-                    mc.player.displayClientMessage(comp, false);
-                    return;
+                if (body.indexOf('§') >= 0) {
+                    comp = Component.literal("§8[§aTT§8] §f" + body);
                 }
             } catch (Throwable ignored) {}
-            try {
-                if (mc.player != null) {
-                    for (var m : mc.player.getClass().getMethods()) {
-                        if (!m.getName().equals("displayClientMessage") && !m.getName().equals("sendSystemMessage")) continue;
-                        if (m.getParameterCount() == 2) {
-                            m.invoke(mc.player, comp, false);
-                            return;
-                        }
-                        if (m.getParameterCount() == 1) {
-                            m.invoke(mc.player, comp);
-                            return;
-                        }
-                    }
-                }
-            } catch (Throwable ignored) {}
-            // Gui chat component
-            try {
-                if (mc.gui != null) {
-                    Object chat = null;
-                    try { chat = mc.gui.getClass().getMethod("getChat").invoke(mc.gui); } catch (Throwable ignored) {}
-                    if (chat == null) {
-                        for (var f : mc.gui.getClass().getDeclaredFields()) {
-                            String cn = f.getType().getName().toLowerCase();
-                            if (cn.contains("chat")) {
-                                f.setAccessible(true);
-                                chat = f.get(mc.gui);
-                                if (chat != null) break;
+
+            // 1) Player methods via reflection (sendSystemMessage / displayClientMessage / etc.)
+            if (mc.player != null) {
+                Object player = mc.player;
+                Class<?> c = player.getClass();
+                while (c != null && c != Object.class) {
+                    for (var m : c.getDeclaredMethods()) {
+                        String name = m.getName();
+                        if (!(name.equals("displayClientMessage")
+                                || name.equals("sendSystemMessage")
+                                || name.equals("sendMessage")
+                                || name.equals("displayClientMessage"))) continue;
+                        Class<?>[] pt = m.getParameterTypes();
+                        try {
+                            m.setAccessible(true);
+                            if (pt.length == 1 && Component.class.isAssignableFrom(pt[0])) {
+                                m.invoke(player, comp);
+                                return;
                             }
-                        }
+                            if (pt.length == 2 && Component.class.isAssignableFrom(pt[0])
+                                    && (pt[1] == boolean.class || pt[1] == Boolean.class)) {
+                                m.invoke(player, comp, false);
+                                return;
+                            }
+                        } catch (Throwable ignored) {}
                     }
-                    if (chat != null) {
-                        for (var am : chat.getClass().getMethods()) {
-                            if (!am.getName().equals("addMessage")) continue;
-                            Class<?>[] pt = am.getParameterTypes();
+                    c = c.getSuperclass();
+                }
+            }
+
+            // 2) Gui chat component
+            if (mc.gui != null) {
+                Object chat = null;
+                try {
+                    chat = mc.gui.getClass().getMethod("getChat").invoke(mc.gui);
+                } catch (Throwable ignored) {}
+                if (chat == null) {
+                    Class<?> gc = mc.gui.getClass();
+                    while (gc != null && gc != Object.class && chat == null) {
+                        for (var f : gc.getDeclaredFields()) {
                             try {
-                                if (pt.length == 1 && Component.class.isAssignableFrom(pt[0])) {
-                                    am.invoke(chat, comp);
-                                    return;
-                                }
-                                if (pt.length >= 1) {
-                                    Object[] args = new Object[pt.length];
-                                    args[0] = comp;
-                                    for (int i = 1; i < pt.length; i++) {
-                                        if (pt[i] == boolean.class) args[i] = false;
-                                        else if (pt[i] == int.class) args[i] = 0;
-                                        else args[i] = null;
-                                    }
-                                    am.invoke(chat, args);
-                                    return;
+                                String cn = f.getType().getName().toLowerCase(Locale.ROOT);
+                                if (cn.contains("chat")) {
+                                    f.setAccessible(true);
+                                    Object v = f.get(mc.gui);
+                                    if (v != null) { chat = v; break; }
                                 }
                             } catch (Throwable ignored) {}
                         }
+                        gc = gc.getSuperclass();
                     }
                 }
-            } catch (Throwable ignored) {}
-            // Last resort: system toast via notification manager if present
-            try {
-                NotificationManager.push("TT", body.replaceAll("§.", ""));
-            } catch (Throwable ignored) {}
+                if (chat != null) {
+                    for (var am : chat.getClass().getMethods()) {
+                        if (!am.getName().equals("addMessage")) continue;
+                        Class<?>[] pt = am.getParameterTypes();
+                        try {
+                            if (pt.length == 1 && Component.class.isAssignableFrom(pt[0])) {
+                                am.invoke(chat, comp);
+                                return;
+                            }
+                            if (pt.length >= 1 && Component.class.isAssignableFrom(pt[0])) {
+                                Object[] args = new Object[pt.length];
+                                args[0] = comp;
+                                for (int i = 1; i < pt.length; i++) {
+                                    if (pt[i] == boolean.class || pt[i] == Boolean.class) args[i] = false;
+                                    else if (pt[i] == int.class || pt[i] == Integer.class) args[i] = 0;
+                                    else args[i] = null;
+                                }
+                                am.invoke(chat, args);
+                                return;
+                            }
+                        } catch (Throwable ignored) {}
+                    }
+                }
+            }
         } catch (Throwable ignored) {}
+    }
+
+    private static String stripCodesForPlain(String s) {
+        if (s == null) return "";
+        StringBuilder out = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if (ch == '§' && i + 1 < s.length()) { i++; continue; }
+            out.append(ch);
+        }
+        return out.toString();
     }
 
     public static void chat(String body) {
