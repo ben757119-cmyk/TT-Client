@@ -34,6 +34,8 @@ public class TTClientClient {
     public static ConfigManager config;
     public static final int MOUSE_BIND_BASE = 2000;
 
+    private boolean periodWasDown = false;
+
     public TTClientClient() {
         modules = new ModuleManager();
         TTClient.modules = modules;
@@ -47,7 +49,10 @@ public class TTClientClient {
     }
 
     private static Screen currentScreen(Minecraft mc) {
-        try { return mc.gui.screen(); } catch (Throwable t) { return null; }
+        try { return mc.gui.screen(); } catch (Throwable t) {
+            try { return (Screen) Minecraft.class.getMethod("getScreen").invoke(mc); }
+            catch (Throwable t2) { return null; }
+        }
     }
 
     private static void openScreen(Minecraft mc, Screen screen) {
@@ -57,7 +62,6 @@ public class TTClientClient {
 
     private static void openChatWith(Minecraft mc, String initial) {
         try {
-            // ChatScreen(String) common
             try {
                 var ctor = ChatScreen.class.getConstructor(String.class);
                 openScreen(mc, ctor.newInstance(initial));
@@ -68,21 +72,33 @@ public class TTClientClient {
                 openScreen(mc, ctor.newInstance(initial, false));
                 return;
             } catch (Throwable ignored) {}
-            openScreen(mc, ChatScreen.class.getDeclaredConstructor().newInstance());
-            // best-effort set text after open
+            // fallback: open blank chat then force text
+            try {
+                openScreen(mc, ChatScreen.class.getDeclaredConstructor().newInstance());
+            } catch (Throwable ignored) {}
+            final String text = initial;
             mc.execute(() -> {
                 try {
                     Screen s = currentScreen(mc);
-                    if (!(s instanceof ChatScreen)) return;
-                    for (var f : s.getClass().getDeclaredFields()) {
-                        f.setAccessible(true);
-                        Object v = f.get(s);
-                        if (v == null) continue;
-                        String cn = v.getClass().getName().toLowerCase();
-                        if (cn.contains("editbox") || cn.contains("textfield")) {
-                            v.getClass().getMethod("setValue", String.class).invoke(v, initial);
-                            return;
+                    if (s == null) return;
+                    // walk fields + super for EditBox
+                    Class<?> c = s.getClass();
+                    while (c != null && c != Object.class) {
+                        for (var f : c.getDeclaredFields()) {
+                            try {
+                                f.setAccessible(true);
+                                Object v = f.get(s);
+                                if (v == null) continue;
+                                String cn = v.getClass().getName().toLowerCase();
+                                if (cn.contains("editbox") || cn.contains("textfield") || cn.contains("textbox")) {
+                                    try { v.getClass().getMethod("setValue", String.class).invoke(v, text); return; }
+                                    catch (Throwable ignored) {}
+                                    try { v.getClass().getMethod("setText", String.class).invoke(v, text); return; }
+                                    catch (Throwable ignored) {}
+                                }
+                            } catch (Throwable ignored) {}
                         }
+                        c = c.getSuperclass();
                     }
                 } catch (Throwable ignored) {}
             });
@@ -92,8 +108,20 @@ public class TTClientClient {
     @SubscribeEvent
     public void onClientTick(ClientTickEvent.Post event) {
         ChunkMeshReload.tick();
-        if (modules == null) return;
         Minecraft mc = Minecraft.getInstance();
+        if (mc == null) return;
+
+        // Fallback: poll GLFW for period when no screen is open
+        try {
+            long win = mc.getWindow().handle();
+            boolean down = GLFW.glfwGetKey(win, GLFW.GLFW_KEY_PERIOD) == GLFW.GLFW_PRESS;
+            if (down && !periodWasDown && currentScreen(mc) == null && mc.player != null) {
+                openChatWith(mc, ".");
+            }
+            periodWasDown = down;
+        } catch (Throwable ignored) {}
+
+        if (modules == null) return;
         if (mc.player == null) return;
         modules.onTick();
     }
@@ -112,14 +140,15 @@ public class TTClientClient {
     @SubscribeEvent
     public void onKey(InputEvent.Key event) {
         if (modules == null) return;
-        if (event.getAction() != GLFW.GLFW_PRESS) return;
+        int action = event.getAction();
+        if (action != GLFW.GLFW_PRESS && action != 1) return;
         int key = event.getKey();
         if (key <= 0 || key == GLFW.GLFW_KEY_UNKNOWN) return;
         Minecraft mc = Minecraft.getInstance();
         Screen screen = currentScreen(mc);
 
         // Press "." in-world → open chat with "." pretyped
-        if (screen == null && key == GLFW.GLFW_KEY_PERIOD) {
+        if (screen == null && (key == GLFW.GLFW_KEY_PERIOD || key == 46)) {
             openChatWith(mc, ".");
             return;
         }
@@ -210,7 +239,6 @@ public class TTClientClient {
             if (msg == null) return;
             if (!msg.trim().startsWith(ClientCommands.PREFIX)) return;
 
-            // .say <text> → send <text> to server
             String say = ClientCommands.sayPayload(msg);
             if (say != null) {
                 event.setCanceled(true);
@@ -221,7 +249,6 @@ public class TTClientClient {
                             mc.player.connection.sendChat(say);
                         } catch (Throwable t) {
                             try {
-                                // fallback reflection
                                 Object conn = mc.player.connection;
                                 conn.getClass().getMethod("sendChat", String.class).invoke(conn, say);
                             } catch (Throwable ignored) {}
