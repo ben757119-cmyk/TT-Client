@@ -8,37 +8,49 @@ import com.ttclient.settings.NumberSetting;
 import com.ttclient.util.InvUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
+/**
+ * Mace smash damage — server-side fall distance spoof.
+ *
+ * Vanilla mace smash requires fallDistance &gt; 1.5 on the *server*.
+ * Client-only setFallDistance does nothing useful.
+ *
+ * Wurst MaceDMG approach (proven on 1.21):
+ *   before attack, send Pos packets that accumulate fall on the server:
+ *     4x same Y onGround=false, 1x Y+sqrt(500) (~22.4), 1x same Y.
+ * See ServerGamePacketListenerImpl.handleMovePlayer for the server check.
+ */
 public class MaceHack extends Module {
-    public final NumberSetting hearts = addSetting(new NumberSetting(
-            "Hearts", "Smash hits per burst", 8.0, 1.0, 30.0, 1.0));
-    public final NumberSetting fall = addSetting(new NumberSetting(
-            "Fall", "Spoofed fall distance", 40.0, 5.0, 100.0, 1.0));
-    public final BoolSetting always = addSetting(new BoolSetting(
-            "AlwaysSpoof", "Spoof fall every tick while holding mace", true));
+    public final NumberSetting height = addSetting(new NumberSetting(
+            "Height", "Spoofed fall height (blocks). ~22 = max useful smash", 22.0, 2.0, 50.0, 0.5));
     public final BoolSetting onlyPlayers = addSetting(new BoolSetting(
             "OnlyPlayers", "Only players", true));
     public final NumberSetting range = addSetting(new NumberSetting(
-            "Range", "Target range", 6.0, 2.0, 64.0, 0.1));
+            "Range", "Target range", 6.0, 2.0, 16.0, 0.1));
     public final BoolSetting useRage = addSetting(new BoolSetting(
             "UseRage", "Use Rage reach when on", true));
     public final BoolSetting auto = addSetting(new BoolSetting(
-            "Auto", "Keep smashing nearest target", true));
+            "Auto", "Auto-attack nearest target while holding mace", false));
+    public final NumberSetting cooldown = addSetting(new NumberSetting(
+            "Cooldown", "Ticks between auto hits", 12, 0, 40, 1));
+    public final BoolSetting onClick = addSetting(new BoolSetting(
+            "OnClick", "Spoof when you left-click (recommended)", true));
 
-    private int remaining;
-    private int targetId = -1;
+    private int timer;
     private boolean wasClick;
 
     public MaceHack() {
-        super("MaceHack", "Mace smash on the ground — paced multi-hit", Category.COMBAT);
+        super("MaceHack", "Mace smash on ground via packet fall spoof", Category.COMBAT);
     }
 
     public static boolean isActive() {
@@ -52,52 +64,37 @@ public class MaceHack extends Module {
         }
     }
 
+    /** Public entry so MaceAura / other combat can spoof before their own attack. */
+    public static void spoofBeforeAttack(LocalPlayer p) {
+        try {
+            var mods = TTClientClient.modules;
+            if (mods == null) return;
+            MaceHack h = mods.getModule(MaceHack.class);
+            if (h == null || !h.isEnabled()) return;
+            h.sendFallPackets(p, h.height.get());
+        } catch (Throwable ignored) {}
+    }
+
     public static float spoofAmount() {
         try {
             var mods = TTClientClient.modules;
-            if (mods == null) return 40f;
+            if (mods == null) return 22f;
             MaceHack h = mods.getModule(MaceHack.class);
-            if (h == null || !h.isEnabled()) return 40f;
-            return (float) h.fall.get().doubleValue();
+            if (h == null || !h.isEnabled()) return 22f;
+            return (float) h.height.get();
         } catch (Throwable t) {
-            return 40f;
+            return 22f;
         }
     }
 
+    /** @deprecated use spoofBeforeAttack — client fall alone does not smash */
     public static void applySpoof(LocalPlayer p, float fallDist) {
-        if (p == null) return;
-        setFall(p, fallDist);
-        try { p.setOnGround(false); } catch (Throwable ignored) {}
-        try {
-            var v = p.getDeltaMovement();
-            p.setDeltaMovement(v.x, -1.2, v.z);
-        } catch (Throwable ignored) {}
-    }
-
-    private static void setFall(LocalPlayer p, float fallDist) {
-        try {
-            var m = LivingEntity.class.getMethod("setFallDistance", float.class);
-            m.invoke(p, fallDist);
-            return;
-        } catch (Throwable ignored) {}
-        try {
-            for (Class<?> c = p.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
-                for (var f : c.getDeclaredFields()) {
-                    if (f.getType() != float.class) continue;
-                    if (f.getName().toLowerCase().contains("fall")) {
-                        f.setAccessible(true);
-                        f.setFloat(p, fallDist);
-                        return;
-                    }
-                }
-            }
-        } catch (Throwable ignored) {}
+        spoofBeforeAttack(p);
     }
 
     @Override
     public void onDisable() {
-        remaining = 0;
-        targetId = -1;
+        timer = 0;
         wasClick = false;
     }
 
@@ -107,56 +104,126 @@ public class MaceHack extends Module {
         if (mc == null || mc.player == null || mc.level == null || mc.gameMode == null) return;
         LocalPlayer p = mc.player;
 
-        if (!InvUtils.isMace(p.getMainHandItem())) {
+        if (timer > 0) timer--;
+
+        if (!holdingMace(p)) {
             int slot = InvUtils.findHotbarMace(p);
-            if (slot >= 0 && (auto.get() || remaining > 0)) {
+            if (slot >= 0 && auto.get()) {
                 InvUtils.selectHotbar(p, slot);
             } else {
-                remaining = 0;
+                wasClick = false;
                 return;
             }
         }
-
-        float f = (float) fall.get().doubleValue();
-        if (always.get() || remaining > 0) applySpoof(p, f);
 
         boolean click = false;
         try { click = mc.options.keyAttack.isDown(); } catch (Throwable ignored) {}
         boolean edge = click && !wasClick;
         wasClick = click;
 
-        if (edge || (auto.get() && remaining <= 0)) {
-            LivingEntity t = resolveTarget(mc, p);
-            if (t != null) {
-                targetId = t.getId();
-                remaining = Math.max(1, (int) Math.round(hearts.get().doubleValue()));
-            }
-        }
+        boolean shouldHit = false;
+        if (onClick.get() && edge) shouldHit = true;
+        if (auto.get() && timer <= 0) shouldHit = true;
+        if (!shouldHit) return;
 
-        if (remaining <= 0) return;
+        LivingEntity target = resolveTarget(mc, p);
+        if (target == null) return;
 
-        LivingEntity target = findById(mc, targetId);
-        if (target == null || !target.isAlive()) {
-            target = resolveTarget(mc, p);
-            if (target == null) { remaining = 0; return; }
-            targetId = target.getId();
-        }
+        // Packet fall spoof FIRST, then attack — server accumulates fallDistance
+        sendFallPackets(p, height.get());
 
-        applySpoof(p, f);
-        lookAt(p, target);
+        // Client-side state (helps local prediction / particles)
+        setClientFall(p, (float) height.get());
+
         try { mc.gameMode.attack(p, target); } catch (Throwable ignored) {}
         try { p.swing(InteractionHand.MAIN_HAND); } catch (Throwable ignored) {}
-        applySpoof(p, f);
-        remaining--;
+
+        timer = Math.max(1, cooldown.getInt());
     }
 
-    private LivingEntity findById(Minecraft mc, int id) {
-        if (id < 0) return null;
+    /**
+     * Wurst MaceDMG packet sequence adapted for NeoForge 26.2.
+     * ServerGamePacketListenerImpl accumulates fall when onGround=false moves arrive.
+     */
+    private void sendFallPackets(LocalPlayer p, double fallHeight) {
+        if (p == null || p.connection == null) return;
+        double x = p.getX();
+        double y = p.getY();
+        double z = p.getZ();
+        boolean horiz = false;
+        try { horiz = p.horizontalCollision; } catch (Throwable ignored) {}
+
+        // Wurst: 4x zero offset, then sqrt(500)~22.36, then zero.
+        // Generalize: use configured height (clamped) instead of fixed sqrt(500).
+        double up = Math.max(1.5, Math.min(fallHeight, 50.0));
+        // Paper/vanilla soft-cap style: small steps then big jump
+        for (int i = 0; i < 4; i++) {
+            sendPos(p, x, y, z, false, horiz);
+        }
+        sendPos(p, x, y + up, z, false, horiz);
+        sendPos(p, x, y, z, false, horiz);
+    }
+
+    private void sendPos(LocalPlayer p, double x, double y, double z, boolean onGround, boolean horiz) {
         try {
-            Entity e = mc.level.getEntity(id);
-            if (e instanceof LivingEntity living && living.isAlive()) return living;
+            // 26.2: ServerboundMovePlayerPacket.Pos(x, y, z, onGround, horizontalCollision)
+            p.connection.send(new ServerboundMovePlayerPacket.Pos(x, y, z, onGround, horiz));
+            return;
         } catch (Throwable ignored) {}
-        return null;
+        try {
+            // Fallback: Pos(Vec3, onGround, horizontalCollision)
+            p.connection.send(new ServerboundMovePlayerPacket.Pos(new Vec3(x, y, z), onGround, horiz));
+            return;
+        } catch (Throwable ignored) {}
+        // Reflection fallback for mapping drift
+        try {
+            Class<?> posCl = Class.forName("net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$Pos");
+            for (var c : posCl.getConstructors()) {
+                Class<?>[] pt = c.getParameterTypes();
+                Object pkt = null;
+                if (pt.length == 5 && pt[0] == double.class) {
+                    pkt = c.newInstance(x, y, z, onGround, horiz);
+                } else if (pt.length == 3 && Vec3.class.isAssignableFrom(pt[0])) {
+                    pkt = c.newInstance(new Vec3(x, y, z), onGround, horiz);
+                } else if (pt.length == 4 && pt[0] == double.class) {
+                    // older (x,y,z,onGround)
+                    pkt = c.newInstance(x, y, z, onGround);
+                }
+                if (pkt != null) {
+                    p.connection.send((net.minecraft.network.protocol.Packet<?>) pkt);
+                    return;
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private void setClientFall(LocalPlayer p, float fallDist) {
+        try {
+            var m = LivingEntity.class.getMethod("setFallDistance", float.class);
+            m.invoke(p, fallDist);
+            return;
+        } catch (Throwable ignored) {}
+        try {
+            for (Class<?> c = p.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+                for (var f : c.getDeclaredFields()) {
+                    if (f.getType() != float.class) continue;
+                    String n = f.getName().toLowerCase();
+                    if (n.contains("fall")) {
+                        f.setAccessible(true);
+                        f.setFloat(p, fallDist);
+                        return;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+        try { p.setOnGround(false); } catch (Throwable ignored) {}
+    }
+
+    private boolean holdingMace(LocalPlayer p) {
+        try {
+            if (p.getMainHandItem().is(Items.MACE)) return true;
+        } catch (Throwable ignored) {}
+        return InvUtils.isMace(p.getMainHandItem());
     }
 
     private LivingEntity resolveTarget(Minecraft mc, LocalPlayer p) {
@@ -173,7 +240,7 @@ public class MaceHack extends Module {
             if (onlyPlayers.get() && !(living instanceof Player)) continue;
             Vec3 to = living.position().add(0, living.getBbHeight() * 0.5, 0).subtract(eye);
             if (to.lengthSqr() < 1e-6) continue;
-            if (look.dot(to.normalize()) < 0.25) continue;
+            if (look.dot(to.normalize()) < 0.15) continue;
             double d = p.distanceToSqr(living);
             if (d <= bestD) { bestD = d; best = living; }
         }
@@ -181,11 +248,11 @@ public class MaceHack extends Module {
     }
 
     private double effectiveRange() {
-        double r = range.get().doubleValue();
+        double r = range.get();
         if (useRage.get() && TTClientClient.modules != null) {
             Rage rage = TTClientClient.modules.getModule(Rage.class);
             if (rage != null && rage.isEnabled()) {
-                try { r = Math.max(r, Math.min(rage.reach.get().doubleValue(), 64.0)); }
+                try { r = Math.max(r, Math.min(rage.reach.get(), 16.0)); }
                 catch (Throwable ignored) {}
             }
         }
@@ -208,20 +275,5 @@ public class MaceHack extends Module {
             }
         } catch (Throwable ignored) {}
         return null;
-    }
-
-    private static void lookAt(LocalPlayer p, LivingEntity target) {
-        try {
-            Vec3 eye = p.getEyePosition();
-            Vec3 aim = target.position().add(0, target.getBbHeight() * 0.5, 0);
-            Vec3 d = aim.subtract(eye);
-            double horiz = Math.sqrt(d.x * d.x + d.z * d.z);
-            float yaw = (float) (Math.toDegrees(Math.atan2(d.z, d.x)) - 90.0);
-            float pitch = (float) (-Math.toDegrees(Math.atan2(d.y, horiz)));
-            p.setYRot(yaw);
-            p.setXRot(pitch);
-            p.yRotO = yaw;
-            p.xRotO = pitch;
-        } catch (Throwable ignored) {}
     }
 }
