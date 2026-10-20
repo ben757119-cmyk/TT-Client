@@ -8,9 +8,7 @@
     "MixinCamera",
     "CameraAccessor",
     "MixinGameRenderer",
-    "MixinEntity",
-    "MixinBlock",
-    "MixinChatScreen"
+    "MixinEntity"
   ],
   "injectors": {
     "defaultRequire": 0
