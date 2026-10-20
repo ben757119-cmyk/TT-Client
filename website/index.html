@@ -4,35 +4,153 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TT Client — NeoForge 26.2</title>
-  <meta name="description" content="TT Client utility client for NeoForge 26.2. Sharp ClickGUI on Right Shift." />
-  <link rel="stylesheet" href="styles.css" />
+  <meta name="description" content="TT Client (The Third) — utility client for NeoForge 26.2. ClickGUI, ChestRelay, combat & render modules." />
+  <style>
+    :root {
+      --bg: #02040a;
+      --panel: #0c0e14;
+      --panel2: #161a24;
+      --text: #e8eaed;
+      --dim: #6b7280;
+      --accent: #00e8a0;
+      --accent-dim: rgba(0, 232, 160, 0.15);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .container { max-width: 920px; margin: 0 auto; padding: 0 20px; }
+    .nav {
+      border-bottom: 1px solid rgba(0, 232, 160, 0.12);
+      background: rgba(2, 4, 10, 0.9);
+      backdrop-filter: blur(8px);
+      position: sticky; top: 0; z-index: 10;
+    }
+    .nav-inner {
+      display: flex; align-items: center; justify-content: space-between;
+      height: 56px;
+    }
+    .logo { display: flex; align-items: center; gap: 8px; color: var(--text); text-decoration: none; font-weight: 700; }
+    .logo-mark {
+      background: var(--accent-dim); color: var(--accent);
+      padding: 4px 8px; border-radius: 6px; font-size: 13px; letter-spacing: 0.04em;
+    }
+    .nav-links { display: flex; gap: 18px; align-items: center; font-size: 14px; }
+    .nav-links a { color: var(--dim); text-decoration: none; }
+    .nav-links a:hover { color: var(--text); }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 14px;
+      border: none; cursor: pointer; text-decoration: none !important;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .btn-primary { background: var(--accent); color: #02140e; }
+    .btn-primary:hover { filter: brightness(1.08); }
+    .btn-ghost {
+      background: var(--panel2); color: var(--text);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .btn-sm { padding: 7px 12px; font-size: 13px; }
+    .hero {
+      padding: 72px 0 48px;
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0, 232, 160, 0.12), transparent),
+        var(--bg);
+    }
+    .badge {
+      display: inline-block;
+      font-size: 12px; letter-spacing: 0.04em;
+      color: var(--accent);
+      background: var(--accent-dim);
+      padding: 5px 10px; border-radius: 999px;
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-size: clamp(2.2rem, 5vw, 3rem);
+      letter-spacing: -0.03em;
+      margin-bottom: 10px;
+    }
+    .hero-sub { color: var(--dim); max-width: 520px; margin-bottom: 28px; font-size: 1.05rem; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+    .section { padding: 40px 0; border-top: 1px solid rgba(255,255,255,0.05); }
+    h2 { font-size: 1.25rem; margin-bottom: 14px; color: var(--accent); }
+    ul { list-style: none; }
+    ul li {
+      padding: 8px 0 8px 16px;
+      border-left: 2px solid rgba(0, 232, 160, 0.35);
+      margin-bottom: 8px;
+      color: var(--text);
+      background: rgba(255,255,255,0.02);
+      border-radius: 0 6px 6px 0;
+    }
+    code {
+      background: var(--panel2);
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 0.9em;
+      color: var(--accent);
+    }
+    .install p { color: var(--dim); margin-bottom: 10px; }
+    footer {
+      padding: 28px 0 40px;
+      color: var(--dim);
+      font-size: 13px;
+      border-top: 1px solid rgba(255,255,255,0.05);
+    }
+    footer .muted { opacity: 0.7; }
+  </style>
 </head>
 <body>
   <nav class="nav"><div class="container nav-inner">
     <a href="#" class="logo"><span class="logo-mark">TT</span><span class="logo-text">Client</span></a>
     <div class="nav-links">
-      <a href="#features">Features</a>
+      <a href="#features">What's new</a>
       <a href="#install">Install</a>
-      <a href="https://github.com/ben757119-cmyk/TT-Client/releases/tag/v1.10.0" class="btn btn-primary btn-sm">Download</a>
+      <a href="https://github.com/ben757119-cmyk/TT-Client" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/ben757119-cmyk/TT-Client/releases/tag/v1.28.9" class="btn btn-primary btn-sm">Download</a>
     </div>
   </div></nav>
-  <header class="hero"><div class="container hero-content">
-    <div class="badge">NeoForge 26.2 • v1.10.0</div>
+
+  <header class="hero"><div class="container">
+    <div class="badge">NeoForge 26.2 · v1.28.9</div>
     <h1>TT Client</h1>
-    <p class="hero-sub">Right Shift opens a sharp ClickGUI (no vanilla menu blur). HUD, movement helpers, and working modules only.</p>
-    <a href="https://github.com/ben757119-cmyk/TT-Client/releases/tag/v1.10.0" class="btn btn-primary">Download v1.10.0</a>
+    <p class="hero-sub">
+      Utility client for NeoForge 26.2. Sharp ClickGUI (Right Shift), ChestRelay, combat helpers,
+      and a clean custom main menu — built for CPVP / SMP play.
+    </p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="https://github.com/ben757119-cmyk/TT-Client/releases/tag/v1.28.9">Download v1.28.9</a>
+      <a class="btn btn-ghost" href="https://github.com/ben757119-cmyk/TT-Client/releases">All releases</a>
+    </div>
   </div></header>
+
   <section id="features" class="section"><div class="container">
-    <h2>1.10.0</h2>
+    <h2>What's new in 1.28.x</h2>
     <ul>
-      <li>SolidDim off by default — Right Shift is not a smear</li>
-      <li>Compass, BreakProgress, DurabilityAlert, HungerInfo</li>
-      <li>Empty Combat category removed</li>
-      <li>ClickGUI reads TTClientClient.modules</li>
+      <li><strong>v1.28.9</strong> — Custom main menu (ClickGUI colors + particles + updates watermark); TT watermark on server list</li>
+      <li><strong>v1.28.8</strong> — ClickGUI panel positions & open state save across relaunch</li>
+      <li><strong>v1.28.7</strong> — High-contrast ClickGUI, more particles, fast rounded panels; ChestRelay settle + hardened loot</li>
+      <li><strong>v1.28.6</strong> — Full settings UI (bool / slider / mode / bind); panels right of search</li>
+      <li><strong>v1.28.5</strong> — Safer mixins (no ChatScreen MixinTransformerError)</li>
     </ul>
   </div></section>
-  <section id="install" class="section"><div class="container">
-    <p>Java 25 + NeoForge 26.2. Put <code>ttclient-1.10.0.jar</code> in <code>mods/</code>. Open GUI with Right Shift.</p>
+
+  <section id="install" class="section install"><div class="container">
+    <h2>Install</h2>
+    <p>Minecraft <strong>26.2</strong> + <strong>NeoForge 26.2</strong>.</p>
+    <p>Drop <code>ttclient-1.28.9.jar</code> into your <code>mods/</code> folder.</p>
+    <p>Open the ClickGUI with <strong>Right Shift</strong>. Toggle Custom Main Menu in Client category if you want vanilla title screen back.</p>
   </div></section>
+
+  <footer><div class="container">
+    <p>TT Client · NeoForge 26.2</p>
+    <p class="muted">Source & builds on <a href="https://github.com/ben757119-cmyk/TT-Client">GitHub</a></p>
+  </div></footer>
 </body>
 </html>
