@@ -80,31 +80,6 @@ public class TTClientClient {
             try {
                 openScreen(mc, ChatScreen.class.getDeclaredConstructor().newInstance());
             } catch (Throwable ignored) {}
-            final String text = initial;
-            mc.execute(() -> {
-                try {
-                    Screen s = currentScreen(mc);
-                    if (s == null) return;
-                    Class<?> c = s.getClass();
-                    while (c != null && c != Object.class) {
-                        for (var f : c.getDeclaredFields()) {
-                            try {
-                                f.setAccessible(true);
-                                Object v = f.get(s);
-                                if (v == null) continue;
-                                String cn = v.getClass().getName().toLowerCase();
-                                if (cn.contains("editbox") || cn.contains("textfield") || cn.contains("textbox")) {
-                                    try { v.getClass().getMethod("setValue", String.class).invoke(v, text); return; }
-                                    catch (Throwable ignored) {}
-                                    try { v.getClass().getMethod("setText", String.class).invoke(v, text); return; }
-                                    catch (Throwable ignored) {}
-                                }
-                            } catch (Throwable ignored) {}
-                        }
-                        c = c.getSuperclass();
-                    }
-                } catch (Throwable ignored) {}
-            });
         } catch (Throwable ignored) {}
     }
 
@@ -123,7 +98,6 @@ public class TTClientClient {
         } catch (Throwable ignored) {}
     }
 
-    /** TT chrome on multiplayer, connect, loading, inventory, pause, options… */
     @SubscribeEvent
     public void onScreenRender(ScreenEvent.Render.Post event) {
         try {
@@ -154,7 +128,6 @@ public class TTClientClient {
             periodWasDown = down;
         } catch (Throwable ignored) {}
 
-        // Edge-trigger Right Shift so held key / key-repeat does not slam the GUI closed
         try {
             if (modules != null) {
                 ClickGUIModule gui = modules.getModule(ClickGUIModule.class);
@@ -165,9 +138,10 @@ public class TTClientClient {
                     if (down && !guiKeyWasDown) {
                         Screen screen = currentScreen(mc);
                         if (screen instanceof ClickGUIScreen) {
+                            // Return to title if we opened from menu, else close to game
                             openScreen(mc, null);
                             if (config != null) config.save();
-                        } else if (screen == null) {
+                        } else if (screen == null || screen instanceof TTTitleScreen) {
                             openScreen(mc, new ClickGUIScreen());
                         }
                     }
@@ -216,7 +190,6 @@ public class TTClientClient {
             return;
         }
 
-        // GUI toggle is edge-polled in onClientTick — skip here to avoid double-toggle / random close
         ClickGUIModule gui = modules.getModule(ClickGUIModule.class);
         int guiKey = gui != null ? gui.getKeyBind() : GLFW.GLFW_KEY_RIGHT_SHIFT;
         if (guiKey <= 0) guiKey = GLFW.GLFW_KEY_RIGHT_SHIFT;
