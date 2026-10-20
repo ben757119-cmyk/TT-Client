@@ -14,16 +14,13 @@ import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Minimal TT title screen — dark, centered, low noise.
- */
+/** Dense-particle TT title — ClickGUI + SeizureMode available from here. */
 public class TTTitleScreen extends Screen {
-    private static final int ACCENT = 0xFF00E8A0;
     private static final int TEXT = 0xFFE8EAED;
     private static final int TEXT_DIM = 0xFF6B7280;
     private static final int BTN = 0xE0121620;
     private static final int BTN_HOV = 0xF01A2030;
-    private static final int PARTICLE_COUNT = 48;
+    private static final int PARTICLE_COUNT = 360;
 
     private final List<Particle> particles = new ArrayList<>();
     private final List<MenuButton> buttons = new ArrayList<>();
@@ -33,13 +30,7 @@ public class TTTitleScreen extends Screen {
     }
 
     private int accent() {
-        try {
-            if (TTClientClient.modules != null) {
-                ClickGUIModule m = TTClientClient.modules.getModule(ClickGUIModule.class);
-                if (m != null) return m.accent.get();
-            }
-        } catch (Throwable ignored) {}
-        return ACCENT;
+        return ClickGUIModule.globalAccent();
     }
 
     private void ensureParticles() {
@@ -56,11 +47,12 @@ public class TTTitleScreen extends Screen {
         buttons.clear();
         int bw = 180, bh = 26, gap = 8;
         int cx = width / 2 - bw / 2;
-        int cy = height / 2 - 4;
+        int cy = height / 2 - 20;
         buttons.add(new MenuButton("Singleplayer", cx, cy, bw, bh, this::openSingleplayer));
         buttons.add(new MenuButton("Multiplayer", cx, cy + (bh + gap), bw, bh, this::openMultiplayer));
-        buttons.add(new MenuButton("Options", cx, cy + 2 * (bh + gap), bw, bh, this::openOptions));
-        buttons.add(new MenuButton("Quit Game", cx, cy + 3 * (bh + gap), bw, bh, this::quitGame));
+        buttons.add(new MenuButton("ClickGUI", cx, cy + 2 * (bh + gap), bw, bh, this::openClickGui));
+        buttons.add(new MenuButton("Options", cx, cy + 3 * (bh + gap), bw, bh, this::openOptions));
+        buttons.add(new MenuButton("Quit Game", cx, cy + 4 * (bh + gap), bw, bh, this::quitGame));
         particles.clear();
         ensureParticles();
     }
@@ -69,25 +61,31 @@ public class TTTitleScreen extends Screen {
 
     @Override
     public void extractBackground(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
-        // Solid near-black — no tint wash, no top smear
         g.fill(0, 0, width, height, 0xFF05060A);
-
         ensureParticles();
-        int ac = accent() & 0x00FFFFFF;
+        boolean seizure = ClickGUIModule.isSeizure();
         for (Particle p : particles) {
             p.y += p.vy;
-            if (p.y > height + 4) {
-                p.y = -4;
+            p.x += p.vx;
+            if (p.y > height + 6) {
+                p.y = -6;
                 p.x = (float) (Math.random() * Math.max(1, width));
                 p.respawn();
             }
+            if (p.x < -8) p.x = width + 4;
+            if (p.x > width + 8) p.x = -4;
             int s = Math.max(1, (int) p.size);
-            g.fill((int) p.x, (int) p.y, (int) p.x + s, (int) p.y + s, (p.alpha << 24) | ac);
+            int rgb;
+            if (seizure) {
+                float hue = ((System.currentTimeMillis() + p.hueOffset) % 1200L) / 1200f;
+                rgb = java.awt.Color.HSBtoRGB(hue, 1f, 1f) & 0x00FFFFFF;
+            } else {
+                rgb = accent() & 0x00FFFFFF;
+            }
+            g.fill((int) p.x, (int) p.y, (int) p.x + s, (int) p.y + s, (p.alpha << 24) | rgb);
         }
-
-        // Soft vignette edges
-        g.fill(0, 0, width, 40, 0x40000000);
-        g.fill(0, height - 40, width, height, 0x50000000);
+        g.fill(0, 0, width, 36, 0x40000000);
+        g.fill(0, height - 36, width, height, 0x50000000);
     }
 
     @Override protected void extractBlurredBackground(GuiGraphicsExtractor graphics) {}
@@ -97,17 +95,12 @@ public class TTTitleScreen extends Screen {
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
         int ac = accent();
-
-        // Title block — centered above buttons
         String title = "TT CLIENT";
         int tw = font.width(title);
-        int titleY = height / 2 - 72;
+        int titleY = height / 2 - 88;
         g.text(font, title, width / 2 - tw / 2, titleY, TEXT, false);
-
         String sub = "v" + TTClient.VERSION;
         g.text(font, sub, width / 2 - font.width(sub) / 2, titleY + 14, TEXT_DIM, false);
-
-        // Thin accent underline
         int lineW = 48;
         g.fill(width / 2 - lineW / 2, titleY + 28, width / 2 + lineW / 2, titleY + 29, ac);
 
@@ -116,20 +109,17 @@ public class TTTitleScreen extends Screen {
             drawButton(g, b, hov, ac);
         }
 
-        // Bottom-left version only — no changelog wall
-        String mark = "tt  ·  the third";
-        g.text(font, mark, 12, height - 16, TEXT_DIM, false);
+        String tip = ClickGUIModule.isSeizure()
+                ? "seizure mode  ·  rshift / clickgui"
+                : "rshift or clickgui  ·  the third";
+        g.text(font, tip, 12, height - 16, TEXT_DIM, false);
     }
 
     private void drawButton(GuiGraphicsExtractor g, MenuButton b, boolean hov, int ac) {
         roundedFill(g, b.x, b.y, b.x + b.w, b.y + b.h, 6, hov ? BTN_HOV : BTN);
-        if (hov) {
-            g.fill(b.x, b.y + 4, b.x + 2, b.y + b.h - 4, ac);
-        }
-        // subtle bottom edge
+        if (hov) g.fill(b.x, b.y + 4, b.x + 2, b.y + b.h - 4, ac);
         g.fill(b.x + 6, b.y + b.h - 1, b.x + b.w - 6, b.y + b.h, hov ? (ac & 0x55FFFFFF) : 0x18FFFFFF);
-        int col = hov ? ac : TEXT;
-        g.text(font, b.label, b.x + (b.w - font.width(b.label)) / 2, b.y + (b.h - 8) / 2, col, false);
+        g.text(font, b.label, b.x + (b.w - font.width(b.label)) / 2, b.y + (b.h - 8) / 2, hov ? ac : TEXT, false);
     }
 
     private static void roundedFill(GuiGraphicsExtractor g, int x1, int y1, int x2, int y2, int r, int color) {
@@ -159,6 +149,12 @@ public class TTTitleScreen extends Screen {
             }
         }
         return super.mouseClicked(event, doubleClick);
+    }
+
+    private void openClickGui() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null) return;
+        setScreen(mc, new ClickGUIScreen());
     }
 
     private void openSingleplayer() {
@@ -200,29 +196,25 @@ public class TTTitleScreen extends Screen {
         try {
             Class<?> cls = Class.forName(className);
             Object screen = null;
-            Constructor<?>[] ctors = cls.getConstructors();
-            for (Constructor<?> c : ctors) {
+            for (Constructor<?> c : cls.getConstructors()) {
                 Class<?>[] p = c.getParameterTypes();
                 try {
                     if (p.length == 1 && Screen.class.isAssignableFrom(p[0])) {
-                        screen = c.newInstance(parent);
-                        break;
+                        screen = c.newInstance(parent); break;
                     }
                 } catch (Throwable ignored) {}
             }
             if (screen == null) {
-                for (Constructor<?> c : ctors) {
+                for (Constructor<?> c : cls.getConstructors()) {
                     Class<?>[] p = c.getParameterTypes();
                     try {
                         if (p.length == 0) { screen = c.newInstance(); break; }
                         if (p.length == 2 && Screen.class.isAssignableFrom(p[0])) {
                             Object a2 = Minecraft.class.isAssignableFrom(p[1]) ? mc : null;
-                            screen = c.newInstance(parent, a2);
-                            break;
+                            screen = c.newInstance(parent, a2); break;
                         }
                         if (p.length == 2 && Minecraft.class.isAssignableFrom(p[0]) && Screen.class.isAssignableFrom(p[1])) {
-                            screen = c.newInstance(mc, parent);
-                            break;
+                            screen = c.newInstance(mc, parent); break;
                         }
                     } catch (Throwable ignored) {}
                 }
@@ -248,8 +240,9 @@ public class TTTitleScreen extends Screen {
     }
 
     private static final class Particle {
-        float x, y, vy, size;
+        float x, y, vx, vy, size;
         int alpha;
+        int hueOffset;
 
         Particle(float x, float y) {
             this.x = x;
@@ -258,9 +251,11 @@ public class TTTitleScreen extends Screen {
         }
 
         void respawn() {
-            this.vy = 0.12f + (float) Math.random() * 0.45f;
-            this.size = 1f + (float) Math.random() * 1.8f;
-            this.alpha = 0x14 + (int) (Math.random() * 0x22);
+            this.vy = 0.15f + (float) Math.random() * 1.1f;
+            this.vx = ((float) Math.random() - 0.5f) * 0.4f;
+            this.size = 1f + (float) Math.random() * 3.2f;
+            this.alpha = 0x22 + (int) (Math.random() * 0x48);
+            this.hueOffset = (int) (Math.random() * 1200);
         }
     }
 

@@ -1,6 +1,8 @@
 package com.ttclient.modules.client;
 
+import com.ttclient.client.TTClientClient;
 import com.ttclient.gui.ClickGUIScreen;
+import com.ttclient.gui.TTTitleScreen;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
@@ -12,10 +14,42 @@ import org.lwjgl.glfw.GLFW;
 public class ClickGUIModule extends Module {
     public final ColorSetting accent = addSetting(new ColorSetting("Accent", "Panel accent color", 0xFF00E8A0));
     public final BoolSetting dim = addSetting(new BoolSetting("SolidDim", "Optional solid shade behind panels. Never vanilla blur.", false));
+    public final BoolSetting seizure = addSetting(new BoolSetting(
+            "SeizureMode", "Flashing rainbow accents everywhere (epilepsy warning)", false));
 
     public ClickGUIModule() {
         super("ClickGUI", "Opens the TT Client ClickGUI (Right Shift)", Category.CLIENT);
         setKeyBind(GLFW.GLFW_KEY_RIGHT_SHIFT);
+    }
+
+    /** Live accent — solid color or full-speed rainbow when SeizureMode is on. */
+    public int liveAccent() {
+        if (seizure.get()) {
+            float hue = (System.currentTimeMillis() % 1200L) / 1200f;
+            int rgb = java.awt.Color.HSBtoRGB(hue, 1f, 1f);
+            return 0xFF000000 | (rgb & 0x00FFFFFF);
+        }
+        return accent.get();
+    }
+
+    public static int globalAccent() {
+        try {
+            if (TTClientClient.modules != null) {
+                ClickGUIModule m = TTClientClient.modules.getModule(ClickGUIModule.class);
+                if (m != null) return m.liveAccent();
+            }
+        } catch (Throwable ignored) {}
+        return 0xFF00E8A0;
+    }
+
+    public static boolean isSeizure() {
+        try {
+            if (TTClientClient.modules != null) {
+                ClickGUIModule m = TTClientClient.modules.getModule(ClickGUIModule.class);
+                return m != null && m.seizure.get();
+            }
+        } catch (Throwable ignored) {}
+        return false;
     }
 
     @Override
@@ -31,7 +65,8 @@ public class ClickGUIModule extends Module {
         } catch (Throwable t) {
             cur = null;
         }
-        if (cur == null) {
+        // Open from in-game HUD or title screen
+        if (cur == null || cur instanceof TTTitleScreen) {
             try {
                 minecraft.gui.setScreen(new ClickGUIScreen());
             } catch (Throwable t) {

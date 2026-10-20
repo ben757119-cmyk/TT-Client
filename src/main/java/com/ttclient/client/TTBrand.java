@@ -11,19 +11,12 @@ public final class TTBrand {
     private TTBrand() {}
 
     public static int accent() {
-        try {
-            if (TTClientClient.modules != null) {
-                ClickGUIModule m = TTClientClient.modules.getModule(ClickGUIModule.class);
-                if (m != null) return m.accent.get();
-            }
-        } catch (Throwable ignored) {}
-        return 0xFF00E8A0;
+        return ClickGUIModule.globalAccent();
     }
 
     public static boolean shouldBrand(Screen s) {
         if (s == null) return false;
         String n = s.getClass().getName().toLowerCase();
-        // skip our own fully custom screens
         if (n.contains("clickgui") || n.contains("tttitle")) return false;
         return n.contains("multiplayer") || n.contains("joinmulti")
                 || n.contains("server") || n.contains("connect")
@@ -48,7 +41,6 @@ public final class TTBrand {
         return "TT Client  v" + TTClient.VERSION;
     }
 
-    /** Bottom-left accent chip. Safe on any screen. */
     public static void drawWatermark(GuiGraphicsExtractor g, Screen s) {
         if (g == null || s == null) return;
         Minecraft mc = Minecraft.getInstance();
@@ -63,11 +55,10 @@ public final class TTBrand {
         g.text(mc.font, mark, x + 2, y, ac, false);
     }
 
-    /** Thin top accent bar for loading / connect screens. */
     public static void drawTopBar(GuiGraphicsExtractor g, Screen s) {
         if (g == null || s == null) return;
         int ac = accent();
         g.fill(0, 0, s.width, 2, ac);
-        g.fill(0, 2, s.width, 3, 0x4400E8A0);
+        g.fill(0, 2, s.width, 3, (ac & 0x00FFFFFF) | 0x44000000);
     }
 }
