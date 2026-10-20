@@ -8,7 +8,6 @@ import com.ttclient.modules.Module;
 import com.ttclient.modules.ModuleManager;
 import com.ttclient.modules.client.ClickGUIModule;
 import com.ttclient.modules.client.StreamerMode;
-import com.ttclient.modules.combat.MaceHack;
 import com.ttclient.modules.misc.AutoChatGame;
 import com.ttclient.modules.player.Freecam;
 import com.ttclient.util.ChunkMeshReload;
@@ -111,16 +110,6 @@ public class TTClientClient {
                     || n.contains("receiving") || n.contains("download");
             if (heavy) TTBrand.drawTopBar(g, s);
             TTBrand.drawWatermark(g, s);
-        } catch (Throwable ignored) {}
-    }
-
-    /** Pre-tick: MaceHack fall spoof before vanilla processes attack this tick. */
-    @SubscribeEvent
-    public void onClientTickPre(ClientTickEvent.Pre event) {
-        try {
-            if (modules == null) return;
-            MaceHack mace = modules.getModule(MaceHack.class);
-            if (mace != null && mace.isEnabled()) mace.onPreTick();
         } catch (Throwable ignored) {}
     }
 
