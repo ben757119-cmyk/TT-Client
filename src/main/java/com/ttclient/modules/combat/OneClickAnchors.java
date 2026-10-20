@@ -21,30 +21,35 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * When you place a respawn anchor, auto-charge it with glowstone then detonate.
- * Optional: use Rage reach for scan / interact range.
+ * Place a respawn anchor → charge with glowstone → detonate.
+ * Only one anchor sequence at a time; post-explode lock stops hold-place spam.
  */
 public class OneClickAnchors extends Module {
-    public final NumberSetting charges = addSetting(new NumberSetting("Charges", "Glowstone charges before explode (1-4)", 4, 1, 4, 1));
-    public final NumberSetting delay = addSetting(new NumberSetting("Delay", "Ticks between charge/explode actions", 1, 0, 10, 1));
+    public final NumberSetting charges = addSetting(new NumberSetting("Charges", "Glowstone charges before explode (1-4)", 1, 1, 4, 1));
+    public final NumberSetting delay = addSetting(new NumberSetting("Delay", "Ticks between charge actions", 0, 0, 10, 1));
+    public final NumberSetting explodeLock = addSetting(new NumberSetting("ExplodeLock", "Ticks to ignore new anchors after detonate", 8, 2, 40, 1));
     public final NumberSetting range = addSetting(new NumberSetting("Range", "Scan range when Rage is off", 6.0, 2.0, 64.0, 0.5));
     public final BoolSetting useRage = addSetting(new BoolSetting("UseRageRange", "Use Rage reach when Rage is enabled", true));
-    public final BoolSetting onlyOwn = addSetting(new BoolSetting("OnlyOwn", "Prefer nearby / looked-at anchors", true));
+    public final BoolSetting onlyOwn = addSetting(new BoolSetting("OnlyOwn", "Prefer looked-at / very nearby anchors", true));
     public final BoolSetting switchBack = addSetting(new BoolSetting("SwitchBack", "Restore hotbar slot after actions", true));
 
     private BlockPos target;
     private int cooldown;
+    private int lockTicks;
     private int prevSlot = -1;
+    private boolean working;
 
     public OneClickAnchors() {
-        super("OneClickAnchors", "Place an anchor — auto charge + explode", Category.COMBAT);
+        super("OneClickAnchors", "Place an anchor — auto charge + explode (1 at a time)", Category.COMBAT);
     }
 
     @Override
     public void onDisable() {
         target = null;
         cooldown = 0;
+        lockTicks = 0;
         prevSlot = -1;
+        working = false;
     }
 
     private double effectiveRange() {
@@ -64,6 +69,13 @@ public class OneClickAnchors extends Module {
         if (mc == null || mc.player == null || mc.level == null || mc.gameMode == null) return;
         LocalPlayer p = mc.player;
 
+        if (lockTicks > 0) {
+            lockTicks--;
+            target = null;
+            working = false;
+            return;
+        }
+
         if (cooldown > 0) {
             cooldown--;
             return;
@@ -71,27 +83,39 @@ public class OneClickAnchors extends Module {
 
         double r = effectiveRange();
 
+        // Prefer what you're looking at; only pick a new target when idle
         BlockPos looked = lookingAtAnchor(mc);
-        if (looked != null) {
+        if (looked != null && !working) {
             target = looked;
-        } else if (target == null || !isAnchor(mc, target)) {
-            target = findNearbyAnchor(mc, p, r);
+            working = true;
+        } else if (!working || target == null || !isAnchor(mc, target)) {
+            if (working && (target == null || !isAnchor(mc, target))) {
+                // sequence ended without explode
+                working = false;
+                target = null;
+            }
+            if (!working) {
+                target = findNearbyAnchor(mc, p, r);
+                if (target != null) working = true;
+            }
         }
 
         if (target == null) return;
         if (!isAnchor(mc, target)) {
             target = null;
+            working = false;
             return;
         }
 
         double distSq = p.distanceToSqr(target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5);
         if (distSq > r * r) {
             target = null;
+            working = false;
             return;
         }
 
         int c = getCharges(mc.level.getBlockState(target));
-        int want = charges.getInt();
+        int want = Math.max(1, charges.getInt());
 
         if (prevSlot < 0 && switchBack.get()) {
             prevSlot = p.getInventory().getSelectedSlot();
@@ -113,7 +137,9 @@ public class OneClickAnchors extends Module {
 
     private void finish(LocalPlayer p) {
         target = null;
-        cooldown = delay.getInt();
+        working = false;
+        cooldown = 0;
+        lockTicks = Math.max(2, explodeLock.getInt());
         if (switchBack.get() && prevSlot >= 0) {
             InvUtils.selectHotbar(p, prevSlot);
         }
@@ -132,9 +158,9 @@ public class OneClickAnchors extends Module {
 
     private BlockPos findNearbyAnchor(Minecraft mc, LocalPlayer p, double r) {
         BlockPos base = p.blockPosition();
-        int reach = onlyOwn.get() ? Math.min(4, (int) Math.ceil(r)) : Math.min(16, (int) Math.ceil(r));
-        double maxD = r * r;
-        if (onlyOwn.get()) maxD = Math.min(maxD, 6.0 * 6.0);
+        // tight when OnlyOwn — stops scanning a pile of held-place anchors
+        int reach = onlyOwn.get() ? Math.min(3, (int) Math.ceil(r)) : Math.min(8, (int) Math.ceil(r));
+        double maxD = onlyOwn.get() ? Math.min(r * r, 4.5 * 4.5) : r * r;
         BlockPos best = null;
         double bestD = maxD;
         for (BlockPos pos : BlockPos.betweenClosed(base.offset(-reach, -2, -reach), base.offset(reach, 3, reach))) {
