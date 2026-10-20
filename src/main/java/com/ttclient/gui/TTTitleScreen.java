@@ -10,13 +10,10 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
+import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Clean TT Client title screen — ClickGUI palette, full-screen particles,
- * watermark + recent updates.
- */
 public class TTTitleScreen extends Screen {
     private static final int ACCENT = 0xFF00E8A0;
     private static final int TEXT = 0xFFE8EAED;
@@ -27,19 +24,17 @@ public class TTTitleScreen extends Screen {
     private static final int PARTICLE_COUNT = 220;
 
     private static final String[] UPDATES = {
-            "v1.29.0  denser particles · branding · anchor lock",
+            "v1.29.1  binds fixed · anchors tuned · menu open",
+            "v1.29.0  denser particles · branding",
             "v1.28.9  custom main menu + server watermark",
             "v1.28.8  panel layout saves across relaunch",
             "v1.28.7  ClickGUI contrast + ChestRelay loot",
-            "v1.28.6  full settings UI restored",
     };
 
     private final List<Particle> particles = new ArrayList<>();
     private final List<MenuButton> buttons = new ArrayList<>();
 
-    public TTTitleScreen() {
-        super(Component.literal("TT Client"));
-    }
+    public TTTitleScreen() { super(Component.literal("TT Client")); }
 
     private int accent() {
         try {
@@ -54,9 +49,7 @@ public class TTTitleScreen extends Screen {
     private void ensureParticles() {
         if (width <= 0 || height <= 0) return;
         while (particles.size() < PARTICLE_COUNT) {
-            particles.add(new Particle(
-                    (float) (Math.random() * width),
-                    (float) (Math.random() * height)));
+            particles.add(new Particle((float) (Math.random() * width), (float) (Math.random() * height)));
         }
     }
 
@@ -81,17 +74,11 @@ public class TTTitleScreen extends Screen {
         g.fill(0, 0, width, height, 0xFF02040A);
         g.fill(0, 0, width, height, 0x66000000);
         g.fill(0, 0, width, 80, 0x1800E8A0);
-
         ensureParticles();
         int ac = accent() & 0x00FFFFFF;
         for (Particle p : particles) {
-            p.y += p.vy;
-            p.x += p.vx;
-            if (p.y > height + 8) {
-                p.y = -8;
-                p.x = (float) (Math.random() * Math.max(1, width));
-                p.respawn();
-            }
+            p.y += p.vy; p.x += p.vx;
+            if (p.y > height + 8) { p.y = -8; p.x = (float) (Math.random() * Math.max(1, width)); p.respawn(); }
             if (p.x < -8) p.x = width + 4;
             if (p.x > width + 8) p.x = -4;
             int s = Math.max(1, (int) p.size);
@@ -124,19 +111,14 @@ public class TTTitleScreen extends Screen {
         g.fill(lx - 4, ly - 6, lx - 2, height - 10, ac);
         g.text(font, "TT Client  v" + TTClient.VERSION, lx, ly, ac, false);
         g.text(font, "recent updates", lx, ly + 12, TEXT_DIM, false);
-        for (int i = 0; i < UPDATES.length; i++) {
-            g.text(font, UPDATES[i], lx, ly + 24 + i * 11, TEXT, false);
-        }
-
-        String mark = "tt";
-        g.text(font, mark, width - font.width(mark) - 10, height - 14, ac & 0xAAFFFFFF, false);
+        for (int i = 0; i < UPDATES.length; i++) g.text(font, UPDATES[i], lx, ly + 24 + i * 11, TEXT, false);
+        g.text(font, "tt", width - font.width("tt") - 10, height - 14, ac & 0xAAFFFFFF, false);
     }
 
     private void drawButton(GuiGraphicsExtractor g, MenuButton b, boolean hov, int ac) {
         roundedFill(g, b.x, b.y, b.x + b.w, b.y + b.h, 5, hov ? BTN_BG_HOV : BTN_BG);
         if (hov) g.fill(b.x, b.y + 3, b.x + 2, b.y + b.h - 3, ac);
-        int col = hov ? ac : TEXT;
-        g.text(font, b.label, b.x + (b.w - font.width(b.label)) / 2, b.y + (b.h - 8) / 2, col, false);
+        g.text(font, b.label, b.x + (b.w - font.width(b.label)) / 2, b.y + (b.h - 8) / 2, hov ? ac : TEXT, false);
     }
 
     private static void roundedFill(GuiGraphicsExtractor g, int x1, int y1, int x2, int y2, int r, int color) {
@@ -169,7 +151,9 @@ public class TTTitleScreen extends Screen {
     }
 
     private void openSingleplayer() {
-        openVanilla("net.minecraft.client.gui.screens.worldselection.SelectWorldScreen", this);
+        if (!openVanilla("net.minecraft.client.gui.screens.worldselection.SelectWorldScreen", this)) {
+            openVanilla("net.minecraft.client.gui.screens.worldselection.WorldSelectionList", this);
+        }
     }
 
     private void openMultiplayer() {
@@ -187,41 +171,60 @@ public class TTTitleScreen extends Screen {
         if (mc != null) mc.stop();
     }
 
+    private static void setScreen(Minecraft mc, Screen s) {
+        try { mc.gui.setScreen(s); return; } catch (Throwable ignored) {}
+        try { Minecraft.class.getMethod("setScreen", Screen.class).invoke(mc, s); } catch (Throwable ignored) {}
+        try {
+            for (var m : Minecraft.class.getMethods()) {
+                if (m.getName().equals("setScreen") && m.getParameterCount() == 1) {
+                    m.invoke(mc, s); return;
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
     private boolean openVanilla(String className, Screen parent) {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) return false;
         try {
             Class<?> cls = Class.forName(className);
             Object screen = null;
-            for (var c : cls.getConstructors()) {
+            Constructor<?>[] ctors = cls.getConstructors();
+            // Prefer (Screen) then any that only need parent/mc
+            for (Constructor<?> c : ctors) {
                 Class<?>[] p = c.getParameterTypes();
                 try {
                     if (p.length == 1 && Screen.class.isAssignableFrom(p[0])) {
-                        screen = c.newInstance(parent);
-                        break;
-                    }
-                    if (p.length == 2 && Minecraft.class.isAssignableFrom(p[0]) && Screen.class.isAssignableFrom(p[1])) {
-                        screen = c.newInstance(mc, parent);
-                        break;
-                    }
-                    if (p.length == 2 && Screen.class.isAssignableFrom(p[0])) {
-                        screen = c.newInstance(parent, mc);
-                        break;
-                    }
-                    if (p.length == 0) {
-                        screen = c.newInstance();
-                        break;
+                        screen = c.newInstance(parent); break;
                     }
                 } catch (Throwable ignored) {}
+            }
+            if (screen == null) {
+                for (Constructor<?> c : ctors) {
+                    Class<?>[] p = c.getParameterTypes();
+                    try {
+                        if (p.length == 0) { screen = c.newInstance(); break; }
+                        if (p.length == 2 && Screen.class.isAssignableFrom(p[0])) {
+                            Object a1 = parent;
+                            Object a2 = null;
+                            if (Minecraft.class.isAssignableFrom(p[1])) a2 = mc;
+                            else if (p[1].isPrimitive()) continue;
+                            else a2 = null;
+                            screen = c.newInstance(a1, a2); break;
+                        }
+                        if (p.length == 2 && Minecraft.class.isAssignableFrom(p[0]) && Screen.class.isAssignableFrom(p[1])) {
+                            screen = c.newInstance(mc, parent); break;
+                        }
+                    } catch (Throwable ignored) {}
+                }
             }
             if (screen instanceof Screen s) {
-                try { mc.gui.setScreen(s); return true; } catch (Throwable ignored) {}
-                try {
-                    Minecraft.class.getMethod("setScreen", Screen.class).invoke(mc, s);
-                    return true;
-                } catch (Throwable ignored) {}
+                setScreen(mc, s);
+                return true;
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) {
+            TTClient.LOGGER.warn("TTTitleScreen open failed for {}: {}", className, t.toString());
+        }
         return false;
     }
 
@@ -230,18 +233,12 @@ public class TTTitleScreen extends Screen {
             if (TTClientClient.modules == null) return true;
             CustomMainMenu m = TTClientClient.modules.getModule(CustomMainMenu.class);
             return m == null || m.isEnabled();
-        } catch (Throwable t) {
-            return true;
-        }
+        } catch (Throwable t) { return true; }
     }
 
     private static final class Particle {
-        float x, y, vx, vy, size;
-        int alpha;
-        Particle(float x, float y) {
-            this.x = x; this.y = y;
-            respawn();
-        }
+        float x, y, vx, vy, size; int alpha;
+        Particle(float x, float y) { this.x = x; this.y = y; respawn(); }
         void respawn() {
             this.vy = 0.22f + (float) Math.random() * 1.35f;
             this.vx = ((float) Math.random() - 0.5f) * 0.35f;
@@ -251,9 +248,7 @@ public class TTTitleScreen extends Screen {
     }
 
     private static final class MenuButton {
-        final String label;
-        final int x, y, w, h;
-        final Runnable action;
+        final String label; final int x, y, w, h; final Runnable action;
         MenuButton(String label, int x, int y, int w, int h, Runnable action) {
             this.label = label; this.x = x; this.y = y; this.w = w; this.h = h; this.action = action;
         }
