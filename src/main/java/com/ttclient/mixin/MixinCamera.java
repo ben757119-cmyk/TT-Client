@@ -6,12 +6,11 @@ import net.minecraft.client.Minecraft;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyArgs;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 
 /**
- * Freecam camera redirect without @Shadow / @Invoker (those hard-crash on mapping drift).
+ * Freecam camera redirect — reflection only (no @Shadow / @Invoker / ModifyArgs).
+ * Soft injects with require=0 so mapping drift cannot brick launch.
  */
 @Mixin(Camera.class)
 public abstract class MixinCamera {
@@ -32,9 +31,9 @@ public abstract class MixinCamera {
                         && m.getParameterTypes()[1] == double.class
                         && m.getParameterTypes()[2] == double.class) {
                     String n = m.getName().toLowerCase();
-                    if (n.contains("pos") || n.contains("setposition") || n.equals("setposition")) {
+                    if (n.contains("pos") || n.contains("setposition")) {
                         m.setAccessible(true);
-                        m.invoke(self, x, y, z);
+                        try { m.invoke(self, x, y, z); } catch (Throwable ignored) {}
                     }
                 }
                 if (m.getParameterCount() == 2
@@ -43,7 +42,7 @@ public abstract class MixinCamera {
                     String n = m.getName().toLowerCase();
                     if (n.contains("rot") || n.contains("setrotation")) {
                         m.setAccessible(true);
-                        m.invoke(self, yaw, pitch);
+                        try { m.invoke(self, yaw, pitch); } catch (Throwable ignored) {}
                     }
                 }
             }
@@ -55,44 +54,6 @@ public abstract class MixinCamera {
                     f.setBoolean(self, true);
                 }
             }
-        } catch (Throwable ignored) {}
-    }
-
-    @Inject(method = {"setup", "alignWithEntity"}, at = @At("HEAD"), require = 0)
-    private void ttclient$detachHead(CallbackInfo ci) {
-        // no-op head; RETURN handler applies pos
-    }
-
-    @ModifyArgs(
-            method = {"setup", "alignWithEntity"},
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Camera;setPosition(DDD)V"),
-            require = 0
-    )
-    private void ttclient$pos(Args args) {
-        if (!Freecam.isActive()) return;
-        Freecam fc = Freecam.get();
-        if (fc == null) return;
-        float p = pt();
-        try {
-            args.set(0, fc.getX(p));
-            args.set(1, fc.getY(p));
-            args.set(2, fc.getZ(p));
-        } catch (Throwable ignored) {}
-    }
-
-    @ModifyArgs(
-            method = {"setup", "alignWithEntity"},
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Camera;setRotation(FF)V"),
-            require = 0
-    )
-    private void ttclient$rot(Args args) {
-        if (!Freecam.isActive()) return;
-        Freecam fc = Freecam.get();
-        if (fc == null) return;
-        float p = pt();
-        try {
-            args.set(0, fc.getYaw(p));
-            args.set(1, fc.getPitch(p));
         } catch (Throwable ignored) {}
     }
 
