@@ -53,6 +53,8 @@ public class ChestRelay extends Module {
     private int aimTicks;
     private int openTries;
     private int depositFails;
+    /** Ticks to wait after open so slot contents sync before we click. */
+    private int settleTicks;
 
     public ChestRelay() {
         super("ChestRelay", "Chain loot chests with camera only", Category.PLAYER);
@@ -101,6 +103,7 @@ public class ChestRelay extends Module {
         aimTicks = 0;
         openTries = 0;
         depositFails = 0;
+        settleTicks = 0;
         NotificationManager.push("ChestRelay", "started · " + chests.size() + " chests");
         ClientCommands.chatOnly("ChestRelay on · " + chests.size() + " chests · stay in range");
     }
@@ -164,6 +167,7 @@ public class ChestRelay extends Module {
             case OPEN_SRC -> {
                 if (isContainerOpen(mc)) {
                     phase = Phase.LOOT;
+                    settleTicks = 4; // let container slots sync
                     clickCd = clickDelay.getInt();
                     return;
                 }
@@ -186,11 +190,13 @@ public class ChestRelay extends Module {
                     phase = Phase.ADVANCE;
                     return;
                 }
+                if (settleTicks > 0) { settleTicks--; return; }
                 if (clickCd > 0) return;
                 if (quickMoveOneContainerSlot(mc)) {
-                    clickCd = clickDelay.getInt();
+                    clickCd = Math.max(1, clickDelay.getInt());
                     return;
                 }
+                // nothing left (or never synced) — close and advance
                 phase = Phase.CLOSE1;
             }
             case CLOSE1 -> {
@@ -215,6 +221,7 @@ public class ChestRelay extends Module {
                 if (dst < 0) { phase = Phase.ADVANCE; return; }
                 if (isContainerOpen(mc)) {
                     phase = Phase.DEPOSIT;
+                    settleTicks = 4;
                     clickCd = clickDelay.getInt();
                     return;
                 }
@@ -239,13 +246,14 @@ public class ChestRelay extends Module {
                     phase = Phase.ADVANCE;
                     return;
                 }
+                if (settleTicks > 0) { settleTicks--; return; }
                 if (clickCd > 0) return;
                 if (playerHasMovableItems(mc)) {
                     boolean moved = quickMoveOnePlayerSlot(mc);
-                    clickCd = clickDelay.getInt();
+                    clickCd = Math.max(1, clickDelay.getInt());
                     if (!moved) {
                         depositFails++;
-                        if (depositFails >= 4) {
+                        if (depositFails >= 6) {
                             markFull(chests.get(dst));
                             phase = Phase.FULL_BACK;
                             closeScreen();
@@ -309,8 +317,7 @@ public class ChestRelay extends Module {
                 if (menu == null) return false;
                 int chestSlots = Math.max(0, menu.slots.size() - 36);
                 for (int i = chestSlots; i < menu.slots.size(); i++) {
-                    Slot slot = menu.slots.get(i);
-                    if (slot != null && slot.hasItem()) return true;
+                    if (slotHas(menu.slots.get(i))) return true;
                 }
                 return false;
             }
@@ -446,14 +453,48 @@ public class ChestRelay extends Module {
         } catch (Throwable ignored) {}
     }
 
+    private static boolean slotHas(Slot slot) {
+        try {
+            if (slot == null) return false;
+            try { if (slot.hasItem()) return true; } catch (Throwable ignored) {}
+            try { return slot.getItem() != null && !slot.getItem().isEmpty(); } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    private int resolveContainerId(AbstractContainerMenu menu) {
+        try { return menu.containerId; } catch (Throwable ignored) {}
+        try {
+            for (var f : menu.getClass().getFields()) {
+                if (f.getType() == int.class && f.getName().toLowerCase().contains("container")) {
+                    f.setAccessible(true);
+                    return f.getInt(menu);
+                }
+            }
+        } catch (Throwable ignored) {}
+        try {
+            for (var f : AbstractContainerMenu.class.getDeclaredFields()) {
+                if (f.getType() == int.class) {
+                    f.setAccessible(true);
+                    int v = f.getInt(menu);
+                    if (v >= 0 && v < 256) return v;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return 0;
+    }
+
     private boolean quickMoveOneContainerSlot(Minecraft mc) {
         try {
             AbstractContainerMenu menu = getMenu(mc);
             if (menu == null) return false;
             int chestSlots = Math.max(0, menu.slots.size() - 36);
+            int cid = resolveContainerId(menu);
             for (int i = 0; i < chestSlots; i++) {
                 Slot slot = menu.slots.get(i);
-                if (slot != null && slot.hasItem()) return inventoryClick(mc, menu.containerId, i);
+                if (slotHas(slot)) {
+                    if (inventoryClick(mc, menu, cid, i)) return true;
+                }
             }
         } catch (Throwable ignored) {}
         return false;
@@ -464,46 +505,113 @@ public class ChestRelay extends Module {
             AbstractContainerMenu menu = getMenu(mc);
             if (menu == null) return false;
             int chestSlots = Math.max(0, menu.slots.size() - 36);
+            int cid = resolveContainerId(menu);
             for (int i = chestSlots; i < menu.slots.size(); i++) {
                 Slot slot = menu.slots.get(i);
-                if (slot != null && slot.hasItem()) return inventoryClick(mc, menu.containerId, i);
+                if (slotHas(slot)) {
+                    if (inventoryClick(mc, menu, cid, i)) return true;
+                }
             }
         } catch (Throwable ignored) {}
         return false;
     }
 
+    /**
+     * Hardened shift-click. Tries in order:
+     * 1) MultiPlayerGameMode.handleInventoryMouseClick (QUICK_MOVE)
+     * 2) menu.clicked(slot, 0, QUICK_MOVE, player)
+     * 3) reflection scan of gameMode click methods
+     * 4) PICKUP take + PICKUP place into first empty player/chest slot
+     */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private boolean inventoryClick(Minecraft mc, int containerId, int slot) {
-        if (mc.gameMode == null || mc.player == null) return false;
+    private boolean inventoryClick(Minecraft mc, AbstractContainerMenu menu, int containerId, int slot) {
+        if (mc.gameMode == null || mc.player == null || menu == null) return false;
+
+        Object quickMove = null;
+        Object pickup = null;
         try {
-            var method = mc.gameMode.getClass().getMethod(
-                    "handleInventoryMouseClick",
-                    int.class, int.class, int.class,
-                    Class.forName("net.minecraft.world.inventory.ClickType"),
-                    Player.class
-            );
-            Object quickMove = Enum.valueOf(
-                    (Class<? extends Enum>) Class.forName("net.minecraft.world.inventory.ClickType"),
-                    "QUICK_MOVE"
-            );
-            method.invoke(mc.gameMode, containerId, slot, 0, quickMove, mc.player);
-            return true;
-        } catch (Throwable ignored) {}
-        try {
-            for (var m : mc.gameMode.getClass().getMethods()) {
-                if (m.getParameterCount() != 5) continue;
-                String n = m.getName().toLowerCase();
-                if (!n.contains("inventory") && !n.contains("click")) continue;
-                Object quickMove = Enum.valueOf(
-                        (Class<? extends Enum>) Class.forName("net.minecraft.world.inventory.ClickType"),
-                        "QUICK_MOVE"
-                );
-                try {
-                    m.invoke(mc.gameMode, containerId, slot, 0, quickMove, mc.player);
-                    return true;
-                } catch (Throwable ignored) {}
+            Class<? extends Enum> ct = (Class<? extends Enum>) Class.forName("net.minecraft.world.inventory.ClickType");
+            for (Object e : ct.getEnumConstants()) {
+                String n = ((Enum<?>) e).name();
+                if (n.equals("QUICK_MOVE") || n.equals("QUICKMOVE") || n.equals("SHIFT")) quickMove = e;
+                if (n.equals("PICKUP") || n.equals("PICK_UP")) pickup = e;
+            }
+            if (quickMove == null) {
+                for (Object e : ct.getEnumConstants()) {
+                    String n = ((Enum<?>) e).name().toLowerCase();
+                    if (n.contains("quick") || n.contains("shift")) { quickMove = e; break; }
+                }
             }
         } catch (Throwable ignored) {}
+
+        // 1) handleInventoryMouseClick
+        if (quickMove != null) {
+            try {
+                var method = mc.gameMode.getClass().getMethod(
+                        "handleInventoryMouseClick",
+                        int.class, int.class, int.class,
+                        Class.forName("net.minecraft.world.inventory.ClickType"),
+                        Player.class
+                );
+                method.invoke(mc.gameMode, containerId, slot, 0, quickMove, mc.player);
+                return true;
+            } catch (Throwable ignored) {}
+        }
+
+        // 2) menu.clicked
+        if (quickMove != null) {
+            try {
+                for (var m : menu.getClass().getMethods()) {
+                    if (!m.getName().equals("clicked") && !m.getName().equals("doClick")) continue;
+                    Class<?>[] pt = m.getParameterTypes();
+                    if (pt.length == 4 && pt[0] == int.class) {
+                        m.invoke(menu, slot, 0, quickMove, mc.player);
+                        return true;
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        // 3) scan gameMode methods
+        if (quickMove != null) {
+            try {
+                for (var m : mc.gameMode.getClass().getMethods()) {
+                    if (m.getParameterCount() != 5) continue;
+                    String n = m.getName().toLowerCase();
+                    if (!n.contains("inventory") && !n.contains("click") && !n.contains("slot")) continue;
+                    try {
+                        m.invoke(mc.gameMode, containerId, slot, 0, quickMove, mc.player);
+                        return true;
+                    } catch (Throwable ignored) {}
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        // 4) PICKUP fallback: take stack, then drop into first empty opposite-side slot
+        if (pickup != null) {
+            try {
+                var method = mc.gameMode.getClass().getMethod(
+                        "handleInventoryMouseClick",
+                        int.class, int.class, int.class,
+                        Class.forName("net.minecraft.world.inventory.ClickType"),
+                        Player.class
+                );
+                method.invoke(mc.gameMode, containerId, slot, 0, pickup, mc.player);
+                // find empty target
+                int chestSlots = Math.max(0, menu.slots.size() - 36);
+                boolean fromChest = slot < chestSlots;
+                int start = fromChest ? chestSlots : 0;
+                int end = fromChest ? menu.slots.size() : chestSlots;
+                for (int i = start; i < end; i++) {
+                    if (!slotHas(menu.slots.get(i))) {
+                        method.invoke(mc.gameMode, containerId, i, 0, pickup, mc.player);
+                        return true;
+                    }
+                }
+                // put back if nowhere to go
+                method.invoke(mc.gameMode, containerId, slot, 0, pickup, mc.player);
+            } catch (Throwable ignored) {}
+        }
         return false;
     }
 
@@ -519,7 +627,6 @@ public class ChestRelay extends Module {
             int col = full ? 0xFFFF5555 : 0xFF00E8A0;
             double minX = pos.getX(), minY = pos.getY(), minZ = pos.getZ();
             double maxX = minX + 1, maxY = minY + 1, maxZ = minZ + 1;
-            // Project 8 corners → 2D screen AABB
             double sxMin = Double.POSITIVE_INFINITY, syMin = Double.POSITIVE_INFINITY;
             double sxMax = Double.NEGATIVE_INFINITY, syMax = Double.NEGATIVE_INFINITY;
             int visible = 0;
