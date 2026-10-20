@@ -1,5 +1,6 @@
 package com.ttclient.modules.player;
 
+import com.ttclient.client.ClientCommands;
 import com.ttclient.client.NotificationManager;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
@@ -9,13 +10,17 @@ import com.ttclient.settings.BoolSetting;
 import com.ttclient.settings.NumberSetting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.ContainerScreen;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.RandomizableContainerBlockEntity;
@@ -30,20 +35,19 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Chain chest relay:
- * take all from #1 → dump into #2 → take all from #2 → dump into #3 …
- * If dest is full, dump remainder back into previous and mark dest full (removed).
- * Camera-only (no WASD).
+ * Chain chest relay — camera aim + open + shift-click transfer.
  */
 public class ChestRelay extends Module {
     public final NumberSetting interval = addSetting(new NumberSetting(
-            "Interval", "Seconds between hops", 3, 1, 120, 1));
+            "Interval", "Seconds between hops", 2, 1, 120, 1));
     public final NumberSetting range = addSetting(new NumberSetting(
-            "Range", "Max reach", 4.5, 2.0, 6.0, 0.5));
+            "Range", "Max reach", 5.0, 2.0, 6.0, 0.5));
     public final NumberSetting clickDelay = addSetting(new NumberSetting(
-            "ClickDelay", "Ticks between clicks", 1, 0, 8, 1));
+            "ClickDelay", "Ticks between clicks", 2, 0, 10, 1));
     public final NumberSetting rotateTicks = addSetting(new NumberSetting(
-            "RotateTicks", "Aim ticks", 4, 1, 20, 1));
+            "RotateTicks", "Aim ticks", 6, 1, 20, 1));
+    public final NumberSetting openRetries = addSetting(new NumberSetting(
+            "OpenRetries", "How many times to try opening", 15, 5, 40, 1));
     public final BoolSetting loop = addSetting(new BoolSetting("Loop", "Loop the list", false));
     public final BoolSetting visuals = addSetting(new BoolSetting("Visuals", "ESP + numbers", true));
     public final BoolSetting removeFull = addSetting(new BoolSetting(
@@ -61,8 +65,8 @@ public class ChestRelay extends Module {
     private int waitTicks;
     private int clickCd;
     private int aimTicks;
-    private int stuckTicks;
-    private int depositFails; // consecutive clicks that didn't free a slot → treat as full
+    private int openTries;
+    private int depositFails;
 
     public ChestRelay() {
         super("ChestRelay", "Chain loot chests with camera only", Category.PLAYER);
@@ -108,12 +112,13 @@ public class ChestRelay extends Module {
     public void onEnable() {
         phase = Phase.WAIT;
         srcIndex = 0;
-        waitTicks = 10;
+        waitTicks = 5;
         clickCd = 0;
         aimTicks = 0;
-        stuckTicks = 0;
+        openTries = 0;
         depositFails = 0;
         NotificationManager.push("ChestRelay", "started · " + chests.size() + " chests");
+        ClientCommands.chatOnly("ChestRelay on · " + chests.size() + " chests · stay in range");
     }
 
     @Override
@@ -130,14 +135,13 @@ public class ChestRelay extends Module {
 
         if (phase != Phase.WAIT) zeroMovement(mc);
 
-        // prune full from list if setting on
         if (removeFull.get() && !fullMarked.isEmpty()) {
             Iterator<BlockPos> it = chests.iterator();
             while (it.hasNext()) {
                 BlockPos p = it.next();
                 if (fullMarked.contains(p)) {
                     it.remove();
-                    NotificationManager.push("ChestRelay", "removed full " + p.toShortString());
+                    ClientCommands.chatOnly("Removed full chest " + p.toShortString());
                 }
             }
             fullMarked.retainAll(new HashSet<>(chests));
@@ -157,7 +161,6 @@ public class ChestRelay extends Module {
                     if (loop.get()) srcIndex = 0;
                     else { setEnabled(false); return; }
                 }
-                // skip full sources
                 while (srcIndex < chests.size() - 1 && fullMarked.contains(chests.get(srcIndex))) srcIndex++;
                 if (srcIndex >= chests.size() - 1) {
                     if (loop.get()) { srcIndex = 0; return; }
@@ -166,24 +169,40 @@ public class ChestRelay extends Module {
                 }
                 phase = Phase.AIM_SRC;
                 aimTicks = rotateTicks.getInt();
-                stuckTicks = 0;
+                openTries = 0;
             }
             case AIM_SRC -> {
-                if (!lookAt(mc, chests.get(srcIndex))) { phase = Phase.ADVANCE; return; }
-                if (aimTicks-- <= 0) phase = Phase.OPEN_SRC;
+                if (!lookAt(mc, chests.get(srcIndex))) {
+                    ClientCommands.chatOnly("#" + (srcIndex + 1) + " out of range");
+                    phase = Phase.ADVANCE;
+                    return;
+                }
+                if (aimTicks-- <= 0) {
+                    phase = Phase.OPEN_SRC;
+                    openTries = openRetries.getInt();
+                }
             }
             case OPEN_SRC -> {
-                if (isContainerOpen(mc)) { phase = Phase.LOOT; return; }
+                if (isContainerOpen(mc)) {
+                    phase = Phase.LOOT;
+                    clickCd = clickDelay.getInt();
+                    return;
+                }
                 lookAt(mc, chests.get(srcIndex));
                 tryOpen(mc, chests.get(srcIndex));
-                aimTicks = 12;
-                phase = Phase.LOOT;
+                openTries--;
+                if (openTries <= 0) {
+                    ClientCommands.chatOnly("Failed to open #" + (srcIndex + 1));
+                    phase = Phase.ADVANCE;
+                }
             }
             case LOOT -> {
                 if (!isContainerOpen(mc)) {
-                    if (aimTicks-- > 0) {
+                    // lost GUI — try reopen a few times
+                    if (openTries > 0) {
+                        openTries--;
                         lookAt(mc, chests.get(srcIndex));
-                        if (aimTicks == 6) tryOpen(mc, chests.get(srcIndex));
+                        tryOpen(mc, chests.get(srcIndex));
                         return;
                     }
                     phase = Phase.ADVANCE;
@@ -192,10 +211,8 @@ public class ChestRelay extends Module {
                 if (clickCd > 0) return;
                 if (quickMoveOneContainerSlot(mc)) {
                     clickCd = clickDelay.getInt();
-                    stuckTicks = 0;
                     return;
                 }
-                // container empty
                 phase = Phase.CLOSE1;
             }
             case CLOSE1 -> {
@@ -203,63 +220,72 @@ public class ChestRelay extends Module {
                 phase = Phase.AIM_DST;
                 aimTicks = rotateTicks.getInt();
                 depositFails = 0;
+                openTries = openRetries.getInt();
             }
             case AIM_DST -> {
                 int dst = nextOpenIndex(srcIndex + 1);
                 if (dst < 0) { phase = Phase.ADVANCE; return; }
-                if (!lookAt(mc, chests.get(dst))) { phase = Phase.ADVANCE; return; }
+                if (!lookAt(mc, chests.get(dst))) {
+                    ClientCommands.chatOnly("#" + (dst + 1) + " out of range");
+                    phase = Phase.ADVANCE;
+                    return;
+                }
                 if (aimTicks-- <= 0) phase = Phase.OPEN_DST;
             }
             case OPEN_DST -> {
                 int dst = nextOpenIndex(srcIndex + 1);
                 if (dst < 0) { phase = Phase.ADVANCE; return; }
-                if (isContainerOpen(mc)) { phase = Phase.DEPOSIT; return; }
+                if (isContainerOpen(mc)) {
+                    phase = Phase.DEPOSIT;
+                    clickCd = clickDelay.getInt();
+                    return;
+                }
                 lookAt(mc, chests.get(dst));
                 tryOpen(mc, chests.get(dst));
-                aimTicks = 12;
-                phase = Phase.DEPOSIT;
+                openTries--;
+                if (openTries <= 0) {
+                    ClientCommands.chatOnly("Failed to open #" + (dst + 1));
+                    phase = Phase.ADVANCE;
+                }
             }
             case DEPOSIT -> {
                 int dst = nextOpenIndex(srcIndex + 1);
                 if (dst < 0) { phase = Phase.ADVANCE; return; }
                 if (!isContainerOpen(mc)) {
-                    if (aimTicks-- > 0) {
+                    if (openTries > 0) {
+                        openTries--;
                         lookAt(mc, chests.get(dst));
-                        if (aimTicks == 6) tryOpen(mc, chests.get(dst));
+                        tryOpen(mc, chests.get(dst));
                         return;
                     }
                     phase = Phase.ADVANCE;
                     return;
                 }
                 if (clickCd > 0) return;
-                // If player inv (from loot) still has items to move
                 if (playerHasMovableItems(mc)) {
                     boolean moved = quickMoveOnePlayerSlot(mc);
                     clickCd = clickDelay.getInt();
                     if (!moved) {
                         depositFails++;
-                        // chest full — can't shift-click in
-                        if (depositFails >= 3) {
+                        if (depositFails >= 4) {
                             markFull(chests.get(dst));
                             phase = Phase.FULL_BACK;
                             closeScreen();
                             aimTicks = rotateTicks.getInt();
+                            openTries = openRetries.getInt();
                         }
-                    } else {
-                        depositFails = 0;
-                    }
+                    } else depositFails = 0;
                     return;
                 }
-                // all deposited
                 phase = Phase.CLOSE2;
             }
             case FULL_BACK -> {
-                // put remaining loot back into previous (source) chest
                 if (!lookAt(mc, chests.get(srcIndex))) { phase = Phase.ADVANCE; return; }
                 if (aimTicks > 0) { aimTicks--; return; }
                 if (!isContainerOpen(mc)) {
                     tryOpen(mc, chests.get(srcIndex));
-                    aimTicks = 8;
+                    openTries--;
+                    if (openTries <= 0) phase = Phase.ADVANCE;
                     return;
                 }
                 if (clickCd > 0) return;
@@ -276,9 +302,8 @@ public class ChestRelay extends Module {
                 phase = Phase.ADVANCE;
             }
             case ADVANCE -> {
-                // After dumping into dst, that dst becomes the next "source" (take out and move forward)
                 srcIndex = nextOpenIndex(srcIndex + 1);
-                if (srcIndex < 0) srcIndex = chests.size(); // done
+                if (srcIndex < 0) srcIndex = chests.size();
                 waitTicks = Math.max(5, interval.getInt() * 20);
                 phase = Phase.WAIT;
             }
@@ -295,24 +320,25 @@ public class ChestRelay extends Module {
     private void markFull(BlockPos pos) {
         if (pos == null) return;
         fullMarked.add(pos.immutable());
+        ClientCommands.chatOnly("Full: " + pos.toShortString());
         NotificationManager.push("ChestRelay", "full " + pos.toShortString());
     }
 
     private boolean playerHasMovableItems(Minecraft mc) {
         try {
-            if (!(mc.gui.screen() instanceof ContainerScreen screen)) {
-                // check actual inv
-                var inv = mc.player.getInventory();
-                for (int i = 0; i < 36; i++) {
-                    if (!inv.getItem(i).isEmpty()) return true;
+            if (isContainerOpen(mc)) {
+                AbstractContainerMenu menu = getMenu(mc);
+                if (menu == null) return false;
+                int chestSlots = Math.max(0, menu.slots.size() - 36);
+                for (int i = chestSlots; i < menu.slots.size(); i++) {
+                    Slot slot = menu.slots.get(i);
+                    if (slot != null && slot.hasItem()) return true;
                 }
                 return false;
             }
-            AbstractContainerMenu menu = screen.getMenu();
-            int chestSlots = Math.max(0, menu.slots.size() - 36);
-            for (int i = chestSlots; i < menu.slots.size(); i++) {
-                Slot slot = menu.slots.get(i);
-                if (slot != null && slot.hasItem()) return true;
+            var inv = mc.player.getInventory();
+            for (int i = 0; i < 36; i++) {
+                if (!inv.getItem(i).isEmpty()) return true;
             }
         } catch (Throwable ignored) {}
         return false;
@@ -346,7 +372,7 @@ public class ChestRelay extends Module {
         if (p == null || pos == null) return false;
         Vec3 eye = p.getEyePosition(1f);
         Vec3 target = Vec3.atCenterOf(pos);
-        if (eye.distanceTo(target) > range.get().doubleValue() + 0.8) return false;
+        if (eye.distanceTo(target) > range.get().doubleValue() + 0.85) return false;
         double dx = target.x - eye.x;
         double dy = target.y - eye.y;
         double dz = target.z - eye.z;
@@ -362,15 +388,68 @@ public class ChestRelay extends Module {
     }
 
     private void tryOpen(Minecraft mc, BlockPos pos) {
+        LocalPlayer p = mc.player;
+        if (p == null || mc.gameMode == null) return;
         try {
-            BlockHitResult bhr = new BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false);
-            mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, bhr);
+            Vec3 eye = p.getEyePosition(1f);
+            Vec3 center = Vec3.atCenterOf(pos);
+            Vec3 diff = center.subtract(eye);
+            Direction face = Direction.getApproximateNearest((float) diff.x, (float) diff.y, (float) diff.z);
+            // hit the face toward the player
+            Direction hitFace = face.getOpposite();
+            Vec3 hit = center.subtract(new Vec3(hitFace.getStepX(), hitFace.getStepY(), hitFace.getStepZ()).scale(0.5));
+            BlockHitResult bhr = new BlockHitResult(hit, hitFace, pos, false);
+
+            // Primary path
+            try {
+                mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, bhr);
+            } catch (Throwable ignored) {}
+
+            // Reflection fallbacks for mapping drift
+            try {
+                for (var m : mc.gameMode.getClass().getMethods()) {
+                    if (!m.getName().toLowerCase().contains("useitem") && !m.getName().toLowerCase().contains("interact"))
+                        continue;
+                    Class<?>[] pt = m.getParameterTypes();
+                    if (pt.length == 3 && Player.class.isAssignableFrom(pt[0])) {
+                        try { m.invoke(mc.gameMode, p, InteractionHand.MAIN_HAND, bhr); return; }
+                        catch (Throwable ignored) {}
+                    }
+                }
+            } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
     }
 
     private boolean isContainerOpen(Minecraft mc) {
-        try { return mc.gui.screen() instanceof ContainerScreen; }
-        catch (Throwable t) { return false; }
+        try {
+            Screen s = mc.gui.screen();
+            if (s == null) return false;
+            if (s instanceof ContainerScreen || s instanceof AbstractContainerScreen<?>) return true;
+            String n = s.getClass().getName().toLowerCase();
+            return n.contains("container") || n.contains("chest") || n.contains("shulker")
+                    || n.contains("barrel") || n.contains("hopper") || n.contains("inventory");
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private AbstractContainerMenu getMenu(Minecraft mc) {
+        try {
+            Screen s = mc.gui.screen();
+            if (s instanceof AbstractContainerScreen<?> acs) return acs.getMenu();
+            if (s instanceof ContainerScreen cs) return cs.getMenu();
+            // reflection
+            for (var m : s.getClass().getMethods()) {
+                if (m.getName().equals("getMenu") && m.getParameterCount() == 0) {
+                    Object o = m.invoke(s);
+                    if (o instanceof AbstractContainerMenu menu) return menu;
+                }
+            }
+        } catch (Throwable ignored) {}
+        try {
+            return mc.player.containerMenu;
+        } catch (Throwable ignored) {}
+        return null;
     }
 
     private void closeScreen() {
@@ -384,8 +463,8 @@ public class ChestRelay extends Module {
 
     private boolean quickMoveOneContainerSlot(Minecraft mc) {
         try {
-            if (!(mc.gui.screen() instanceof ContainerScreen screen)) return false;
-            AbstractContainerMenu menu = screen.getMenu();
+            AbstractContainerMenu menu = getMenu(mc);
+            if (menu == null) return false;
             int chestSlots = Math.max(0, menu.slots.size() - 36);
             for (int i = 0; i < chestSlots; i++) {
                 Slot slot = menu.slots.get(i);
@@ -397,8 +476,8 @@ public class ChestRelay extends Module {
 
     private boolean quickMoveOnePlayerSlot(Minecraft mc) {
         try {
-            if (!(mc.gui.screen() instanceof ContainerScreen screen)) return false;
-            AbstractContainerMenu menu = screen.getMenu();
+            AbstractContainerMenu menu = getMenu(mc);
+            if (menu == null) return false;
             int chestSlots = Math.max(0, menu.slots.size() - 36);
             for (int i = chestSlots; i < menu.slots.size(); i++) {
                 Slot slot = menu.slots.get(i);
@@ -408,24 +487,34 @@ public class ChestRelay extends Module {
         return false;
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
     private boolean inventoryClick(Minecraft mc, int containerId, int slot) {
+        // Direct mapped path first
         try {
-            var method = mc.gameMode.getClass().getMethod(
-                    "handleInventoryMouseClick",
-                    int.class, int.class, int.class,
-                    Class.forName("net.minecraft.world.inventory.ClickType"),
-                    net.minecraft.world.entity.player.Player.class
-            );
-            Object quickMove = Enum.valueOf(
-                    (Class<? extends Enum>) Class.forName("net.minecraft.world.inventory.ClickType"),
-                    "QUICK_MOVE"
-            );
-            method.invoke(mc.gameMode, containerId, slot, 0, quickMove, mc.player);
+            mc.gameMode.handleInventoryMouseClick(containerId, slot, 0, ClickType.QUICK_MOVE, mc.player);
             return true;
-        } catch (Throwable t) {
-            return false;
-        }
+        } catch (Throwable ignored) {}
+        // Reflection fallbacks
+        try {
+            for (var m : mc.gameMode.getClass().getMethods()) {
+                if (!m.getName().toLowerCase().contains("inventory") && !m.getName().toLowerCase().contains("click"))
+                    continue;
+                if (m.getParameterCount() != 5) continue;
+                Class<?>[] pt = m.getParameterTypes();
+                if (pt[0] != int.class || pt[1] != int.class) continue;
+                Object clickType = null;
+                try {
+                    @SuppressWarnings({"unchecked", "rawtypes"})
+                    Object ct = Enum.valueOf((Class<? extends Enum>) Class.forName("net.minecraft.world.inventory.ClickType"), "QUICK_MOVE");
+                    clickType = ct;
+                } catch (Throwable ignored) {}
+                if (clickType == null) continue;
+                try {
+                    m.invoke(mc.gameMode, containerId, slot, 0, clickType, mc.player);
+                    return true;
+                } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {}
+        return false;
     }
 
     public static boolean looksLikeChest(Minecraft mc, BlockPos pos) {
@@ -449,18 +538,16 @@ public class ChestRelay extends Module {
         Minecraft mc = mc();
         if (mc == null || mc.font == null) return;
 
-        // HUD legend
         int lx = 8, ly = 48;
-        g.fill(lx - 2, ly - 2, lx + 120, ly + 34, 0xA0080A0E);
+        g.fill(lx - 2, ly - 2, lx + 130, ly + 34, 0xA0080A0E);
         g.text(mc.font, "ChestRelay", lx, ly, 0xFF00E8A0, false);
         g.text(mc.font, chests.size() + " marked", lx, ly + 10, 0xFF9CA3AF, false);
-        String ph = phase.name();
-        g.text(mc.font, "#" + (srcIndex + 1) + " " + ph, lx, ly + 20, 0xFFE8EAED, false);
+        g.text(mc.font, "#" + (srcIndex + 1) + " " + phase.name(), lx, ly + 20, 0xFFE8EAED, false);
 
         for (int i = 0; i < chests.size(); i++) {
             BlockPos pos = chests.get(i);
             boolean full = fullMarked.contains(pos);
-            boolean active = isEnabled() && (i == srcIndex || i == srcIndex + 1);
+            boolean active = isEnabled() && (i == srcIndex || i == nextOpenIndex(srcIndex + 1));
             int col = full ? 0xFFFF4466 : (active ? 0xFF00E8A0 : 0xFF6B8CFF);
 
             double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE, maxX = -Double.MAX_VALUE, maxY = -Double.MAX_VALUE;
@@ -477,8 +564,8 @@ public class ChestRelay extends Module {
             }
             if (vis < 2) continue;
             EspDraw.box(g, minX, minY, maxX, maxY, col | 0xFF000000, full ? 2 : 1);
-            String label = "#" + (i + 1) + (full ? " FULL" : "");
-            EspDraw.label(g, mc.font, label, (minX + maxX) * 0.5, minY - 10, col | 0xFF000000);
+            EspDraw.label(g, mc.font, "#" + (i + 1) + (full ? " FULL" : ""),
+                    (minX + maxX) * 0.5, minY - 10, col | 0xFF000000);
         }
     }
 }
