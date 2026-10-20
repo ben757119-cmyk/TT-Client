@@ -71,8 +71,7 @@ public class ClickGUIScreen extends Screen {
     }
 
     private int accent() {
-        ClickGUIModule guiMod = TTClientClient.modules != null ? TTClientClient.modules.getModule(ClickGUIModule.class) : null;
-        return guiMod != null ? guiMod.accent.get() : 0xFF00E8A0;
+        return ClickGUIModule.globalAccent();
     }
 
     private static com.ttclient.modules.ModuleManager manager() {
@@ -115,6 +114,7 @@ public class ClickGUIScreen extends Screen {
             for (int i = 0; i < 110; i++)
                 particles.add(new Particle((float) (Math.random() * this.width), (float) (Math.random() * this.height)));
         }
+        int acRgb = accent() & 0x00FFFFFF;
         for (Particle p : particles) {
             p.y += p.vy;
             if (p.y > this.height) {
@@ -124,7 +124,7 @@ public class ClickGUIScreen extends Screen {
                 p.alpha = 0x28 + (int) (Math.random() * 0x50);
             }
             int s = Math.max(1, (int) p.size);
-            graphics.fill((int) p.x, (int) p.y, (int) p.x + s, (int) p.y + s, (p.alpha << 24) | 0x00E8A0);
+            graphics.fill((int) p.x, (int) p.y, (int) p.x + s, (int) p.y + s, (p.alpha << 24) | acRgb);
         }
     }
 
@@ -302,12 +302,12 @@ public class ClickGUIScreen extends Screen {
         }
 
         public boolean mouseClicked(double mouseX, double mouseY, int button) {
-            int ix = (int) x, iy = (int) y;
             if (mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + headerHeight) {
                 if (button == 0) { dragging = true; dragOffsetX = mouseX - x; dragOffsetY = mouseY - y; return true; }
                 if (button == 1) { open = !open; savePanelLayout(); return true; }
             }
             if (!open) return false;
+            int ix = (int) x, iy = (int) y;
             List<Module> mods = filteredModules();
             int my = iy + headerHeight;
             for (Module mod : mods) {
