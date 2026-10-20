@@ -11,6 +11,7 @@ import com.ttclient.modules.misc.AutoChatGame;
 import com.ttclient.modules.player.Freecam;
 import com.ttclient.util.ChunkMeshReload;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.neoforged.api.distmarker.Dist;
@@ -54,6 +55,40 @@ public class TTClientClient {
         try { Minecraft.class.getMethod("setScreen", Screen.class).invoke(mc, screen); } catch (Throwable ignored) {}
     }
 
+    private static void openChatWith(Minecraft mc, String initial) {
+        try {
+            // ChatScreen(String) common
+            try {
+                var ctor = ChatScreen.class.getConstructor(String.class);
+                openScreen(mc, ctor.newInstance(initial));
+                return;
+            } catch (Throwable ignored) {}
+            try {
+                var ctor = ChatScreen.class.getConstructor(String.class, boolean.class);
+                openScreen(mc, ctor.newInstance(initial, false));
+                return;
+            } catch (Throwable ignored) {}
+            openScreen(mc, ChatScreen.class.getDeclaredConstructor().newInstance());
+            // best-effort set text after open
+            mc.execute(() -> {
+                try {
+                    Screen s = currentScreen(mc);
+                    if (!(s instanceof ChatScreen)) return;
+                    for (var f : s.getClass().getDeclaredFields()) {
+                        f.setAccessible(true);
+                        Object v = f.get(s);
+                        if (v == null) continue;
+                        String cn = v.getClass().getName().toLowerCase();
+                        if (cn.contains("editbox") || cn.contains("textfield")) {
+                            v.getClass().getMethod("setValue", String.class).invoke(v, initial);
+                            return;
+                        }
+                    }
+                } catch (Throwable ignored) {}
+            });
+        } catch (Throwable ignored) {}
+    }
+
     @SubscribeEvent
     public void onClientTick(ClientTickEvent.Post event) {
         ChunkMeshReload.tick();
@@ -82,6 +117,12 @@ public class TTClientClient {
         if (key <= 0 || key == GLFW.GLFW_KEY_UNKNOWN) return;
         Minecraft mc = Minecraft.getInstance();
         Screen screen = currentScreen(mc);
+
+        // Press "." in-world → open chat with "." pretyped
+        if (screen == null && key == GLFW.GLFW_KEY_PERIOD) {
+            openChatWith(mc, ".");
+            return;
+        }
 
         StreamerMode streamer = modules.getModule(StreamerMode.class);
         if (streamer != null && streamer.getKeyBind() > 0 && streamer.getKeyBind() == key) {
@@ -168,6 +209,28 @@ public class TTClientClient {
             String msg = event.getMessage();
             if (msg == null) return;
             if (!msg.trim().startsWith(ClientCommands.PREFIX)) return;
+
+            // .say <text> → send <text> to server
+            String say = ClientCommands.sayPayload(msg);
+            if (say != null) {
+                event.setCanceled(true);
+                if (!say.isEmpty()) {
+                    Minecraft mc = Minecraft.getInstance();
+                    if (mc.player != null) {
+                        try {
+                            mc.player.connection.sendChat(say);
+                        } catch (Throwable t) {
+                            try {
+                                // fallback reflection
+                                Object conn = mc.player.connection;
+                                conn.getClass().getMethod("sendChat", String.class).invoke(conn, say);
+                            } catch (Throwable ignored) {}
+                        }
+                    }
+                }
+                return;
+            }
+
             event.setCanceled(true);
             ClientCommands.handle(msg);
         } catch (Throwable t) {
