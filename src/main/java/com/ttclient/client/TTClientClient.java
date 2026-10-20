@@ -18,7 +18,6 @@ import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.entity.player.Player;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
@@ -85,12 +84,6 @@ public class TTClientClient {
         } catch (Throwable ignored) {}
     }
 
-    /** Soft AttackEntityEvent hook via reflection so missing class never fails compile. */
-    @SubscribeEvent
-    public void onAnyEvent(net.neoforged.bus.api.Event event) {
-        // no-op catch-all not used — see onClientTick for mace; mixin is primary
-    }
-
     @SubscribeEvent
     public void onScreenOpen(ScreenEvent.Opening event) {
         try {
@@ -118,6 +111,16 @@ public class TTClientClient {
                     || n.contains("receiving") || n.contains("download");
             if (heavy) TTBrand.drawTopBar(g, s);
             TTBrand.drawWatermark(g, s);
+        } catch (Throwable ignored) {}
+    }
+
+    /** Pre-tick: MaceHack fall spoof before vanilla processes attack this tick. */
+    @SubscribeEvent
+    public void onClientTickPre(ClientTickEvent.Pre event) {
+        try {
+            if (modules == null) return;
+            MaceHack mace = modules.getModule(MaceHack.class);
+            if (mace != null && mace.isEnabled()) mace.onPreTick();
         } catch (Throwable ignored) {}
     }
 
@@ -155,11 +158,6 @@ public class TTClientClient {
                     guiKeyWasDown = down;
                 }
             }
-        } catch (Throwable ignored) {}
-
-        // Soft AttackEntityEvent: if NeoForge fires it on client, spoof there too
-        try {
-            // handled primarily by MixinMultiPlayerGameMode
         } catch (Throwable ignored) {}
 
         if (modules == null) return;
