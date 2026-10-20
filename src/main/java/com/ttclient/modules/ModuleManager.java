@@ -93,6 +93,7 @@ public class ModuleManager {
         register(new NoBreakDelay());
         register(new NoFall());
         register(new ChestStealer());
+        register(new ChestRelay());
         register(new InventoryCleaner());
         register(new MiddleClickPearl());
         register(new AttributeSwapper());
