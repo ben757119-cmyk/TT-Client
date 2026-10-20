@@ -14,27 +14,23 @@ import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Minimal TT title screen — dark, centered, low noise.
+ */
 public class TTTitleScreen extends Screen {
     private static final int ACCENT = 0xFF00E8A0;
     private static final int TEXT = 0xFFE8EAED;
     private static final int TEXT_DIM = 0xFF6B7280;
-    private static final int BTN_BG = 0xF0161A24;
-    private static final int BTN_BG_HOV = 0xF0202630;
-    private static final int PANEL = 0xE00C0E14;
-    private static final int PARTICLE_COUNT = 220;
-
-    private static final String[] UPDATES = {
-            "v1.29.1  binds fixed · anchors tuned · menu open",
-            "v1.29.0  denser particles · branding",
-            "v1.28.9  custom main menu + server watermark",
-            "v1.28.8  panel layout saves across relaunch",
-            "v1.28.7  ClickGUI contrast + ChestRelay loot",
-    };
+    private static final int BTN = 0xE0121620;
+    private static final int BTN_HOV = 0xF01A2030;
+    private static final int PARTICLE_COUNT = 48;
 
     private final List<Particle> particles = new ArrayList<>();
     private final List<MenuButton> buttons = new ArrayList<>();
 
-    public TTTitleScreen() { super(Component.literal("TT Client")); }
+    public TTTitleScreen() {
+        super(Component.literal("TT Client"));
+    }
 
     private int accent() {
         try {
@@ -49,20 +45,22 @@ public class TTTitleScreen extends Screen {
     private void ensureParticles() {
         if (width <= 0 || height <= 0) return;
         while (particles.size() < PARTICLE_COUNT) {
-            particles.add(new Particle((float) (Math.random() * width), (float) (Math.random() * height)));
+            particles.add(new Particle(
+                    (float) (Math.random() * width),
+                    (float) (Math.random() * height)));
         }
     }
 
     @Override
     protected void init() {
         buttons.clear();
-        int bw = 160, bh = 22, gap = 6;
-        int cx = this.width / 2 - bw / 2;
-        int cy = this.height / 2 - 10;
+        int bw = 180, bh = 26, gap = 8;
+        int cx = width / 2 - bw / 2;
+        int cy = height / 2 - 4;
         buttons.add(new MenuButton("Singleplayer", cx, cy, bw, bh, this::openSingleplayer));
         buttons.add(new MenuButton("Multiplayer", cx, cy + (bh + gap), bw, bh, this::openMultiplayer));
         buttons.add(new MenuButton("Options", cx, cy + 2 * (bh + gap), bw, bh, this::openOptions));
-        buttons.add(new MenuButton("Quit", cx, cy + 3 * (bh + gap), bw, bh, this::quitGame));
+        buttons.add(new MenuButton("Quit Game", cx, cy + 3 * (bh + gap), bw, bh, this::quitGame));
         particles.clear();
         ensureParticles();
     }
@@ -71,19 +69,25 @@ public class TTTitleScreen extends Screen {
 
     @Override
     public void extractBackground(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
-        g.fill(0, 0, width, height, 0xFF02040A);
-        g.fill(0, 0, width, height, 0x66000000);
-        g.fill(0, 0, width, 80, 0x1800E8A0);
+        // Solid near-black — no tint wash, no top smear
+        g.fill(0, 0, width, height, 0xFF05060A);
+
         ensureParticles();
         int ac = accent() & 0x00FFFFFF;
         for (Particle p : particles) {
-            p.y += p.vy; p.x += p.vx;
-            if (p.y > height + 8) { p.y = -8; p.x = (float) (Math.random() * Math.max(1, width)); p.respawn(); }
-            if (p.x < -8) p.x = width + 4;
-            if (p.x > width + 8) p.x = -4;
+            p.y += p.vy;
+            if (p.y > height + 4) {
+                p.y = -4;
+                p.x = (float) (Math.random() * Math.max(1, width));
+                p.respawn();
+            }
             int s = Math.max(1, (int) p.size);
             g.fill((int) p.x, (int) p.y, (int) p.x + s, (int) p.y + s, (p.alpha << 24) | ac);
         }
+
+        // Soft vignette edges
+        g.fill(0, 0, width, 40, 0x40000000);
+        g.fill(0, height - 40, width, height, 0x50000000);
     }
 
     @Override protected void extractBlurredBackground(GuiGraphicsExtractor graphics) {}
@@ -93,32 +97,39 @@ public class TTTitleScreen extends Screen {
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
         int ac = accent();
+
+        // Title block — centered above buttons
         String title = "TT CLIENT";
         int tw = font.width(title);
-        g.text(font, title, width / 2 - tw / 2, height / 2 - 68, ac, false);
-        String sub = "v" + TTClient.VERSION + "  ·  the third";
-        g.text(font, sub, width / 2 - font.width(sub) / 2, height / 2 - 54, TEXT_DIM, false);
-        int lineW = Math.max(tw, 120);
-        g.fill(width / 2 - lineW / 2, height / 2 - 46, width / 2 + lineW / 2, height / 2 - 45, ac & 0x88FFFFFF);
+        int titleY = height / 2 - 72;
+        g.text(font, title, width / 2 - tw / 2, titleY, TEXT, false);
+
+        String sub = "v" + TTClient.VERSION;
+        g.text(font, sub, width / 2 - font.width(sub) / 2, titleY + 14, TEXT_DIM, false);
+
+        // Thin accent underline
+        int lineW = 48;
+        g.fill(width / 2 - lineW / 2, titleY + 28, width / 2 + lineW / 2, titleY + 29, ac);
 
         for (MenuButton b : buttons) {
             boolean hov = mouseX >= b.x && mouseX <= b.x + b.w && mouseY >= b.y && mouseY <= b.y + b.h;
             drawButton(g, b, hov, ac);
         }
 
-        int lx = 12, ly = height - 14 - UPDATES.length * 11 - 28;
-        roundedFill(g, lx - 4, ly - 6, lx + 220, height - 10, 6, PANEL);
-        g.fill(lx - 4, ly - 6, lx - 2, height - 10, ac);
-        g.text(font, "TT Client  v" + TTClient.VERSION, lx, ly, ac, false);
-        g.text(font, "recent updates", lx, ly + 12, TEXT_DIM, false);
-        for (int i = 0; i < UPDATES.length; i++) g.text(font, UPDATES[i], lx, ly + 24 + i * 11, TEXT, false);
-        g.text(font, "tt", width - font.width("tt") - 10, height - 14, ac & 0xAAFFFFFF, false);
+        // Bottom-left version only — no changelog wall
+        String mark = "tt  ·  the third";
+        g.text(font, mark, 12, height - 16, TEXT_DIM, false);
     }
 
     private void drawButton(GuiGraphicsExtractor g, MenuButton b, boolean hov, int ac) {
-        roundedFill(g, b.x, b.y, b.x + b.w, b.y + b.h, 5, hov ? BTN_BG_HOV : BTN_BG);
-        if (hov) g.fill(b.x, b.y + 3, b.x + 2, b.y + b.h - 3, ac);
-        g.text(font, b.label, b.x + (b.w - font.width(b.label)) / 2, b.y + (b.h - 8) / 2, hov ? ac : TEXT, false);
+        roundedFill(g, b.x, b.y, b.x + b.w, b.y + b.h, 6, hov ? BTN_HOV : BTN);
+        if (hov) {
+            g.fill(b.x, b.y + 4, b.x + 2, b.y + b.h - 4, ac);
+        }
+        // subtle bottom edge
+        g.fill(b.x + 6, b.y + b.h - 1, b.x + b.w - 6, b.y + b.h, hov ? (ac & 0x55FFFFFF) : 0x18FFFFFF);
+        int col = hov ? ac : TEXT;
+        g.text(font, b.label, b.x + (b.w - font.width(b.label)) / 2, b.y + (b.h - 8) / 2, col, false);
     }
 
     private static void roundedFill(GuiGraphicsExtractor g, int x1, int y1, int x2, int y2, int r, int color) {
@@ -190,12 +201,12 @@ public class TTTitleScreen extends Screen {
             Class<?> cls = Class.forName(className);
             Object screen = null;
             Constructor<?>[] ctors = cls.getConstructors();
-            // Prefer (Screen) then any that only need parent/mc
             for (Constructor<?> c : ctors) {
                 Class<?>[] p = c.getParameterTypes();
                 try {
                     if (p.length == 1 && Screen.class.isAssignableFrom(p[0])) {
-                        screen = c.newInstance(parent); break;
+                        screen = c.newInstance(parent);
+                        break;
                     }
                 } catch (Throwable ignored) {}
             }
@@ -205,15 +216,13 @@ public class TTTitleScreen extends Screen {
                     try {
                         if (p.length == 0) { screen = c.newInstance(); break; }
                         if (p.length == 2 && Screen.class.isAssignableFrom(p[0])) {
-                            Object a1 = parent;
-                            Object a2 = null;
-                            if (Minecraft.class.isAssignableFrom(p[1])) a2 = mc;
-                            else if (p[1].isPrimitive()) continue;
-                            else a2 = null;
-                            screen = c.newInstance(a1, a2); break;
+                            Object a2 = Minecraft.class.isAssignableFrom(p[1]) ? mc : null;
+                            screen = c.newInstance(parent, a2);
+                            break;
                         }
                         if (p.length == 2 && Minecraft.class.isAssignableFrom(p[0]) && Screen.class.isAssignableFrom(p[1])) {
-                            screen = c.newInstance(mc, parent); break;
+                            screen = c.newInstance(mc, parent);
+                            break;
                         }
                     } catch (Throwable ignored) {}
                 }
@@ -233,24 +242,40 @@ public class TTTitleScreen extends Screen {
             if (TTClientClient.modules == null) return true;
             CustomMainMenu m = TTClientClient.modules.getModule(CustomMainMenu.class);
             return m == null || m.isEnabled();
-        } catch (Throwable t) { return true; }
+        } catch (Throwable t) {
+            return true;
+        }
     }
 
     private static final class Particle {
-        float x, y, vx, vy, size; int alpha;
-        Particle(float x, float y) { this.x = x; this.y = y; respawn(); }
+        float x, y, vy, size;
+        int alpha;
+
+        Particle(float x, float y) {
+            this.x = x;
+            this.y = y;
+            respawn();
+        }
+
         void respawn() {
-            this.vy = 0.22f + (float) Math.random() * 1.35f;
-            this.vx = ((float) Math.random() - 0.5f) * 0.35f;
-            this.size = 1f + (float) Math.random() * 4.5f;
-            this.alpha = 0x30 + (int) (Math.random() * 0x55);
+            this.vy = 0.12f + (float) Math.random() * 0.45f;
+            this.size = 1f + (float) Math.random() * 1.8f;
+            this.alpha = 0x14 + (int) (Math.random() * 0x22);
         }
     }
 
     private static final class MenuButton {
-        final String label; final int x, y, w, h; final Runnable action;
+        final String label;
+        final int x, y, w, h;
+        final Runnable action;
+
         MenuButton(String label, int x, int y, int w, int h, Runnable action) {
-            this.label = label; this.x = x; this.y = y; this.w = w; this.h = h; this.action = action;
+            this.label = label;
+            this.x = x;
+            this.y = y;
+            this.w = w;
+            this.h = h;
+            this.action = action;
         }
     }
 }
