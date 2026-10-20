@@ -1,6 +1,7 @@
 package com.ttclient.gui;
 
 import com.ttclient.TTClient;
+import com.ttclient.config.ConfigManager;
 import com.ttclient.client.TTClientClient;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
@@ -26,6 +27,7 @@ import java.util.Map;
 /**
  * ClickGUI — panels start to the right of the search bar, fully rounded,
  * full settings (bool / number slider / mode cycle / bind).
+ * Panel positions and open state persist via ConfigManager.
  */
 public class ClickGUIScreen extends Screen {
     private final Map<Category, Panel> panels = new HashMap<>();
@@ -92,11 +94,31 @@ public class ClickGUIScreen extends Screen {
         int x = SEARCH_X + SEARCH_W + 18;
         for (Category cat : Category.values()) {
             if (manager() != null && manager().getModulesByCategory(cat).isEmpty()) continue;
-            Panel p = new Panel(cat, x, PANEL_START_Y);
+            double px = x, py = PANEL_START_Y;
+            boolean isOpen = true;
+            double[] saved = ConfigManager.PANEL_LAYOUT.get(cat.name);
+            if (saved != null && saved.length >= 2) {
+                px = saved[0];
+                py = saved[1];
+                if (saved.length >= 3) isOpen = saved[2] >= 0.5;
+            }
+            Panel p = new Panel(cat, px, py);
+            p.open = isOpen;
             panels.put(cat, p);
             panelList.add(p);
             x += PANEL_W + PANEL_GAP;
         }
+    }
+
+    /** Snapshot current panel x/y/open into ConfigManager and persist to disk. */
+    private void savePanelLayout() {
+        java.util.HashMap<String, double[]> layout = new java.util.HashMap<>();
+        for (Panel p : panelList) {
+            layout.put(p.category.name, new double[]{p.x, p.y, p.open ? 1.0 : 0.0});
+        }
+        ConfigManager.PANEL_LAYOUT.clear();
+        ConfigManager.PANEL_LAYOUT.putAll(layout);
+        if (TTClientClient.config != null) TTClientClient.config.save();
     }
 
     @Override public boolean isInGameUi() { return true; }
@@ -190,8 +212,8 @@ public class ClickGUIScreen extends Screen {
     @Override public void onClose() {
         commitTyping(true); sliding = null;
         for (Panel p : panelList) if (p.expanded instanceof BlockESP be) be.uiSearchFocused = false;
+        savePanelLayout();
         super.onClose();
-        if (TTClientClient.config != null) TTClientClient.config.save();
     }
 
     private void applySlider(NumberSetting ns, double mouseX, int trackX, int trackW) {
@@ -245,7 +267,8 @@ public class ClickGUIScreen extends Screen {
     public class Panel {
         private final Category category;
         private double x, y;
-        private boolean open = true, dragging = false;
+        boolean open = true;
+        private boolean dragging = false;
         private double dragOffsetX, dragOffsetY;
         private final int width = PANEL_W, headerHeight = 16;
         Module expanded = null;
@@ -366,7 +389,7 @@ public class ClickGUIScreen extends Screen {
                     dragOffsetY = mouseY - y;
                     return true;
                 }
-                if (button == 1) { open = !open; return true; }
+                if (button == 1) { open = !open; savePanelLayout(); return true; }
             }
             if (!open) return false;
             List<Module> mods = filteredModules();
@@ -402,10 +425,8 @@ public class ClickGUIScreen extends Screen {
                         }
                         my += h;
                     }
-                    if (mouseX >= x && mouseX <= x + width && mouseY >= my && mouseY <= my + SETTING_H) {
-                        if (button == 0) { startBinding(mod); return true; }
-                    }
-                    my += SETTING_H;
+                    my += SETTING_H; // bind row
+                    if (mod instanceof BlockESP) my += SETTING_H;
                 }
             }
             return false;
@@ -421,7 +442,10 @@ public class ClickGUIScreen extends Screen {
         }
 
         public void mouseReleased(int button) {
-            if (button == 0) dragging = false;
+            if (button == 0 && dragging) {
+                dragging = false;
+                savePanelLayout(); // persist position after drag
+            }
         }
     }
 
@@ -447,13 +471,14 @@ public class ClickGUIScreen extends Screen {
             for (Module m : manager().getModules()) {
                 if (!m.getName().toLowerCase(Locale.ROOT).contains(q)
                         && !m.getDescription().toLowerCase(Locale.ROOT).contains(q)) continue;
-                if (mouseY >= sy && mouseY <= sy + 14) { m.toggle(); return true; }
+                if (mouseY >= sy && mouseY <= sy + 14) {
+                    m.toggle();
+                    return true;
+                }
                 sy += 15;
                 if (sy > SEARCH_Y + SEARCH_H + 16 + 15 * 12) break;
             }
         }
-        searchFocused = false;
-        if (sliding != null) return true;
         for (int i = panelList.size() - 1; i >= 0; i--) {
             if (panelList.get(i).mouseClicked(mouseX, mouseY, button)) return true;
         }
