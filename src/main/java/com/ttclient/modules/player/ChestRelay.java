@@ -20,7 +20,6 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.RandomizableContainerBlockEntity;
@@ -34,9 +33,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
-/**
- * Chain chest relay — camera aim + open + shift-click transfer.
- */
 public class ChestRelay extends Module {
     public final NumberSetting interval = addSetting(new NumberSetting(
             "Interval", "Seconds between hops", 2, 1, 120, 1));
@@ -198,7 +194,6 @@ public class ChestRelay extends Module {
             }
             case LOOT -> {
                 if (!isContainerOpen(mc)) {
-                    // lost GUI — try reopen a few times
                     if (openTries > 0) {
                         openTries--;
                         lookAt(mc, chests.get(srcIndex));
@@ -393,23 +388,24 @@ public class ChestRelay extends Module {
         try {
             Vec3 eye = p.getEyePosition(1f);
             Vec3 center = Vec3.atCenterOf(pos);
-            Vec3 diff = center.subtract(eye);
-            Direction face = Direction.getApproximateNearest((float) diff.x, (float) diff.y, (float) diff.z);
-            // hit the face toward the player
-            Direction hitFace = face.getOpposite();
-            Vec3 hit = center.subtract(new Vec3(hitFace.getStepX(), hitFace.getStepY(), hitFace.getStepZ()).scale(0.5));
+            Direction hitFace = Direction.UP;
+            double best = Double.MAX_VALUE;
+            for (Direction d : Direction.values()) {
+                Vec3 face = center.subtract(d.getStepX() * 0.5, d.getStepY() * 0.5, d.getStepZ() * 0.5);
+                double dist = eye.distanceToSqr(face);
+                if (dist < best) { best = dist; hitFace = d; }
+            }
+            Vec3 hit = center.subtract(hitFace.getStepX() * 0.49, hitFace.getStepY() * 0.49, hitFace.getStepZ() * 0.49);
             BlockHitResult bhr = new BlockHitResult(hit, hitFace, pos, false);
 
-            // Primary path
             try {
                 mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, bhr);
             } catch (Throwable ignored) {}
 
-            // Reflection fallbacks for mapping drift
             try {
                 for (var m : mc.gameMode.getClass().getMethods()) {
-                    if (!m.getName().toLowerCase().contains("useitem") && !m.getName().toLowerCase().contains("interact"))
-                        continue;
+                    String n = m.getName().toLowerCase();
+                    if (!n.contains("useitem") && !n.contains("interact")) continue;
                     Class<?>[] pt = m.getParameterTypes();
                     if (pt.length == 3 && Player.class.isAssignableFrom(pt[0])) {
                         try { m.invoke(mc.gameMode, p, InteractionHand.MAIN_HAND, bhr); return; }
@@ -427,7 +423,7 @@ public class ChestRelay extends Module {
             if (s instanceof ContainerScreen || s instanceof AbstractContainerScreen<?>) return true;
             String n = s.getClass().getName().toLowerCase();
             return n.contains("container") || n.contains("chest") || n.contains("shulker")
-                    || n.contains("barrel") || n.contains("hopper") || n.contains("inventory");
+                    || n.contains("barrel") || n.contains("hopper");
         } catch (Throwable t) {
             return false;
         }
@@ -438,11 +434,12 @@ public class ChestRelay extends Module {
             Screen s = mc.gui.screen();
             if (s instanceof AbstractContainerScreen<?> acs) return acs.getMenu();
             if (s instanceof ContainerScreen cs) return cs.getMenu();
-            // reflection
-            for (var m : s.getClass().getMethods()) {
-                if (m.getName().equals("getMenu") && m.getParameterCount() == 0) {
-                    Object o = m.invoke(s);
-                    if (o instanceof AbstractContainerMenu menu) return menu;
+            if (s != null) {
+                for (var m : s.getClass().getMethods()) {
+                    if (m.getName().equals("getMenu") && m.getParameterCount() == 0) {
+                        Object o = m.invoke(s);
+                        if (o instanceof AbstractContainerMenu menu) return menu;
+                    }
                 }
             }
         } catch (Throwable ignored) {}
@@ -487,29 +484,33 @@ public class ChestRelay extends Module {
         return false;
     }
 
+    @SuppressWarnings({"unchecked", "rawtypes"})
     private boolean inventoryClick(Minecraft mc, int containerId, int slot) {
-        // Direct mapped path first
         try {
-            mc.gameMode.handleInventoryMouseClick(containerId, slot, 0, ClickType.QUICK_MOVE, mc.player);
+            var method = mc.gameMode.getClass().getMethod(
+                    "handleInventoryMouseClick",
+                    int.class, int.class, int.class,
+                    Class.forName("net.minecraft.world.inventory.ClickType"),
+                    Player.class
+            );
+            Object quickMove = Enum.valueOf(
+                    (Class<? extends Enum>) Class.forName("net.minecraft.world.inventory.ClickType"),
+                    "QUICK_MOVE"
+            );
+            method.invoke(mc.gameMode, containerId, slot, 0, quickMove, mc.player);
             return true;
         } catch (Throwable ignored) {}
-        // Reflection fallbacks
         try {
             for (var m : mc.gameMode.getClass().getMethods()) {
-                if (!m.getName().toLowerCase().contains("inventory") && !m.getName().toLowerCase().contains("click"))
-                    continue;
                 if (m.getParameterCount() != 5) continue;
-                Class<?>[] pt = m.getParameterTypes();
-                if (pt[0] != int.class || pt[1] != int.class) continue;
-                Object clickType = null;
+                String n = m.getName().toLowerCase();
+                if (!n.contains("inventory") && !n.contains("click")) continue;
+                Object quickMove = Enum.valueOf(
+                        (Class<? extends Enum>) Class.forName("net.minecraft.world.inventory.ClickType"),
+                        "QUICK_MOVE"
+                );
                 try {
-                    @SuppressWarnings({"unchecked", "rawtypes"})
-                    Object ct = Enum.valueOf((Class<? extends Enum>) Class.forName("net.minecraft.world.inventory.ClickType"), "QUICK_MOVE");
-                    clickType = ct;
-                } catch (Throwable ignored) {}
-                if (clickType == null) continue;
-                try {
-                    m.invoke(mc.gameMode, containerId, slot, 0, clickType, mc.player);
+                    m.invoke(mc.gameMode, containerId, slot, 0, quickMove, mc.player);
                     return true;
                 } catch (Throwable ignored) {}
             }
