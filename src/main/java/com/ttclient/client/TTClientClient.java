@@ -3,6 +3,7 @@ package com.ttclient.client;
 import com.ttclient.TTClient;
 import com.ttclient.config.ConfigManager;
 import com.ttclient.gui.ClickGUIScreen;
+import com.ttclient.gui.TTTitleScreen;
 import com.ttclient.modules.Module;
 import com.ttclient.modules.ModuleManager;
 import com.ttclient.modules.client.ClickGUIModule;
@@ -11,8 +12,10 @@ import com.ttclient.modules.misc.AutoChatGame;
 import com.ttclient.modules.player.Freecam;
 import com.ttclient.util.ChunkMeshReload;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.network.chat.Component;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -23,6 +26,7 @@ import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RenderGuiEvent;
+import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.event.ViewportEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import org.lwjgl.glfw.GLFW;
@@ -72,7 +76,6 @@ public class TTClientClient {
                 openScreen(mc, ctor.newInstance(initial, false));
                 return;
             } catch (Throwable ignored) {}
-            // fallback: open blank chat then force text
             try {
                 openScreen(mc, ChatScreen.class.getDeclaredConstructor().newInstance());
             } catch (Throwable ignored) {}
@@ -81,7 +84,6 @@ public class TTClientClient {
                 try {
                     Screen s = currentScreen(mc);
                     if (s == null) return;
-                    // walk fields + super for EditBox
                     Class<?> c = s.getClass();
                     while (c != null && c != Object.class) {
                         for (var f : c.getDeclaredFields()) {
@@ -105,13 +107,60 @@ public class TTClientClient {
         } catch (Throwable ignored) {}
     }
 
+    /** Swap vanilla TitleScreen for the clean TT menu when CustomMainMenu is enabled. */
+    @SubscribeEvent
+    public void onScreenOpen(ScreenEvent.Opening event) {
+        try {
+            Screen next = event.getScreen();
+            if (next == null) return;
+            if (next instanceof TTTitleScreen) return;
+            boolean isTitle = next instanceof TitleScreen
+                    || next.getClass().getName().endsWith(".TitleScreen")
+                    || next.getClass().getSimpleName().equals("TitleScreen");
+            if (isTitle && TTTitleScreen.isEnabled()) {
+                event.setNewScreen(new TTTitleScreen());
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    /** TT Client watermark on multiplayer / server selector. */
+    @SubscribeEvent
+    public void onScreenRender(ScreenEvent.Render.Post event) {
+        try {
+            Screen s = event.getScreen();
+            if (s == null) return;
+            String n = s.getClass().getName().toLowerCase();
+            boolean multi = n.contains("multiplayer") || n.contains("joinmulti")
+                    || n.contains("serverselect") || n.contains("serverlist");
+            if (!multi) return;
+            GuiGraphicsExtractor g = event.getGuiGraphics();
+            if (g == null) return;
+            Minecraft mc = Minecraft.getInstance();
+            if (mc == null || mc.font == null) return;
+            int ac = 0xFF00E8A0;
+            try {
+                if (modules != null) {
+                    ClickGUIModule gui = modules.getModule(ClickGUIModule.class);
+                    if (gui != null) ac = gui.accent.get();
+                }
+            } catch (Throwable ignored) {}
+            String mark = "TT Client  v" + TTClient.VERSION;
+            int pad = 6;
+            int tw = mc.font.width(mark);
+            int x = 8;
+            int y = s.height - 16;
+            g.fill(x - 2, y - 3, x + tw + pad, y + 11, 0xC0080A0E);
+            g.fill(x - 2, y - 3, x, y + 11, ac);
+            g.text(mc.font, mark, x + 2, y, ac, false);
+        } catch (Throwable ignored) {}
+    }
+
     @SubscribeEvent
     public void onClientTick(ClientTickEvent.Post event) {
         ChunkMeshReload.tick();
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) return;
 
-        // Fallback: poll GLFW for period when no screen is open
         try {
             long win = mc.getWindow().handle();
             boolean down = GLFW.glfwGetKey(win, GLFW.GLFW_KEY_PERIOD) == GLFW.GLFW_PRESS;
@@ -147,7 +196,6 @@ public class TTClientClient {
         Minecraft mc = Minecraft.getInstance();
         Screen screen = currentScreen(mc);
 
-        // Press "." in-world → open chat with "." pretyped
         if (screen == null && (key == GLFW.GLFW_KEY_PERIOD || key == 46)) {
             openChatWith(mc, ".");
             return;
