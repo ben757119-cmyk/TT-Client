@@ -12,7 +12,6 @@ import net.minecraft.world.phys.Vec3;
 public final class SilentRotate {
     private SilentRotate() {}
 
-    /** Last combat target for Target HUD / auras. */
     public static volatile Entity lastTarget;
     public static volatile long lastTargetMs;
 
@@ -42,10 +41,6 @@ public final class SilentRotate {
         return new float[]{yaw, pitch};
     }
 
-    /**
-     * Server + body only. Camera (getYRot/getXRot) unchanged so first-person POV stays still.
-     * In third person the model faces the target.
-     */
     public static void lookSilent(LocalPlayer p, Entity target) {
         if (p == null || target == null) return;
         float[] a = anglesTo(p, target);
@@ -65,7 +60,6 @@ public final class SilentRotate {
         try {
             p.yHeadRot = yaw;
             p.yBodyRot = yaw;
-            // smooth-ish for render
             try { p.yHeadRotO = yaw; } catch (Throwable ignored) {}
             try { p.yBodyRotO = yaw; } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
@@ -78,12 +72,9 @@ public final class SilentRotate {
         boolean horiz = false;
         try { horiz = p.horizontalCollision; } catch (Throwable ignored) {}
 
+        // 26.2: Rot(float, float, boolean, boolean)
         try {
             p.connection.send(new ServerboundMovePlayerPacket.Rot(yaw, pitch, onGround, horiz));
-            return;
-        } catch (Throwable ignored) {}
-        try {
-            p.connection.send(new ServerboundMovePlayerPacket.Rot(yaw, pitch, onGround));
             return;
         } catch (Throwable ignored) {}
         try {
@@ -94,8 +85,6 @@ public final class SilentRotate {
                 try {
                     if (pt.length == 4 && pt[0] == float.class) {
                         pkt = c.newInstance(yaw, pitch, onGround, horiz);
-                    } else if (pt.length == 3 && pt[0] == float.class) {
-                        pkt = c.newInstance(yaw, pitch, onGround);
                     }
                 } catch (Throwable ignored2) {}
                 if (pkt != null) {
