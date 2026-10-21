@@ -3,6 +3,8 @@ package com.ttclient.client;
 import com.ttclient.TTClient;
 import com.ttclient.config.ConfigManager;
 import com.ttclient.gui.ClickGUIScreen;
+import com.ttclient.gui.TTConnectScreen;
+import com.ttclient.gui.TTDisconnectedScreen;
 import com.ttclient.gui.TTTitleScreen;
 import com.ttclient.modules.Module;
 import com.ttclient.modules.ModuleManager;
@@ -11,6 +13,7 @@ import com.ttclient.modules.client.StreamerMode;
 import com.ttclient.modules.misc.AutoChatGame;
 import com.ttclient.modules.player.Freecam;
 import com.ttclient.util.ChunkMeshReload;
+import com.ttclient.util.FriendsManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.ChatScreen;
@@ -48,6 +51,7 @@ public class TTClientClient {
         TTClient.config = config;
         modules.init();
         config.load();
+        FriendsManager.load();
         NeoForge.EVENT_BUS.register(this);
         TTClient.LOGGER.info("TT Client {} ready with {} modules",
                 TTClient.VERSION, modules.getModules().size());
@@ -88,14 +92,71 @@ public class TTClientClient {
         try {
             Screen next = event.getScreen();
             if (next == null) return;
-            if (next instanceof TTTitleScreen) return;
+            if (next instanceof TTTitleScreen || next instanceof TTConnectScreen
+                    || next instanceof TTDisconnectedScreen) return;
+
+            String n = next.getClass().getName().toLowerCase();
+            String simple = next.getClass().getSimpleName().toLowerCase();
+
+            // Title
             boolean isTitle = next instanceof TitleScreen
-                    || next.getClass().getName().endsWith(".TitleScreen")
-                    || next.getClass().getSimpleName().equals("TitleScreen");
+                    || n.endsWith(".titlescreen")
+                    || simple.equals("titlescreen");
             if (isTitle && TTTitleScreen.isEnabled()) {
                 event.setNewScreen(new TTTitleScreen());
+                return;
+            }
+
+            // Connecting / progress / receiving level
+            boolean isConnect = (n.contains("connect") && !n.contains("disconnect"))
+                    || n.contains("progressscreen")
+                    || n.contains("receivinglevel")
+                    || simple.contains("connect") && !simple.contains("disconnect");
+            if (isConnect) {
+                String status = "Connecting";
+                if (n.contains("receiving") || simple.contains("receiving")) status = "Receiving terrain";
+                else if (n.contains("progress") || n.contains("download")) status = "Loading";
+                event.setNewScreen(new TTConnectScreen(next, status));
+                return;
+            }
+
+            // Disconnected / kicked
+            if (n.contains("disconnected") || simple.contains("disconnected")) {
+                String reason = extractDisconnectReason(next);
+                event.setNewScreen(new TTDisconnectedScreen(reason));
             }
         } catch (Throwable ignored) {}
+    }
+
+    private static String extractDisconnectReason(Screen s) {
+        try {
+            for (var f : s.getClass().getDeclaredFields()) {
+                try {
+                    f.setAccessible(true);
+                    Object v = f.get(s);
+                    if (v instanceof Component c) {
+                        String t = c.getString();
+                        if (t != null && !t.isBlank() && t.length() > 2) return t;
+                    }
+                    if (v instanceof String str && str.length() > 2) return str;
+                } catch (Throwable ignored) {}
+            }
+            // parent class fields
+            Class<?> c = s.getClass().getSuperclass();
+            if (c != null) {
+                for (var f : c.getDeclaredFields()) {
+                    try {
+                        f.setAccessible(true);
+                        Object v = f.get(s);
+                        if (v instanceof Component comp) {
+                            String t = comp.getString();
+                            if (t != null && !t.isBlank()) return t;
+                        }
+                    } catch (Throwable ignored) {}
+                }
+            }
+        } catch (Throwable ignored) {}
+        return "Disconnected from server";
     }
 
     @SubscribeEvent
@@ -103,6 +164,9 @@ public class TTClientClient {
         try {
             Screen s = event.getScreen();
             if (s == null) return;
+            // Skip branding on full TT screens
+            if (s instanceof TTConnectScreen || s instanceof TTDisconnectedScreen
+                    || s instanceof TTTitleScreen) return;
             GuiGraphicsExtractor g = event.getGuiGraphics();
             if (g == null) return;
             TTBrand.drawAll(g, s);
@@ -159,6 +223,7 @@ public class TTClientClient {
     @SubscribeEvent
     public void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
         if (config != null) config.save();
+        FriendsManager.save();
     }
 
     @SubscribeEvent

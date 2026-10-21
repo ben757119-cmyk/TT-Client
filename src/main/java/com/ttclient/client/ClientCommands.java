@@ -4,6 +4,7 @@ import com.ttclient.TTClient;
 import com.ttclient.modules.Module;
 import com.ttclient.modules.player.ChestRelay;
 import com.ttclient.modules.render.BlockESP;
+import com.ttclient.util.FriendsManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
@@ -49,6 +50,7 @@ public final class ClientCommands {
             case "modules", "mods", "list" -> listModules(args);
             case "b", "block", "blockesp", "be" -> blockEsp(args);
             case "chest", "chests", "cr", "chestrelay" -> chestRelay(args);
+            case "friend", "friends", "f" -> friends(args);
             case "bind" -> chat("Right-click a module in ClickGUI to set its bind");
             case "ping" -> chat("pong");
             case "coords", "pos" -> coords();
@@ -73,14 +75,15 @@ public final class ClientCommands {
         if (!body.contains(" ")) {
             String partial = body.toLowerCase(Locale.ROOT);
             List<String> cmds = List.of(
-                    "help", "version", "toggle", "modules", "block", "chest", "say", "coords", "ping", "bind"
+                    "help", "version", "toggle", "modules", "block", "chest", "friend", "say", "coords", "ping", "bind"
             );
             List<String> hits = new ArrayList<>();
             for (String c : cmds) if (c.startsWith(partial)) hits.add(PREFIX + c);
             if (hits.isEmpty()) return null;
             if (hits.size() == 1) {
                 String h = hits.get(0);
-                if (h.equals(PREFIX + "toggle") || h.equals(PREFIX + "say") || h.equals(PREFIX + "chest") || h.equals(PREFIX + "block"))
+                if (h.equals(PREFIX + "toggle") || h.equals(PREFIX + "say") || h.equals(PREFIX + "chest")
+                        || h.equals(PREFIX + "block") || h.equals(PREFIX + "friend"))
                     return h + " ";
                 return h;
             }
@@ -102,6 +105,14 @@ public final class ClientCommands {
             if (hits.size() == 1) return hits.get(0);
             chatOnly("§7" + String.join(" §8| §7", hits.stream().limit(8).toList()));
             return commonPrefix(hits);
+        }
+        if (cmd.equals("friend") || cmd.equals("f") || cmd.equals("friends")) {
+            String partial = parts.size() > 1 ? parts.get(1).toLowerCase(Locale.ROOT) : "";
+            List<String> hits = new ArrayList<>();
+            for (String s : List.of("add", "remove", "list", "clear"))
+                if (s.startsWith(partial)) hits.add(PREFIX + "friend " + s);
+            if (hits.size() == 1) return hits.get(0) + (hits.get(0).endsWith("list") || hits.get(0).endsWith("clear") ? "" : " ");
+            if (!hits.isEmpty()) return commonPrefix(hits);
         }
         if (cmd.equals("chest") || cmd.equals("cr")) {
             String partial = parts.size() > 1 ? parts.get(1).toLowerCase(Locale.ROOT) : "";
@@ -135,10 +146,44 @@ public final class ClientCommands {
         chatOnly("§a§lTT Commands §8· §7prefix .");
         chatOnly("§f.help §8· §f.version §8· §f.ping §8· §f.coords");
         chatOnly("§f.toggle <module> §8· §f.modules [filter]");
+        chatOnly("§f.friend add|remove|list|clear <name>");
         chatOnly("§f.say <message> §8· talk on the server");
         chatOnly("§f.b add|remove|list|clear <block>");
         chatOnly("§f.chest add|list|clear|remove <#>  §8(look at chest)");
         chatOnly("§7Tab autocompletes. Press . to open chat with prefix.");
+    }
+
+    private static void friends(List<String> args) {
+        FriendsManager.load();
+        if (args.isEmpty()) {
+            chatOnly(".friend add|remove|list|clear <name>");
+            chatOnly("§7Local list only — no global TT user directory (needs a server).");
+            return;
+        }
+        String sub = args.get(0).toLowerCase(Locale.ROOT);
+        switch (sub) {
+            case "add", "a" -> {
+                if (args.size() < 2) { chatOnly(".friend add <name>"); return; }
+                String name = String.join(" ", args.subList(1, args.size()));
+                chatOnly(FriendsManager.add(name) ? "Added friend §a" + name : "Already friends with " + name);
+            }
+            case "remove", "rm", "del", "r" -> {
+                if (args.size() < 2) { chatOnly(".friend remove <name>"); return; }
+                String name = String.join(" ", args.subList(1, args.size()));
+                chatOnly(FriendsManager.remove(name) ? "Removed §c" + name : "Not in friends: " + name);
+            }
+            case "list", "l" -> {
+                List<String> list = FriendsManager.list();
+                if (list.isEmpty()) { chatOnly("(no friends)"); return; }
+                chatOnly("Friends (" + list.size() + "):");
+                for (String f : list) chatOnly("  §a" + f);
+            }
+            case "clear", "c" -> {
+                FriendsManager.clear();
+                chatOnly("Friends cleared");
+            }
+            default -> chatOnly(".friend add|remove|list|clear <name>");
+        }
     }
 
     private static void coords() {
@@ -259,25 +304,18 @@ public final class ClientCommands {
         }
     }
 
-    /**
-     * Client-only chat feedback for NeoForge 26.2.
-     * No direct displayClientMessage — method is not on LocalPlayer in this mapping.
-     * Uses reflection against player + Gui chat component only.
-     */
     public static void chatOnly(String body) {
         if (body == null) return;
         try {
             Minecraft mc = Minecraft.getInstance();
             if (mc == null) return;
             Component comp = Component.literal("[TT] " + stripCodesForPlain(body));
-            // Prefer styled component when body already has section signs
             try {
                 if (body.indexOf('§') >= 0) {
                     comp = Component.literal("§8[§aTT§8] §f" + body);
                 }
             } catch (Throwable ignored) {}
 
-            // 1) Player methods via reflection (sendSystemMessage / displayClientMessage / etc.)
             if (mc.player != null) {
                 Object player = mc.player;
                 Class<?> c = player.getClass();
@@ -286,8 +324,7 @@ public final class ClientCommands {
                         String name = m.getName();
                         if (!(name.equals("displayClientMessage")
                                 || name.equals("sendSystemMessage")
-                                || name.equals("sendMessage")
-                                || name.equals("displayClientMessage"))) continue;
+                                || name.equals("sendMessage"))) continue;
                         Class<?>[] pt = m.getParameterTypes();
                         try {
                             m.setAccessible(true);
@@ -306,7 +343,6 @@ public final class ClientCommands {
                 }
             }
 
-            // 2) Gui chat component
             if (mc.gui != null) {
                 Object chat = null;
                 try {
