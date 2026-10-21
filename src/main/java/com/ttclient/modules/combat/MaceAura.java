@@ -5,6 +5,7 @@ import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
 import com.ttclient.settings.NumberSetting;
 import com.ttclient.util.InvUtils;
+import com.ttclient.util.SilentRotate;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.InteractionHand;
@@ -13,7 +14,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 
-/** Mace aura — calls MaceHack packet spoof before each hit when MaceHack is on. */
+/** Mace aura — MaceHack spoof + silent body rotate by default. */
 public class MaceAura extends Module {
     public final NumberSetting range = addSetting(new NumberSetting("Range", "Attack range", 4.5, 2, 6, 0.1));
     public final NumberSetting cooldown = addSetting(new NumberSetting("Cooldown", "Ticks between hits", 12, 0, 30, 1));
@@ -21,6 +22,7 @@ public class MaceAura extends Module {
     public final BoolSetting requireFall = addSetting(new BoolSetting("RequireFall", "Only while falling (ignored if MaceHack on)", true));
     public final BoolSetting autoSwap = addSetting(new BoolSetting("AutoSwap", "Switch to mace", true));
     public final NumberSetting minFall = addSetting(new NumberSetting("MinFall", "Min fall distance", 1.5, 0, 20, 0.5));
+    public final BoolSetting silent = addSetting(new BoolSetting("Silent", "Body rotate only — keep POV", true));
 
     private int timer;
     private int prevSlot = -1;
@@ -66,10 +68,10 @@ public class MaceAura extends Module {
             return;
         }
 
-        // Critical: packet fall spoof before attack (not just client fallDistance)
-        if (hack) {
-            MaceHack.spoofBeforeAttack(p);
-        }
+        if (silent.get()) SilentRotate.lookSilent(p, target);
+        else SilentRotate.markTarget(target);
+
+        if (hack) MaceHack.spoofBeforeAttack(p);
 
         try { mc.gameMode.attack(p, target); } catch (Throwable ignored) {}
         try { p.swing(InteractionHand.MAIN_HAND); } catch (Throwable ignored) {}
