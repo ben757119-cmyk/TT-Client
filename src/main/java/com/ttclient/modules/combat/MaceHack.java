@@ -22,12 +22,11 @@ import net.minecraft.world.phys.Vec3;
 /**
  * Full Wurst MaceDMG port for NeoForge 26.2.
  *
- * Critical: packets must leave BEFORE ServerboundInteractPacket.
- * MixinMultiPlayerGameMode injects at attack() HEAD for the vanilla click path.
- * Auto mode still spoofs then calls gameMode.attack.
+ * Packets must leave BEFORE ServerboundInteractPacket.
+ * MixinMultiPlayerGameMode injects at attack() HEAD for vanilla clicks.
+ * Auto mode spoofs then calls gameMode.attack.
  *
- * Sequence (see ServerGamePacketListenerImpl.handleMovePlayer):
- *   4× Y+0 onGround=false → 1× Y+√500 → 1× Y+0
+ * Sequence: 4× Y+0 onGround=false → 1× Y+√500 → 1× Y+0
  */
 public class MaceHack extends Module {
     public final BoolSetting onlyPlayers = addSetting(new BoolSetting(
@@ -40,7 +39,6 @@ public class MaceHack extends Module {
             "Auto", "Auto-attack nearest while holding mace", false));
     public final NumberSetting cooldown = addSetting(new NumberSetting(
             "Cooldown", "Ticks between auto hits", 10, 0, 40, 1));
-    /** Always on for vanilla left-click — mixin path. */
     public final BoolSetting onClick = addSetting(new BoolSetting(
             "OnClick", "Spoof on every left-click attack (recommended)", true));
 
@@ -62,10 +60,11 @@ public class MaceHack extends Module {
         }
     }
 
-    /**
-     * Called from MixinMultiPlayerGameMode at attack HEAD — packets first, then
-     * vanilla continues and sends the interact packet.
-     */
+    /** Kept for Shredder / other combat modules. */
+    public static void applySpoof(LocalPlayer p, float ignoredFall) {
+        spoofBeforeAttack(p);
+    }
+
     public static void onPlayerAttack(Player attacker, Entity target) {
         try {
             if (attacker == null) return;
@@ -80,7 +79,6 @@ public class MaceHack extends Module {
             if (!holdingMace(mc.player)) return;
             if (h.onlyPlayers.get() && !(target instanceof Player)) return;
 
-            // Debounce double-fire (mixin + auto same tick)
             long now = System.currentTimeMillis();
             if (now - lastSpoofMs < 40) return;
             lastSpoofMs = now;
@@ -108,7 +106,6 @@ public class MaceHack extends Module {
         }
     }
 
-    /** Exact Wurst sendFakeY sequence. */
     private static void sendWurstSequence(LocalPlayer p) {
         if (p == null || p.connection == null) return;
         double x = p.getX();
@@ -117,7 +114,7 @@ public class MaceHack extends Module {
         boolean horiz = false;
         try { horiz = p.horizontalCollision; } catch (Throwable ignored) {}
 
-        double peak = Math.sqrt(500.0); // ~22.360679774997898
+        double peak = Math.sqrt(500.0);
 
         for (int i = 0; i < 4; i++) {
             sendPos(p, x, y, z, false, horiz);
@@ -127,7 +124,6 @@ public class MaceHack extends Module {
     }
 
     private static void sendPos(LocalPlayer p, double x, double y, double z, boolean onGround, boolean horiz) {
-        // Direct mapped ctor (works on 26.2 / same as Wurst)
         try {
             p.connection.send(new ServerboundMovePlayerPacket.Pos(x, y, z, onGround, horiz));
             return;
@@ -165,7 +161,6 @@ public class MaceHack extends Module {
 
     @Override
     public void onTick() {
-        // Vanilla clicks are handled by the mixin — only Auto path here
         if (!auto.get()) return;
 
         Minecraft mc = mc();
@@ -201,8 +196,7 @@ public class MaceHack extends Module {
         try {
             Entity e = mc.crosshairPickEntity;
             if (e instanceof LivingEntity living && living.isAlive()) {
-                if (onlyPlayers.get() && !(living instanceof Player)) { /* skip */ }
-                else return living;
+                if (!(onlyPlayers.get() && !(living instanceof Player))) return living;
             }
         } catch (Throwable ignored) {}
         try {
