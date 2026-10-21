@@ -4,6 +4,7 @@ import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.modules.client.ClickGUIModule;
 import com.ttclient.settings.BoolSetting;
+import com.ttclient.settings.ModeSetting;
 import com.ttclient.settings.NumberSetting;
 import com.ttclient.util.SilentRotate;
 import net.minecraft.client.Minecraft;
@@ -16,17 +17,22 @@ import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 
 /**
- * Vape-style target HUD — clean panel with HP bar, name, distance.
+ * Clean target HUD — preset positions (not stuck on crosshair).
+ * Default: BottomCenter under crosshair but not covering it.
  */
 public class TargetInfo extends Module {
+    public final ModeSetting position = addSetting(new ModeSetting(
+            "Position", "Screen anchor", "BottomCenter",
+            "BottomCenter", "BottomLeft", "BottomRight", "TopLeft", "TopRight", "Custom"));
     public final NumberSetting scale = addSetting(new NumberSetting("Scale", "HUD scale", 1.0, 0.7, 1.5, 0.05));
-    public final NumberSetting xOff = addSetting(new NumberSetting("X", "Offset from center X", 0, -400, 400, 1));
-    public final NumberSetting yOff = addSetting(new NumberSetting("Y", "Offset from center Y", 60, -200, 200, 1));
+    public final NumberSetting xOff = addSetting(new NumberSetting("X", "Custom / fine X offset", 0, -500, 500, 1));
+    public final NumberSetting yOff = addSetting(new NumberSetting("Y", "Custom / fine Y offset", 0, -300, 300, 1));
     public final BoolSetting playersOnly = addSetting(new BoolSetting("PlayersOnly", "Only show players", false));
     public final NumberSetting linger = addSetting(new NumberSetting("Linger", "Keep last target ms", 2500, 500, 6000, 100));
 
     public TargetInfo() {
-        super("TargetInfo", "Vape-style target HUD", Category.RENDER);
+        super("TargetInfo", "Clean target HUD with position presets", Category.RENDER);
+        setEnabled(true);
     }
 
     @Override
@@ -41,50 +47,59 @@ public class TargetInfo extends Module {
         int ac = ClickGUIModule.globalAccent();
         float sc = (float) scale.get().doubleValue();
 
-        int panelW = (int) (140 * sc);
-        int panelH = (int) (42 * sc);
-        int cx = mc.getWindow().getGuiScaledWidth() / 2 + xOff.getInt();
-        int cy = mc.getWindow().getGuiScaledHeight() / 2 + yOff.getInt();
-        int x = cx - panelW / 2;
-        int y = cy - panelH / 2;
+        int panelW = (int) (152 * sc);
+        int panelH = (int) (46 * sc);
+        int sw = mc.getWindow().getGuiScaledWidth();
+        int sh = mc.getWindow().getGuiScaledHeight();
 
+        int x, y;
+        String pos = position.get();
+        int xo = xOff.getInt();
+        int yo = yOff.getInt();
+        switch (pos) {
+            case "BottomLeft" -> { x = 10 + xo; y = sh - panelH - 40 + yo; }
+            case "BottomRight" -> { x = sw - panelW - 10 + xo; y = sh - panelH - 40 + yo; }
+            case "TopLeft" -> { x = 10 + xo; y = 28 + yo; }
+            case "TopRight" -> { x = sw - panelW - 10 + xo; y = 28 + yo; }
+            case "Custom" -> { x = sw / 2 - panelW / 2 + xo; y = sh / 2 + yo; }
+            default -> { // BottomCenter — under crosshair, not on it
+                x = sw / 2 - panelW / 2 + xo;
+                y = sh / 2 + 48 + yo;
+            }
+        }
+
+        // Panel
         g.fill(x, y, x + panelW, y + panelH, 0xE0080A0E);
-        g.fill(x, y, x + 2, y + panelH, ac);
-        g.fill(x, y, x + panelW, y + 1, (ac & 0x00FFFFFF) | 0x88000000);
-        g.fill(x, y + panelH - 1, x + panelW, y + panelH, (ac & 0x00FFFFFF) | 0x44000000);
+        g.fill(x, y, x + 3, y + panelH, ac);
+        g.fill(x, y, x + panelW, y + 1, (ac & 0x00FFFFFF) | 0x99000000);
 
         String name = target.getName().getString();
-        if (name.length() > 16) name = name.substring(0, 15) + "…";
-        g.text(font, name, x + 8, y + 5, 0xFFFFFFFF, false);
+        if (name.length() > 14) name = name.substring(0, 13) + "…";
+        g.text(font, name, x + 10, y + 6, 0xFFFFFFFF, false);
 
-        float hp = target.getHealth();
+        float hp = target.getHealth() + target.getAbsorptionAmount();
         float max = Math.max(1f, target.getMaxHealth());
-        String hpStr = String.format("%.1f / %.0f", hp, max);
-        int hpW = font.width(hpStr);
-        g.text(font, hpStr, x + panelW - hpW - 6, y + 5, 0xFFB0B8C0, false);
-
-        int barX = x + 8;
-        int barY = y + panelH - 14;
-        int barW = panelW - 16;
-        int barH = 6;
-        g.fill(barX, barY, barX + barW, barY + barH, 0xFF1A1E24);
-
-        float pct = Math.max(0f, Math.min(1f, hp / max));
-        int fill = (int) (barW * pct);
-        int barCol = healthColor(pct);
-        if (fill > 0) g.fill(barX, barY, barX + fill, barY + barH, barCol);
-
-        if (target.hurtTime > 0) {
-            int flash = Math.min(120, target.hurtTime * 12);
-            g.fill(x, y, x + panelW, y + panelH, (flash << 24) | 0xFF3030);
-        }
+        String hpStr = String.format("%.1f", hp);
+        g.text(font, hpStr, x + panelW - font.width(hpStr) - 8, y + 6, 0xFFB0B8C0, false);
 
         double dist = mc.player.distanceTo(target);
         String dStr = String.format("%.1fm", dist);
-        g.text(font, dStr, x + 8, y + 16, 0xFF808890, false);
+        g.text(font, dStr, x + 10, y + 17, 0xFF808890, false);
 
-        String tag = target instanceof Player ? "PLAYER" : "ENTITY";
-        g.text(font, tag, x + panelW - font.width(tag) - 6, y + 16, ac, false);
+        // HP bar
+        int barX = x + 10;
+        int barY = y + panelH - 12;
+        int barW = panelW - 20;
+        int barH = 5;
+        g.fill(barX, barY, barX + barW, barY + barH, 0xFF1A1E24);
+        float pct = Math.max(0f, Math.min(1f, hp / max));
+        int fill = (int) (barW * pct);
+        if (fill > 0) g.fill(barX, barY, barX + fill, barY + barH, healthColor(pct));
+
+        if (target.hurtTime > 0) {
+            int flash = Math.min(90, target.hurtTime * 10);
+            g.fill(x, y, x + panelW, y + panelH, (flash << 24) | 0xFF3030);
+        }
     }
 
     private static int healthColor(float pct) {
@@ -103,7 +118,6 @@ public class TargetInfo extends Module {
                 }
             }
         } catch (Throwable ignored) {}
-
         try {
             Entity e = mc.crosshairPickEntity;
             if (e instanceof LivingEntity living && living.isAlive()) {
@@ -113,7 +127,6 @@ public class TargetInfo extends Module {
                 }
             }
         } catch (Throwable ignored) {}
-
         Entity last = SilentRotate.currentTarget(linger.getInt());
         if (last instanceof LivingEntity living && living.isAlive()) {
             if (!(playersOnly.get() && !(living instanceof Player))) return living;

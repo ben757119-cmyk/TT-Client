@@ -14,7 +14,6 @@ import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Dense-particle TT title — ClickGUI + SeizureMode available from here. */
 public class TTTitleScreen extends Screen {
     private static final int TEXT = 0xFFE8EAED;
     private static final int TEXT_DIM = 0xFF6B7280;
@@ -168,14 +167,62 @@ public class TTTitleScreen extends Screen {
     }
 
     private void openOptions() {
-        if (!openVanilla("net.minecraft.client.gui.screens.options.OptionsScreen", this)) {
-            openVanilla("net.minecraft.client.gui.screens.OptionsScreen", this);
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null) return;
+        // NeoForge 26.2: OptionsScreen(Screen parent, Options options)
+        Object options = null;
+        try { options = mc.options; } catch (Throwable ignored) {}
+        if (options == null) {
+            try { options = Minecraft.class.getField("options").get(mc); } catch (Throwable ignored) {}
         }
+        if (options == null) {
+            try { options = Minecraft.class.getMethod("getOptions").invoke(mc); } catch (Throwable ignored) {}
+        }
+
+        String[] names = {
+                "net.minecraft.client.gui.screens.options.OptionsScreen",
+                "net.minecraft.client.gui.screens.OptionsScreen"
+        };
+        for (String className : names) {
+            try {
+                Class<?> cls = Class.forName(className);
+                Object screen = null;
+                for (Constructor<?> c : cls.getConstructors()) {
+                    Class<?>[] p = c.getParameterTypes();
+                    try {
+                        if (p.length == 2 && Screen.class.isAssignableFrom(p[0]) && options != null
+                                && p[1].isInstance(options)) {
+                            screen = c.newInstance(this, options);
+                            break;
+                        }
+                        if (p.length == 2 && Screen.class.isAssignableFrom(p[0])
+                                && p[1].getName().toLowerCase().contains("options") && options != null) {
+                            screen = c.newInstance(this, options);
+                            break;
+                        }
+                        if (p.length == 1 && Screen.class.isAssignableFrom(p[0])) {
+                            screen = c.newInstance(this);
+                            break;
+                        }
+                    } catch (Throwable ignored) {}
+                }
+                if (screen instanceof Screen s) {
+                    setScreen(mc, s);
+                    return;
+                }
+            } catch (Throwable t) {
+                TTClient.LOGGER.warn("Options open via {}: {}", className, t.toString());
+            }
+        }
+        TTClient.LOGGER.warn("Could not open OptionsScreen — ctor mismatch");
     }
 
     private void quitGame() {
         Minecraft mc = Minecraft.getInstance();
-        if (mc != null) mc.stop();
+        if (mc == null) return;
+        setScreen(mc, new TTConfirmScreen(this, "Quit Game?", "Close Minecraft completely.", () -> {
+            try { mc.stop(); } catch (Throwable ignored) {}
+        }));
     }
 
     private static void setScreen(Minecraft mc, Screen s) {
