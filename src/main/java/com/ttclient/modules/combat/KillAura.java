@@ -6,6 +6,7 @@ import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
 import com.ttclient.settings.NumberSetting;
 import com.ttclient.util.InvUtils;
+import com.ttclient.util.SilentRotate;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.InteractionHand;
@@ -20,7 +21,8 @@ public class KillAura extends Module {
     public final NumberSetting range = addSetting(new NumberSetting("Range", "Attack range", 4.2, 2.0, 6.0, 0.1));
     public final BoolSetting players = addSetting(new BoolSetting("Players", "Target players", true));
     public final BoolSetting mobs = addSetting(new BoolSetting("Mobs", "Target hostiles", false));
-    public final BoolSetting rotate = addSetting(new BoolSetting("Rotate", "Look at target", true));
+    public final BoolSetting rotate = addSetting(new BoolSetting("Rotate", "Aim at target", true));
+    public final BoolSetting silent = addSetting(new BoolSetting("Silent", "Body rotate only — keep your POV", true));
     public final BoolSetting weaponSwap = addSetting(new BoolSetting("WeaponSwap", "Switch to best weapon", true));
     public final BoolSetting useRage = addSetting(new BoolSetting("UseRageRange", "Use Rage reach when on", true));
 
@@ -54,25 +56,24 @@ public class KillAura extends Module {
             if (w >= 0) InvUtils.selectHotbar(p, w);
         }
 
-        if (rotate.get()) lookAt(p, target);
+        if (rotate.get()) {
+            if (silent.get()) SilentRotate.lookSilent(p, target);
+            else lookAt(p, target);
+        } else {
+            SilentRotate.markTarget(target);
+        }
 
         mc.gameMode.attack(p, target);
         p.swing(InteractionHand.MAIN_HAND);
     }
 
     public static void lookAt(LocalPlayer p, Entity target) {
-        Vec3 eye = p.getEyePosition(1.0f);
-        Vec3 aim = target.getBoundingBox().getCenter();
-        double dx = aim.x - eye.x;
-        double dy = aim.y - eye.y;
-        double dz = aim.z - eye.z;
-        double dist = Math.sqrt(dx * dx + dz * dz);
-        float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
-        float pitch = (float) (-Math.toDegrees(Math.atan2(dy, dist)));
-        p.setYRot(yaw);
-        p.setXRot(Math.max(-90f, Math.min(90f, pitch)));
-        p.yHeadRot = yaw;
-        p.yBodyRot = yaw;
+        float[] a = SilentRotate.anglesTo(p, target);
+        p.setYRot(a[0]);
+        p.setXRot(a[1]);
+        p.yHeadRot = a[0];
+        p.yBodyRot = a[0];
+        SilentRotate.markTarget(target);
     }
 
     public LivingEntity findTargetFiltered(Minecraft mc, LocalPlayer p, double r) {
