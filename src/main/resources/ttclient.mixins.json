@@ -7,7 +7,8 @@
     "MixinBlockStateBase",
     "MixinCamera",
     "MixinGameRenderer",
-    "MixinEntity"
+    "MixinEntity",
+    "MixinMultiPlayerGameMode"
   ],
   "injectors": {
     "defaultRequire": 0

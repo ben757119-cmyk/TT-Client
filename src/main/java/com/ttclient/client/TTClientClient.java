@@ -102,14 +102,10 @@ public class TTClientClient {
     public void onScreenRender(ScreenEvent.Render.Post event) {
         try {
             Screen s = event.getScreen();
-            if (s == null || !TTBrand.shouldBrand(s)) return;
+            if (s == null) return;
             GuiGraphicsExtractor g = event.getGuiGraphics();
             if (g == null) return;
-            String n = s.getClass().getName().toLowerCase();
-            boolean heavy = n.contains("connect") || n.contains("progress") || n.contains("loading")
-                    || n.contains("receiving") || n.contains("download");
-            if (heavy) TTBrand.drawTopBar(g, s);
-            TTBrand.drawWatermark(g, s);
+            TTBrand.drawAll(g, s);
         } catch (Throwable ignored) {}
     }
 
