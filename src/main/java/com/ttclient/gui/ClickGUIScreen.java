@@ -273,7 +273,7 @@ public class ClickGUIScreen extends Screen {
                             int trackX = ix + 8, trackW = width - 16, trackY = my + 14;
                             g.fill(trackX, trackY, trackX + trackW, trackY + 3, SLIDER_BG);
                             double t = (ns.get() - ns.getMin()) / Math.max(1e-9, ns.getMax() - ns.getMin());
-                            int fill = (int) (trackW * Math.max(0, Math.min(1, t));
+                            int fill = (int) (trackW * Math.max(0, Math.min(1, t)));
                             g.fill(trackX, trackY, trackX + fill, trackY + 3, accent());
                             g.fill(trackX + fill - 1, trackY - 1, trackX + fill + 2, trackY + 4, 0xFFE8EAED);
                             my += NUMBER_H;
