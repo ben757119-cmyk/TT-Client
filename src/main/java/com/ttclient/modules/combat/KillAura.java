@@ -4,6 +4,7 @@ import com.ttclient.client.TTClientClient;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
+import com.ttclient.settings.ModeSetting;
 import com.ttclient.settings.NumberSetting;
 import com.ttclient.util.InvUtils;
 import com.ttclient.util.SilentRotate;
@@ -17,8 +18,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 
 /**
- * KillAura with optional weapon swap for attribute swapping:
- * select best weapon → attack → swap back to previous hotbar slot (same tick).
+ * KillAura with attack timing control and optional attribute-style weapon swap.
  */
 public class KillAura extends Module {
     public final NumberSetting range = addSetting(new NumberSetting("Range", "Attack range", 4.2, 2.0, 6.0, 0.1));
@@ -30,8 +30,36 @@ public class KillAura extends Module {
     public final BoolSetting swapBack = addSetting(new BoolSetting("SwapBack", "Swap back after hit (attribute swap)", true));
     public final BoolSetting useRage = addSetting(new BoolSetting("UseRageRange", "Use Rage reach when on", true));
 
+    /** Cooldown = weapon attack strength · Custom = Delay ticks · Spam = every tick */
+    public final ModeSetting timing = addSetting(new ModeSetting(
+            "Timing",
+            "When to attack: weapon cooldown, custom delay, or every tick",
+            "Cooldown",
+            "Cooldown", "Custom", "Spam"));
+
+    /** Only used when Timing = Custom. 0 ≈ every tick, 10 ≈ 0.5s at 20 TPS. */
+    public final NumberSetting delay = addSetting(new NumberSetting(
+            "Delay",
+            "Ticks between hits when Timing is Custom (0 = fastest)",
+            10, 0, 40, 1));
+
+    /** Min attack-strength scale when Timing = Cooldown (1.0 = full cooldown). */
+    public final NumberSetting cooldown = addSetting(new NumberSetting(
+            "CooldownPct",
+            "Min weapon charge 0–1 when Timing is Cooldown",
+            0.92, 0.1, 1.0, 0.01));
+
+    private int tickWait;
+
     public KillAura() {
-        super("KillAura", "Attack nearest target on cooldown", Category.COMBAT);
+        super("KillAura", "Attack nearest target on cooldown",
+                Category.COMBAT);
+    }
+
+    @Override
+    public void onEnable() {
+        tickWait = 0;
+        super.onEnable();
     }
 
     private double effectiveRange() {
@@ -43,6 +71,30 @@ public class KillAura extends Module {
         return r;
     }
 
+    /** @return true if we are allowed to attack this tick */
+    private boolean canAttack(LocalPlayer p) {
+        String t = timing.get();
+        if ("Spam".equals(t)) {
+            return true;
+        }
+        if ("Custom".equals(t)) {
+            if (tickWait > 0) {
+                tickWait--;
+                return false;
+            }
+            return true;
+        }
+        // Cooldown — respect held weapon attack strength
+        float need = (float) cooldown.get();
+        return p.getAttackStrengthScale(0.5f) >= need;
+    }
+
+    private void afterAttack() {
+        if ("Custom".equals(timing.get())) {
+            tickWait = Math.max(0, delay.getInt());
+        }
+    }
+
     @Override
     public void onTick() {
         Minecraft mc = mc();
@@ -50,7 +102,7 @@ public class KillAura extends Module {
         if (InvUtils.hasScreen(mc)) return;
 
         LocalPlayer p = mc.player;
-        if (p.getAttackStrengthScale(0.5f) < 0.92f) return;
+        if (!canAttack(p)) return;
 
         LivingEntity target = findTargetFiltered(mc, p, effectiveRange());
         if (target == null) return;
@@ -58,7 +110,6 @@ public class KillAura extends Module {
         int prevSlot = p.getInventory().getSelectedSlot();
         boolean didSwap = false;
 
-        // Attribute-style: hotbar to best weapon for this hit only
         if (weaponSwap.get()) {
             int w = InvUtils.findBestWeapon(p);
             if (w >= 0 && w != prevSlot) {
@@ -76,8 +127,8 @@ public class KillAura extends Module {
 
         mc.gameMode.attack(p, target);
         p.swing(InteractionHand.MAIN_HAND);
+        afterAttack();
 
-        // Swap back so held item attributes / totem slot / tool stay as before
         if (didSwap && swapBack.get()) {
             InvUtils.selectHotbar(p, prevSlot);
         }
