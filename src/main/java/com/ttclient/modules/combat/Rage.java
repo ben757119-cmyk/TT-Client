@@ -17,9 +17,14 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
+/**
+ * Rage — extreme reach for attacks AND normal block place (not just anchors).
+ * Vanilla crosshair pick is short; we re-raycast with full reach when you click.
+ */
 public class Rage extends Module {
     public final NumberSetting reach = addSetting(new NumberSetting(
             "Reach", "Attack / interact reach", 256.0, 6.0, 1000.0, 1.0));
@@ -34,7 +39,13 @@ public class Rage extends Module {
     public final BoolSetting autoHit = addSetting(new BoolSetting(
             "AutoHit", "Also auto-attack nearest in range", false));
     public final BoolSetting playersOnly = addSetting(new BoolSetting(
-            "PlayersOnly", "AutoHit only targets players", true));
+            "PlayersOnly", "Only players for auto/long hit", false));
+    public final NumberSetting cooldown = addSetting(new NumberSetting(
+            "Cooldown", "Ticks between auto attacks", 8, 0, 40, 1));
+
+    private double oldEntity = 3.0;
+    private double oldBlock = 4.5;
+    private int timer;
 
     public Rage() {
         super("Rage", "Long reach hits + place (not only anchors)", Category.COMBAT);
@@ -42,39 +53,43 @@ public class Rage extends Module {
     }
 
     @Override
-    public void onEnable() { applyReach(); }
+    public void onEnable() { applyAttributes(); }
 
     @Override
-    public void onDisable() { clearReach(); }
+    public void onDisable() { restoreAttributes(); }
 
     @Override
     public void onTick() {
         Minecraft mc = mc();
         if (mc == null || mc.player == null || mc.level == null || mc.gameMode == null) return;
-        applyReach();
         LocalPlayer p = mc.player;
 
-        if (longHit.get() && mc.options.keyAttack.isDown()) {
-            LivingEntity target = findTarget(mc, p, reach.get());
-            if (target != null && p.getAttackStrengthScale(0.5f) >= 0.9f) {
-                mc.gameMode.attack(p, target);
-                p.swing(InteractionHand.MAIN_HAND);
+        applyAttributes();
+
+        double r = Math.min(reach.get(), 64.0);
+
+        boolean attackDown = false;
+        boolean useDown = false;
+        try {
+            attackDown = mc.options.keyAttack.isDown();
+            useDown = mc.options.keyUse.isDown();
+        } catch (Throwable ignored) {}
+
+        if (longHit.get() && attackDown && entities.get()) {
+            LivingEntity target = rayEntity(mc, p, r);
+            if (target == null) target = nearestInView(mc, p, r);
+            if (target != null) {
+                try {
+                    mc.gameMode.attack(p, target);
+                    p.swing(InteractionHand.MAIN_HAND);
+                } catch (Throwable ignored) {}
             }
         }
 
-        if (autoHit.get()) {
-            LivingEntity target = findTarget(mc, p, reach.get());
-            if (target != null && p.getAttackStrengthScale(0.5f) >= 0.92f) {
-                mc.gameMode.attack(p, target);
-                p.swing(InteractionHand.MAIN_HAND);
-            }
-        }
-
-        if (longPlace.get() && mc.options.keyUse.isDown()) {
+        if (longPlace.get() && useDown && blocks.get()) {
             ItemStack held = p.getMainHandItem();
             if (!held.isEmpty() && held.getItem() instanceof BlockItem) {
                 try {
-                    double r = reach.get();
                     Vec3 eye = p.getEyePosition(1.0f);
                     Vec3 look = p.getViewVector(1.0f);
                     Vec3 end = eye.add(look.scale(r));
@@ -86,35 +101,43 @@ public class Rage extends Module {
                 } catch (Throwable ignored) {}
             }
         }
-    }
 
-    private void applyReach() {
-        Minecraft mc = mc();
-        if (mc == null || mc.player == null) return;
-        try {
-            if (entities.get()) {
-                AttributeInstance a = mc.player.getAttribute(Attributes.ENTITY_INTERACTION_RANGE);
-                if (a != null) a.setBaseValue(reach.get());
+        if (autoHit.get()) {
+            if (timer > 0) {
+                timer--;
+            } else {
+                LivingEntity target = nearestInView(mc, p, r);
+                if (target != null && p.getAttackStrengthScale(0.5f) >= 0.9f) {
+                    try {
+                        mc.gameMode.attack(p, target);
+                        p.swing(InteractionHand.MAIN_HAND);
+                    } catch (Throwable ignored) {}
+                    timer = cooldown.getInt();
+                }
             }
-            if (blocks.get()) {
-                AttributeInstance a = mc.player.getAttribute(Attributes.BLOCK_INTERACTION_RANGE);
-                if (a != null) a.setBaseValue(reach.get());
-            }
-        } catch (Throwable ignored) {}
+        }
     }
 
-    private void clearReach() {
-        Minecraft mc = mc();
-        if (mc == null || mc.player == null) return;
+    private LivingEntity rayEntity(Minecraft mc, LocalPlayer p, double r) {
         try {
-            AttributeInstance e = mc.player.getAttribute(Attributes.ENTITY_INTERACTION_RANGE);
-            if (e != null) e.setBaseValue(3.0);
-            AttributeInstance b = mc.player.getAttribute(Attributes.BLOCK_INTERACTION_RANGE);
-            if (b != null) b.setBaseValue(4.5);
-        } catch (Throwable ignored) {}
+            Vec3 eye = p.getEyePosition(1.0f);
+            Vec3 look = p.getViewVector(1.0f);
+            Vec3 end = eye.add(look.scale(r));
+            EntityHitResult ehr = null;
+            // Prefer projectile util if available via pick
+            HitResult hr = mc.hitResult;
+            if (hr instanceof EntityHitResult er && er.getEntity() instanceof LivingEntity le) {
+                if (le.isAlive() && le != p) {
+                    if (!playersOnly.get() || le instanceof Player) return le;
+                }
+            }
+            return nearestInView(mc, p, r);
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
-    private LivingEntity findTarget(Minecraft mc, LocalPlayer p, double r) {
+    private LivingEntity nearestInView(Minecraft mc, LocalPlayer p, double r) {
         AABB box = p.getBoundingBox().inflate(r);
         LivingEntity best = null;
         double bestD = Double.MAX_VALUE;
@@ -122,11 +145,43 @@ public class Rage extends Module {
             if (!(e instanceof LivingEntity living) || !living.isAlive() || living == p) continue;
             if (playersOnly.get() && !(living instanceof Player)) continue;
             double d = p.distanceToSqr(living);
-            if (d < bestD && d <= r * r) {
+            if (d <= r * r && d < bestD) {
                 bestD = d;
                 best = living;
             }
         }
         return best;
+    }
+
+    private void applyAttributes() {
+        Minecraft mc = mc();
+        if (mc == null || mc.player == null) return;
+        try {
+            if (entities.get()) {
+                AttributeInstance a = mc.player.getAttribute(Attributes.ENTITY_INTERACTION_RANGE);
+                if (a != null) {
+                    if (oldEntity == 3.0) oldEntity = a.getBaseValue();
+                    a.setBaseValue(reach.get());
+                }
+            }
+            if (blocks.get()) {
+                AttributeInstance a = mc.player.getAttribute(Attributes.BLOCK_INTERACTION_RANGE);
+                if (a != null) {
+                    if (oldBlock == 4.5) oldBlock = a.getBaseValue();
+                    a.setBaseValue(reach.get());
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private void restoreAttributes() {
+        Minecraft mc = mc();
+        if (mc == null || mc.player == null) return;
+        try {
+            AttributeInstance e = mc.player.getAttribute(Attributes.ENTITY_INTERACTION_RANGE);
+            if (e != null) e.setBaseValue(oldEntity);
+            AttributeInstance b = mc.player.getAttribute(Attributes.BLOCK_INTERACTION_RANGE);
+            if (b != null) b.setBaseValue(oldBlock);
+        } catch (Throwable ignored) {}
     }
 }
