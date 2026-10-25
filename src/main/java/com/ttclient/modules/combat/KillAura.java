@@ -4,7 +4,6 @@ import com.ttclient.client.TTClientClient;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
-import com.ttclient.settings.ModeSetting;
 import com.ttclient.settings.NumberSetting;
 import com.ttclient.util.InvUtils;
 import com.ttclient.util.SilentRotate;
@@ -17,49 +16,36 @@ import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 
-/**
- * KillAura with attack timing control and optional attribute-style weapon swap.
- */
 public class KillAura extends Module {
     public final NumberSetting range = addSetting(new NumberSetting("Range", "Attack range", 4.2, 2.0, 6.0, 0.1));
     public final BoolSetting players = addSetting(new BoolSetting("Players", "Target players", true));
     public final BoolSetting mobs = addSetting(new BoolSetting("Mobs", "Target hostiles", false));
     public final BoolSetting rotate = addSetting(new BoolSetting("Rotate", "Aim at target", true));
-    public final BoolSetting silent = addSetting(new BoolSetting("Silent", "Body rotate only — keep your POV", true));
+    public final BoolSetting silent = addSetting(new BoolSetting("Silent", "Body rotate only - keep your POV", true));
     public final BoolSetting weaponSwap = addSetting(new BoolSetting("WeaponSwap", "Switch to best weapon for the hit", true));
-    public final BoolSetting swapBack = addSetting(new BoolSetting("SwapBack", "Swap back after hit (attribute swap)", true));
+    public final BoolSetting swapBack = addSetting(new BoolSetting("SwapBack", "Swap back after hit for attribute swap", true));
     public final BoolSetting useRage = addSetting(new BoolSetting("UseRageRange", "Use Rage reach when on", true));
 
-    /** Cooldown = weapon attack strength · Custom = Delay ticks · Spam = every tick */
-    public final ModeSetting timing = addSetting(new ModeSetting(
-            "Timing",
-            "When to attack: weapon cooldown, custom delay, or every tick",
-            "Cooldown",
-            "Cooldown", "Custom", "Spam"));
+    /** When true, ignore weapon cooldown and hit every tick (or every Delay ticks). */
+    public final BoolSetting spam = addSetting(new BoolSetting("Spam", "Ignore weapon cooldown and attack as fast as Delay allows", false));
 
-    /** Only used when Timing = Custom. 0 ≈ every tick, 10 ≈ 0.5s at 20 TPS. */
-    public final NumberSetting delay = addSetting(new NumberSetting(
-            "Delay",
-            "Ticks between hits when Timing is Custom (0 = fastest)",
-            10, 0, 40, 1));
-
-    /** Min attack-strength scale when Timing = Cooldown (1.0 = full cooldown). */
-    public final NumberSetting cooldown = addSetting(new NumberSetting(
-            "CooldownPct",
-            "Min weapon charge 0–1 when Timing is Cooldown",
-            0.92, 0.1, 1.0, 0.01));
+    /**
+     * Delay in ticks between attacks.
+     * When Spam is off and Delay is 0: use normal weapon attack cooldown.
+     * When Spam is on: wait this many ticks (0 = every tick).
+     * When Spam is off and Delay > 0: wait at least this many ticks AND weapon cooldown.
+     */
+    public final NumberSetting delay = addSetting(new NumberSetting("Delay", "Ticks between hits (0 with Spam off = weapon cooldown only)", 0, 0, 40, 1));
 
     private int tickWait;
 
     public KillAura() {
-        super("KillAura", "Attack nearest target on cooldown",
-                Category.COMBAT);
+        super("KillAura", "Attack nearest target on cooldown", Category.COMBAT);
     }
 
     @Override
     public void onEnable() {
         tickWait = 0;
-        super.onEnable();
     }
 
     private double effectiveRange() {
@@ -71,27 +57,24 @@ public class KillAura extends Module {
         return r;
     }
 
-    /** @return true if we are allowed to attack this tick */
     private boolean canAttack(LocalPlayer p) {
-        String t = timing.get();
-        if ("Spam".equals(t)) {
+        if (tickWait > 0) {
+            tickWait--;
+            return false;
+        }
+        if (spam.get()) {
             return true;
         }
-        if ("Custom".equals(t)) {
-            if (tickWait > 0) {
-                tickWait--;
-                return false;
-            }
-            return true;
-        }
-        // Cooldown — respect held weapon attack strength
-        float need = (float) cooldown.get();
-        return p.getAttackStrengthScale(0.5f) >= need;
+        // Weapon cooldown path
+        return p.getAttackStrengthScale(0.5f) >= 0.92f;
     }
 
     private void afterAttack() {
-        if ("Custom".equals(timing.get())) {
-            tickWait = Math.max(0, delay.getInt());
+        int d = delay.getInt();
+        if (spam.get()) {
+            tickWait = Math.max(0, d);
+        } else if (d > 0) {
+            tickWait = d;
         }
     }
 
