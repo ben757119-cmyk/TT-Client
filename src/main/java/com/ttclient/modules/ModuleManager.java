@@ -1,13 +1,27 @@
 package com.ttclient.modules;
 
-import com.ttclient.modules.client.*;
+import com.ttclient.modules.basefind.BaseScanner;
+import com.ttclient.modules.basefind.BeaconFinder;
+import com.ttclient.modules.basefind.ChestStashFinder;
+import com.ttclient.modules.basefind.CropFarmFinder;
+import com.ttclient.modules.basefind.PortalRoomFinder;
+import com.ttclient.modules.client.ArrayListMod;
+import com.ttclient.modules.client.ClickGUIModule;
+import com.ttclient.modules.client.CustomMainMenu;
+import com.ttclient.modules.client.HUD;
+import com.ttclient.modules.client.Keystrokes;
+import com.ttclient.modules.client.Notifications;
+import com.ttclient.modules.client.StreamerMode;
+import com.ttclient.modules.client.TargetHUD;
 import com.ttclient.modules.combat.*;
 import com.ttclient.modules.misc.*;
 import com.ttclient.modules.movement.*;
 import com.ttclient.modules.player.*;
 import com.ttclient.modules.render.*;
-import com.ttclient.modules.world.*;
-import com.ttclient.modules.basefind.*;
+import com.ttclient.modules.world.Nuker;
+import com.ttclient.modules.world.Scaffold;
+import com.ttclient.modules.world.Timer;
+import com.ttclient.modules.world.Waypoints;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 import java.util.ArrayList;
@@ -19,42 +33,45 @@ public class ModuleManager {
     private final List<Module> modules = new ArrayList<>();
 
     public void init() {
+        // Client
         register(new ClickGUIModule());
         register(new HUD());
         register(new ArrayListMod());
         register(new Notifications());
         register(new Keystrokes());
+        register(new TargetHUD());
         register(new CustomMainMenu());
         register(new StreamerMode());
-        register(new DiscordRPC());
 
+        // Combat
         register(new KillAura());
         register(new AimAssist());
-        register(new TriggerBot());
         register(new AutoClicker());
-        register(new Criticals());
-        register(new Reach());
-        register(new Hitboxes());
-        register(new WTap());
         register(new AutoCrystal());
         register(new AutoTotem());
-        register(new Offhand());
         register(new AutoTrap());
-        register(new Surround());
-        register(new HoleFill());
         register(new AutoXP());
+        register(new Criticals());
+        register(new Destroyer());
+        register(new Hitboxes());
+        register(new HoleFill());
+        register(new Offhand());
+        register(new Reach());
+        register(new Surround());
+        register(new TriggerBot());
+        register(new WTap());
         register(new AutoArmorSwap());
         register(new AnchorAura());
         register(new OneClickAnchors());
         register(new Rage());
-        register(new Shredder());
-        register(new Destroyer());
         register(new MaceHack());
         register(new MaceAura());
         register(new MaceSwap());
         register(new WindChargeAssist());
         register(new SpearKiller());
+        register(new Shredder());
 
+        // Movement
         register(new Sprint());
         register(new AutoWalk());
         register(new AutoJump());
@@ -78,6 +95,7 @@ public class ModuleManager {
         register(new BoatFly());
         register(new ElytraFly());
 
+        // Player
         register(new AutoEat());
         register(new AutoFish());
         register(new AutoRespawn());
@@ -103,6 +121,7 @@ public class ModuleManager {
         register(new DurabilityAlert());
         register(new HungerInfo());
 
+        // Render
         register(new Fullbright());
         register(new Zoom());
         register(new LightLevel());
@@ -127,6 +146,7 @@ public class ModuleManager {
         register(new Ambience());
         register(new Brightness());
 
+        // Misc
         register(new AntiAFK());
         register(new ChatTimestamps());
         register(new CoordCopy());
@@ -141,6 +161,7 @@ public class ModuleManager {
         register(new ChatSuffix());
         register(new Announcer());
 
+        // World
         register(new Waypoints());
         register(new Nuker());
         register(new Scaffold());
@@ -148,18 +169,16 @@ public class ModuleManager {
         register(new AutoTorch());
         register(new Timer());
 
+        // Basefind
         register(new BaseScanner());
-        register(new BasefindHits());
         register(new BeaconFinder());
         register(new ChestStashFinder());
         register(new CropFarmFinder());
-        register(new PortalFinder());
-        register(new SpawnFinder());
-        register(new StrongholdFinder());
+        register(new PortalRoomFinder());
     }
 
-    private void register(Module module) {
-        modules.add(module);
+    private void register(Module m) {
+        modules.add(m);
     }
 
     public List<Module> getModules() {
@@ -170,23 +189,22 @@ public class ModuleManager {
         return modules.stream().filter(m -> m.getCategory() == category).collect(Collectors.toList());
     }
 
-    @SuppressWarnings("unchecked")
-    public <T extends Module> T getModule(Class<T> clazz) {
-        for (Module m : modules) {
-            if (clazz.isInstance(m)) return (T) m;
-        }
-        return null;
+    public List<Module> search(String query) {
+        if (query == null || query.isBlank()) return List.copyOf(modules);
+        String q = query.toLowerCase(Locale.ROOT);
+        return modules.stream()
+                .filter(m -> m.getName().toLowerCase(Locale.ROOT).contains(q)
+                        || m.getDescription().toLowerCase(Locale.ROOT).contains(q)
+                        || m.getCategory().name.toLowerCase(Locale.ROOT).contains(q))
+                .collect(Collectors.toList());
     }
 
-    public Module getByName(String name) {
-        if (name == null) return null;
-        String n = name.toLowerCase(Locale.ROOT);
-        for (Module m : modules) {
-            if (m.getName().equalsIgnoreCase(name) || m.getName().toLowerCase(Locale.ROOT).replace(" ", "").equals(n)) {
-                return m;
-            }
-        }
-        return null;
+    public Module getModule(String name) {
+        return modules.stream().filter(m -> m.getName().equalsIgnoreCase(name)).findFirst().orElse(null);
+    }
+
+    public <T extends Module> T getModule(Class<T> clazz) {
+        return modules.stream().filter(clazz::isInstance).map(clazz::cast).findFirst().orElse(null);
     }
 
     public void onTick() {
@@ -198,6 +216,7 @@ public class ModuleManager {
     }
 
     public void onRender2D(GuiGraphicsExtractor graphics, float partialTick) {
+        if (StreamerMode.shouldHideLocalUi()) return;
         for (Module m : modules) {
             if (m.isEnabled()) {
                 try { m.onRender2D(graphics, partialTick); } catch (Throwable ignored) {}
