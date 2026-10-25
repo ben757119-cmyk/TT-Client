@@ -272,7 +272,9 @@ public class TTClientClient {
     public void onChatReceived(ClientChatReceivedEvent event) {
         try {
             AutoChatGame acg = modules != null ? modules.getModule(AutoChatGame.class) : null;
-            if (acg != null && acg.isEnabled()) acg.onChat(event);
+            if (acg != null && acg.isEnabled()) {
+                acg.handleChat(event.getMessage().getString());
+            }
         } catch (Throwable ignored) {}
     }
 }
