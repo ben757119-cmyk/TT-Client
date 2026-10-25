@@ -26,21 +26,14 @@ public class KillAura extends Module {
     public final BoolSetting swapBack = addSetting(new BoolSetting("SwapBack", "Swap back after hit for attribute swap", true));
     public final BoolSetting useRage = addSetting(new BoolSetting("UseRageRange", "Use Rage reach when on", true));
 
-    /** When true, ignore weapon cooldown and hit every tick (or every Delay ticks). */
     public final BoolSetting spam = addSetting(new BoolSetting("Spam", "Ignore weapon cooldown and attack as fast as Delay allows", false));
-
-    /**
-     * Delay in ticks between attacks.
-     * When Spam is off and Delay is 0: use normal weapon attack cooldown.
-     * When Spam is on: wait this many ticks (0 = every tick).
-     * When Spam is off and Delay > 0: wait at least this many ticks AND weapon cooldown.
-     */
     public final NumberSetting delay = addSetting(new NumberSetting("Delay", "Ticks between hits (0 with Spam off = weapon cooldown only)", 0, 0, 40, 1));
 
     private int tickWait;
 
     public KillAura() {
         super("KillAura", "Attack nearest target on cooldown", Category.COMBAT);
+        addCombatSafetyToggles();
     }
 
     @Override
@@ -65,7 +58,6 @@ public class KillAura extends Module {
         if (spam.get()) {
             return true;
         }
-        // Weapon cooldown path
         return p.getAttackStrengthScale(0.5f) >= 0.92f;
     }
 
