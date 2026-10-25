@@ -15,6 +15,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-java@v4
         with:
@@ -39,20 +41,52 @@ jobs:
           path: build/libs/*.jar
           if-no-files-found: error
 
+      - name: Build release notes from commits
+        id: notes
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        shell: bash
+        run: |
+          set -e
+          VER="${{ steps.ver.outputs.version }}"
+          # Previous version tag (prefer prior v* tag by version sort)
+          PREV=$(git tag -l 'v*' --sort=-v:refname | grep -v "^v${VER}$" | head -1 || true)
+          if [ -z "$PREV" ]; then
+            PREV=$(git rev-list --max-parents=0 HEAD | head -1)
+            RANGE="${PREV}..HEAD"
+            PREV_LABEL="initial commit"
+          else
+            RANGE="${PREV}..HEAD"
+            PREV_LABEL="$PREV"
+          fi
+
+          {
+            echo "## TT Client ${VER}"
+            echo ""
+            echo "Changes since **${PREV_LABEL}**:"
+            echo ""
+            # Subject lines only, skip pure merge noise, limit length
+            git log $RANGE --pretty=format:'- %s' --no-merges \
+              | grep -vE '^(Merge |ci:|CI:)' \
+              | head -40 || echo "- (no commit messages found)"
+            echo ""
+            echo "---"
+            echo "NeoForge **26.2** · single jar · no license / KeyGen"
+          } > /tmp/release-body.md
+
+          echo "----- release notes preview -----"
+          cat /tmp/release-body.md
+          echo "--------------------------------"
+
       - name: Publish GitHub Release
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.version }}
           name: TT Client v${{ steps.ver.outputs.version }}
-          body: |
-            ## TT Client ${{ steps.ver.outputs.version }}
-            Normal single jar — no license / KeyGen / TTLink.
-
-            - AutoChatGame: type-the-word (Word: Fill)
-            - StreamerMode (Windows capture exclude)
-            - Right Shift ClickGUI
+          body_path: /tmp/release-body.md
+          generate_release_notes: true
           files: build/libs/*.jar
           make_latest: true
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
