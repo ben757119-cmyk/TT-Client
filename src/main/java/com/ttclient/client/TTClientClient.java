@@ -60,19 +60,31 @@ public class TTClientClient {
 
     private static Screen currentScreen(Minecraft mc) {
         try { return mc.gui.screen(); } catch (Throwable t) {
-            try { return (Screen) Minecraft.class.getMethod("screen").invoke(mc); } catch (Throwable t2) {
-                return null;
-            }
+            try { return (Screen) Minecraft.class.getMethod("getScreen").invoke(mc); }
+            catch (Throwable t2) { return null; }
         }
     }
 
     private static void openScreen(Minecraft mc, Screen screen) {
-        try { mc.setScreen(screen); } catch (Throwable ignored) {}
+        try { mc.gui.setScreen(screen); return; } catch (Throwable ignored) {}
+        try { Minecraft.class.getMethod("setScreen", Screen.class).invoke(mc, screen); } catch (Throwable ignored) {}
     }
 
-    private static void openChatWith(Minecraft mc, String prefix) {
+    private static void openChatWith(Minecraft mc, String initial) {
         try {
-            openScreen(mc, new ChatScreen(prefix));
+            try {
+                var ctor = ChatScreen.class.getConstructor(String.class);
+                openScreen(mc, ctor.newInstance(initial));
+                return;
+            } catch (Throwable ignored) {}
+            try {
+                var ctor = ChatScreen.class.getConstructor(String.class, boolean.class);
+                openScreen(mc, ctor.newInstance(initial, false));
+                return;
+            } catch (Throwable ignored) {}
+            try {
+                openScreen(mc, ChatScreen.class.getDeclaredConstructor().newInstance());
+            } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
     }
 
@@ -81,21 +93,25 @@ public class TTClientClient {
         try {
             Screen next = event.getScreen();
             if (next == null) return;
+            if (next instanceof TTTitleScreen || next instanceof TTConnectScreen
+                    || next instanceof TTDisconnectedScreen) return;
+
             String n = next.getClass().getName().toLowerCase();
             String simple = next.getClass().getSimpleName().toLowerCase();
 
-            if (next instanceof TTTitleScreen || next instanceof ClickGUIScreen
-                    || next instanceof TTConnectScreen
-                    || next instanceof TTDisconnectedScreen) return;
-
-            if (next instanceof TitleScreen) {
+            boolean isTitle = next instanceof TitleScreen
+                    || n.endsWith(".titlescreen")
+                    || simple.equals("titlescreen");
+            if (isTitle && TTTitleScreen.isEnabled()) {
                 event.setNewScreen(new TTTitleScreen());
                 return;
             }
 
-            if (n.contains("connect") || n.contains("progress")
+            boolean isConnect = (n.contains("connect") && !n.contains("disconnect"))
+                    || n.contains("progressscreen")
                     || n.contains("receivinglevel")
-                    || n.contains("join") || simple.contains("connect")) {
+                    || simple.contains("connect") && !simple.contains("disconnect");
+            if (isConnect) {
                 String status = "Connecting";
                 if (n.contains("receiving") || simple.contains("receiving")) status = "Receiving terrain";
                 else if (n.contains("progress") || n.contains("download")) status = "Loading";
@@ -122,19 +138,6 @@ public class TTClientClient {
                     }
                     if (v instanceof String str && str.length() > 2) return str;
                 } catch (Throwable ignored) {}
-            }
-            Class<?> c = s.getClass().getSuperclass();
-            if (c != null) {
-                for (var f : c.getDeclaredFields()) {
-                    try {
-                        f.setAccessible(true);
-                        Object v = f.get(s);
-                        if (v instanceof Component comp) {
-                            String t = comp.getString();
-                            if (t != null && !t.isBlank() && t.length() > 2) return t;
-                        }
-                    } catch (Throwable ignored) {}
-                }
             }
         } catch (Throwable ignored) {}
         return "Disconnected from server";
@@ -225,7 +228,37 @@ public class TTClientClient {
 
     @SubscribeEvent
     public void onKey(InputEvent.Key event) {
-        // key binds handled elsewhere / ClickGUI
+        if (modules == null) return;
+        int action = event.getAction();
+        if (action != GLFW.GLFW_PRESS && action != 1) return;
+        int key = event.getKey();
+        if (key <= 0 || key == GLFW.GLFW_KEY_UNKNOWN) return;
+        Minecraft mc = Minecraft.getInstance();
+        Screen screen = currentScreen(mc);
+
+        if (screen == null && (key == GLFW.GLFW_KEY_PERIOD || key == 46)) {
+            openChatWith(mc, ".");
+            return;
+        }
+
+        StreamerMode streamer = modules.getModule(StreamerMode.class);
+        if (streamer != null && streamer.getKeyBind() > 0 && streamer.getKeyBind() == key) {
+            if (screen == null || screen instanceof ClickGUIScreen) {
+                streamer.toggle();
+                if (config != null) config.save();
+            }
+            return;
+        }
+
+        if (screen != null && !(screen instanceof ClickGUIScreen) && !(screen instanceof TTTitleScreen)) return;
+
+        for (Module m : modules.getModules()) {
+            if (m.getKeyBind() > 0 && m.getKeyBind() == key && m.getKeyBind() < MOUSE_BIND_BASE) {
+                m.toggle();
+                if (config != null) config.save();
+                return;
+            }
+        }
     }
 
     @SubscribeEvent
