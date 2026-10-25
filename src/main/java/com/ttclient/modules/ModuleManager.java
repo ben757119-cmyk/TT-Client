@@ -1,27 +1,13 @@
 package com.ttclient.modules;
 
-import com.ttclient.modules.basefind.BaseScanner;
-import com.ttclient.modules.basefind.BeaconFinder;
-import com.ttclient.modules.basefind.ChestStashFinder;
-import com.ttclient.modules.basefind.CropFarmFinder;
-import com.ttclient.modules.basefind.PortalRoomFinder;
-import com.ttclient.modules.client.ArrayListMod;
-import com.ttclient.modules.client.ClickGUIModule;
-import com.ttclient.modules.client.CustomMainMenu;
-import com.ttclient.modules.client.HUD;
-import com.ttclient.modules.client.Keystrokes;
-import com.ttclient.modules.client.Notifications;
-import com.ttclient.modules.client.StreamerMode;
-import com.ttclient.modules.client.TargetHUD;
+import com.ttclient.modules.client.*;
 import com.ttclient.modules.combat.*;
 import com.ttclient.modules.misc.*;
 import com.ttclient.modules.movement.*;
 import com.ttclient.modules.player.*;
 import com.ttclient.modules.render.*;
-import com.ttclient.modules.world.Nuker;
-import com.ttclient.modules.world.Scaffold;
-import com.ttclient.modules.world.Timer;
-import com.ttclient.modules.world.Waypoints;
+import com.ttclient.modules.world.*;
+import com.ttclient.modules.basefind.*;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 import java.util.ArrayList;
@@ -33,45 +19,41 @@ public class ModuleManager {
     private final List<Module> modules = new ArrayList<>();
 
     public void init() {
-        // Client
         register(new ClickGUIModule());
+        register(new SeizureMode());
+        register(new StreamerMode());
         register(new HUD());
-        register(new ArrayListMod());
         register(new Notifications());
         register(new Keystrokes());
-        register(new TargetHUD());
-        register(new CustomMainMenu());
-        register(new StreamerMode());
+        register(new ArrayListMod());
 
-        // Combat
+        register(new Destroyer());
         register(new KillAura());
         register(new AimAssist());
-        register(new AutoClicker());
-        register(new AutoCrystal());
-        register(new AutoTotem());
-        register(new AutoTrap());
-        register(new AutoXP());
-        register(new Criticals());
-        register(new Destroyer());
-        register(new Hitboxes());
-        register(new HoleFill());
-        register(new Offhand());
-        register(new Reach());
-        register(new Surround());
         register(new TriggerBot());
-        register(new WTap());
-        register(new AutoArmorSwap());
+        register(new AutoClicker());
+        register(new Criticals());
+        register(new Reach());
+        register(new Rage());
+        register(new Shredder());
+        register(new Hitboxes());
+        register(new AutoCrystal());
+        register(new Surround());
+        register(new HoleFill());
+        register(new AutoTrap());
         register(new AnchorAura());
         register(new OneClickAnchors());
-        register(new Rage());
+        register(new Offhand());
+        register(new AutoXP());
+        register(new AutoArmorSwap());
+        register(new WTap());
+
         register(new MaceHack());
         register(new MaceAura());
         register(new MaceSwap());
         register(new WindChargeAssist());
         register(new SpearKiller());
-        register(new Shredder());
 
-        // Movement
         register(new Sprint());
         register(new AutoWalk());
         register(new AutoJump());
@@ -95,7 +77,6 @@ public class ModuleManager {
         register(new BoatFly());
         register(new ElytraFly());
 
-        // Player
         register(new AutoEat());
         register(new AutoFish());
         register(new AutoRespawn());
@@ -121,7 +102,6 @@ public class ModuleManager {
         register(new DurabilityAlert());
         register(new HungerInfo());
 
-        // Render
         register(new Fullbright());
         register(new Zoom());
         register(new LightLevel());
@@ -138,15 +118,41 @@ public class ModuleManager {
         register(new BlockESP());
         register(new HoleESP());
         register(new Search());
-        register(new ChinaHat());
+        register(new NoFog());
+        register(new NoRender());
+        register(new Crosshair());
         register(new Breadcrumbs());
         register(new BlockHighlight());
-        register(new Crosshair());
+        register(new ChinaHat());
         register(new CustomSky());
-        register(new Ambience());
+        register(new Radar());
+        register(new Trajectories());
+        register(new ViewModel());
+        register(new PopChams());
         register(new Brightness());
 
-        // Misc
+        register(new Waypoints());
+        register(new TrialChamberFinder());
+        register(new StashFinder());
+        register(new Scaffold());
+        register(new Nuker());
+        register(new Timer());
+        register(new XRay());
+        register(new AutoFarm());
+        register(new AutoTorch());
+        register(new FakePlayer());
+        register(new LiquidPlace());
+        register(new NewChunks());
+
+        register(new BaseScanner());
+        register(new KelpFinder());
+        register(new GeodeFinder());
+        register(new ChestStashFinder());
+        register(new SpawnerFinder());
+        register(new PortalRoomFinder());
+        register(new CropFarmFinder());
+        register(new BeaconFinder());
+
         register(new AntiAFK());
         register(new ChatTimestamps());
         register(new CoordCopy());
@@ -160,25 +166,12 @@ public class ModuleManager {
         register(new AutoReconnect());
         register(new ChatSuffix());
         register(new Announcer());
-
-        // World
-        register(new Waypoints());
-        register(new Nuker());
-        register(new Scaffold());
-        register(new AutoFarm());
-        register(new AutoTorch());
-        register(new Timer());
-
-        // Basefind
-        register(new BaseScanner());
-        register(new BeaconFinder());
-        register(new ChestStashFinder());
-        register(new CropFarmFinder());
-        register(new PortalRoomFinder());
+        register(new DiscordRPC());
+        register(new CustomMainMenu());
     }
 
-    private void register(Module m) {
-        modules.add(m);
+    private void register(Module module) {
+        modules.add(module);
     }
 
     public List<Module> getModules() {
@@ -224,7 +217,6 @@ public class ModuleManager {
         }
     }
 
-    /** Disable modules that opted into DisableOnDeath. */
     public void disableModulesOnDeath() {
         for (Module m : modules) {
             if (m.isEnabled() && m.shouldDisableOnDeath()) {
@@ -233,7 +225,6 @@ public class ModuleManager {
         }
     }
 
-    /** Disable modules that opted into DisableOnServer (leave / change server). */
     public void disableModulesOnServerChange() {
         for (Module m : modules) {
             if (m.isEnabled() && m.shouldDisableOnServerChange()) {
