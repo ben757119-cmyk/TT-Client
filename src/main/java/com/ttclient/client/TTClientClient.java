@@ -28,7 +28,6 @@ import net.neoforged.neoforge.client.event.ClientChatReceivedEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
-import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.event.ViewportEvent;
 import net.neoforged.neoforge.common.NeoForge;
@@ -144,13 +143,12 @@ public class TTClientClient {
     }
 
     @SubscribeEvent
-    public void onRenderGui(RenderGuiEvent.Post event) {
+    public void onScreenRender(ScreenEvent.Render.Post event) {
         try {
-            Minecraft mc = Minecraft.getInstance();
-            if (mc == null) return;
-            Screen s = currentScreen(mc);
+            Screen s = event.getScreen();
+            if (s == null) return;
             if (s instanceof TTConnectScreen || s instanceof TTDisconnectedScreen
-                    || s instanceof ClickGUIScreen) return;
+                    || s instanceof TTTitleScreen) return;
             GuiGraphicsExtractor g = event.getGuiGraphics();
             if (g == null) return;
             TTBrand.drawAll(g, s);
