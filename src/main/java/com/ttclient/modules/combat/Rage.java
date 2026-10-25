@@ -20,10 +20,6 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
-/**
- * Rage — extreme reach for attacks AND normal block place (not just anchors).
- * Vanilla crosshair pick is short; we re-raycast with full reach when you click.
- */
 public class Rage extends Module {
     public final NumberSetting reach = addSetting(new NumberSetting(
             "Reach", "Attack / interact reach", 256.0, 6.0, 1000.0, 1.0));
@@ -46,21 +42,16 @@ public class Rage extends Module {
     }
 
     @Override
-    public void onEnable() {
-        applyReach();
-    }
+    public void onEnable() { applyReach(); }
 
     @Override
-    public void onDisable() {
-        clearReach();
-    }
+    public void onDisable() { clearReach(); }
 
     @Override
     public void onTick() {
         Minecraft mc = mc();
         if (mc == null || mc.player == null || mc.level == null || mc.gameMode == null) return;
         applyReach();
-
         LocalPlayer p = mc.player;
 
         if (longHit.get() && mc.options.keyAttack.isDown()) {
@@ -82,36 +73,31 @@ public class Rage extends Module {
         if (longPlace.get() && mc.options.keyUse.isDown()) {
             ItemStack held = p.getMainHandItem();
             if (!held.isEmpty() && held.getItem() instanceof BlockItem) {
-                tryLongPlace(mc, p);
+                try {
+                    double r = reach.get();
+                    Vec3 eye = p.getEyePosition(1.0f);
+                    Vec3 look = p.getViewVector(1.0f);
+                    Vec3 end = eye.add(look.scale(r));
+                    BlockHitResult hit = mc.level.clip(new ClipContext(
+                            eye, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, p));
+                    if (hit.getType() == HitResult.Type.BLOCK) {
+                        mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, hit);
+                    }
+                } catch (Throwable ignored) {}
             }
         }
-    }
-
-    private void tryLongPlace(Minecraft mc, LocalPlayer p) {
-        try {
-            double r = reach.get();
-            Vec3 eye = p.getEyePosition(1.0f);
-            Vec3 look = p.getViewVector(1.0f);
-            Vec3 end = eye.add(look.scale(r));
-            BlockHitResult hit = mc.level.clip(new ClipContext(
-                    eye, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, p));
-            if (hit.getType() == HitResult.Type.BLOCK) {
-                mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, hit);
-            }
-        } catch (Throwable ignored) {}
     }
 
     private void applyReach() {
         Minecraft mc = mc();
         if (mc == null || mc.player == null) return;
-        LocalPlayer p = mc.player;
         try {
             if (entities.get()) {
-                AttributeInstance a = p.getAttribute(Attributes.ENTITY_INTERACTION_RANGE);
+                AttributeInstance a = mc.player.getAttribute(Attributes.ENTITY_INTERACTION_RANGE);
                 if (a != null) a.setBaseValue(reach.get());
             }
             if (blocks.get()) {
-                AttributeInstance a = p.getAttribute(Attributes.BLOCK_INTERACTION_RANGE);
+                AttributeInstance a = mc.player.getAttribute(Attributes.BLOCK_INTERACTION_RANGE);
                 if (a != null) a.setBaseValue(reach.get());
             }
         } catch (Throwable ignored) {}
@@ -120,11 +106,10 @@ public class Rage extends Module {
     private void clearReach() {
         Minecraft mc = mc();
         if (mc == null || mc.player == null) return;
-        LocalPlayer p = mc.player;
         try {
-            AttributeInstance e = p.getAttribute(Attributes.ENTITY_INTERACTION_RANGE);
+            AttributeInstance e = mc.player.getAttribute(Attributes.ENTITY_INTERACTION_RANGE);
             if (e != null) e.setBaseValue(3.0);
-            AttributeInstance b = p.getAttribute(Attributes.BLOCK_INTERACTION_RANGE);
+            AttributeInstance b = mc.player.getAttribute(Attributes.BLOCK_INTERACTION_RANGE);
             if (b != null) b.setBaseValue(4.5);
         } catch (Throwable ignored) {}
     }
