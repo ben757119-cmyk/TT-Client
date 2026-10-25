@@ -151,7 +151,6 @@ public class ModuleManager {
         register(new ChestStashFinder());
         register(new SpawnerFinder());
         register(new PortalFinder());
-        register(new PortalRoomFinder());
         register(new CropFarmFinder());
         register(new BeaconFinder());
         register(new HopperFinder());
