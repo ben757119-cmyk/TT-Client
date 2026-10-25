@@ -5,7 +5,6 @@ import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
 import com.ttclient.settings.ModeSetting;
 import com.ttclient.settings.NumberSetting;
-import com.ttclient.util.InvUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.Holder;
@@ -23,9 +22,6 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Swaps hotbar / equip slots based on item attribute scores
  * (attack damage, attack speed, armor).
- *
- * Weapon path supports attribute swapping: swap to best weapon while attacking,
- * then SwapBack restores the previous hotbar slot (with proper carried-item packets).
  */
 public class AttributeSwapper extends Module {
     public final ModeSetting mode = addSetting(new ModeSetting(
@@ -33,9 +29,6 @@ public class AttributeSwapper extends Module {
             "Weapon", "Weapon", "Armor", "Both"));
     public final BoolSetting onlyOnAttack = addSetting(new BoolSetting(
             "OnlyOnAttack", "Only swap weapons while attacking",
-            true));
-    public final BoolSetting swapBack = addSetting(new BoolSetting(
-            "SwapBack", "Restore previous hotbar slot after attack",
             true));
     public final BoolSetting preferSpeed = addSetting(new BoolSetting(
             "PreferSpeed", "Weight attack speed higher when scoring weapons",
@@ -45,24 +38,11 @@ public class AttributeSwapper extends Module {
             10, 2, 40, 1));
 
     private int armorTimer;
-    /** Hotbar slot to restore after an attack swap; -1 = none. */
-    private int restoreSlot = -1;
 
     public AttributeSwapper() {
         super("AttributeSwapper",
                 "Swap to the best weapon/armor by item attributes",
                 Category.PLAYER);
-    }
-
-    @Override
-    public void onDisable() {
-        if (restoreSlot >= 0) {
-            Minecraft mc = mc();
-            if (mc != null && mc.player != null) {
-                InvUtils.selectHotbar(mc.player, restoreSlot);
-            }
-            restoreSlot = -1;
-        }
     }
 
     @Override
@@ -73,37 +53,16 @@ public class AttributeSwapper extends Module {
         String m = mode.get();
 
         if ("Weapon".equals(m) || "Both".equals(m)) {
-            boolean attacking = mc.options != null
-                    && mc.options.keyAttack.isDown()
+            boolean should = !onlyOnAttack.get()
+                    || (mc.options != null && mc.options.keyAttack.isDown()
                     && mc.hitResult != null
                     && mc.hitResult.getType() == HitResult.Type.ENTITY
-                    && mc.hitResult instanceof EntityHitResult;
-
-            boolean should = !onlyOnAttack.get() || attacking;
-
+                    && mc.hitResult instanceof EntityHitResult);
             if (should) {
                 int best = findBestWeaponSlot(player);
-                int cur = player.getInventory().getSelectedSlot();
-                if (best >= 0 && best != cur) {
-                    if (swapBack.get() && restoreSlot < 0) {
-                        restoreSlot = cur;
-                    }
-                    // Packet-backed hotbar select (not client-only)
-                    InvUtils.selectHotbar(player, best);
+                if (best >= 0 && best != player.getInventory().getSelectedSlot()) {
+                    player.getInventory().setSelectedSlot(best);
                 }
-
-                // After swing (charge dropped), restore original slot
-                if (swapBack.get()
-                        && onlyOnAttack.get()
-                        && restoreSlot >= 0
-                        && attacking
-                        && player.getAttackStrengthScale(0.5f) < 0.15f) {
-                    InvUtils.selectHotbar(player, restoreSlot);
-                    restoreSlot = -1;
-                }
-            } else if (swapBack.get() && restoreSlot >= 0) {
-                InvUtils.selectHotbar(player, restoreSlot);
-                restoreSlot = -1;
             }
         }
 
@@ -189,9 +148,9 @@ public class AttributeSwapper extends Module {
         if (bestHotbar < 0) return false;
 
         int prev = inv.getSelectedSlot();
-        InvUtils.selectHotbar(player, bestHotbar);
+        inv.setSelectedSlot(bestHotbar);
         mc.gameMode.useItem(player, InteractionHand.MAIN_HAND);
-        InvUtils.selectHotbar(player, prev);
+        inv.setSelectedSlot(prev);
         return true;
     }
 
