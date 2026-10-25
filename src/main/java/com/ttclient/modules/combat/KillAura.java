@@ -15,15 +15,19 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.Vec3;
 
+/**
+ * KillAura with optional weapon swap for attribute swapping:
+ * select best weapon → attack → swap back to previous hotbar slot (same tick).
+ */
 public class KillAura extends Module {
     public final NumberSetting range = addSetting(new NumberSetting("Range", "Attack range", 4.2, 2.0, 6.0, 0.1));
     public final BoolSetting players = addSetting(new BoolSetting("Players", "Target players", true));
     public final BoolSetting mobs = addSetting(new BoolSetting("Mobs", "Target hostiles", false));
     public final BoolSetting rotate = addSetting(new BoolSetting("Rotate", "Aim at target", true));
     public final BoolSetting silent = addSetting(new BoolSetting("Silent", "Body rotate only — keep your POV", true));
-    public final BoolSetting weaponSwap = addSetting(new BoolSetting("WeaponSwap", "Switch to best weapon", true));
+    public final BoolSetting weaponSwap = addSetting(new BoolSetting("WeaponSwap", "Switch to best weapon for the hit", true));
+    public final BoolSetting swapBack = addSetting(new BoolSetting("SwapBack", "Swap back after hit (attribute swap)", true));
     public final BoolSetting useRage = addSetting(new BoolSetting("UseRageRange", "Use Rage reach when on", true));
 
     public KillAura() {
@@ -51,9 +55,16 @@ public class KillAura extends Module {
         LivingEntity target = findTargetFiltered(mc, p, effectiveRange());
         if (target == null) return;
 
+        int prevSlot = p.getInventory().getSelectedSlot();
+        boolean didSwap = false;
+
+        // Attribute-style: hotbar to best weapon for this hit only
         if (weaponSwap.get()) {
             int w = InvUtils.findBestWeapon(p);
-            if (w >= 0) InvUtils.selectHotbar(p, w);
+            if (w >= 0 && w != prevSlot) {
+                InvUtils.selectHotbar(p, w);
+                didSwap = true;
+            }
         }
 
         if (rotate.get()) {
@@ -65,6 +76,11 @@ public class KillAura extends Module {
 
         mc.gameMode.attack(p, target);
         p.swing(InteractionHand.MAIN_HAND);
+
+        // Swap back so held item attributes / totem slot / tool stay as before
+        if (didSwap && swapBack.get()) {
+            InvUtils.selectHotbar(p, prevSlot);
+        }
     }
 
     public static void lookAt(LocalPlayer p, Entity target) {
