@@ -1,6 +1,7 @@
 package com.ttclient.modules;
 
 import com.ttclient.client.NotificationManager;
+import com.ttclient.settings.BoolSetting;
 import com.ttclient.settings.Setting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -16,10 +17,37 @@ public abstract class Module {
     private int keyBind = -1;
     private final List<Setting<?>> settings = new ArrayList<>();
 
+    /** Optional safety toggles — set by {@link #addCombatSafetyToggles()}. */
+    protected BoolSetting disableOnDeath;
+    protected BoolSetting disableOnServer;
+
     public Module(String name, String description, Category category) {
         this.name = name;
         this.description = description;
         this.category = category;
+    }
+
+    /**
+     * Adds DisableOnDeath + DisableOnServer toggles (default on).
+     * Call from combat modules that auto-hit / rage.
+     */
+    protected void addCombatSafetyToggles() {
+        disableOnDeath = addSetting(new BoolSetting(
+                "DisableOnDeath",
+                "Turn this module off when you die",
+                true));
+        disableOnServer = addSetting(new BoolSetting(
+                "DisableOnServer",
+                "Turn this module off when you leave or change servers",
+                true));
+    }
+
+    public boolean shouldDisableOnDeath() {
+        return disableOnDeath != null && disableOnDeath.get();
+    }
+
+    public boolean shouldDisableOnServerChange() {
+        return disableOnServer != null && disableOnServer.get();
     }
 
     protected static Minecraft mc() {
