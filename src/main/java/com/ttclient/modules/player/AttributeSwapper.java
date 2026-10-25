@@ -8,6 +8,8 @@ import com.ttclient.settings.NumberSetting;
 import com.ttclient.util.InvUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.Holder;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -19,8 +21,7 @@ import net.minecraft.world.phys.HitResult;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Attribute swap: switch to best-scoring weapon for the hit, then swap back.
- * Matches common client pattern — same tick when possible via attack key + hit entity.
+ * Attribute swap: switch to best-scoring weapon for the hit, then optionally swap back.
  */
 public class AttributeSwapper extends Module {
     public final ModeSetting mode = addSetting(new ModeSetting(
@@ -30,7 +31,7 @@ public class AttributeSwapper extends Module {
             "OnlyOnAttack", "Only swap weapons while attacking",
             true));
     public final BoolSetting swapBack = addSetting(new BoolSetting(
-            "SwapBack", "Restore previous hotbar slot after swap",
+            "SwapBack", "Restore previous hotbar slot after attack",
             true));
     public final BoolSetting preferSpeed = addSetting(new BoolSetting(
             "PreferSpeed", "Weight attack speed higher when scoring weapons",
@@ -40,9 +41,7 @@ public class AttributeSwapper extends Module {
             10, 2, 40, 1));
 
     private int armorTimer;
-    /** Slot held before an attack swap; -1 = nothing to restore. */
     private int restoreSlot = -1;
-    private boolean swappedThisPress;
 
     public AttributeSwapper() {
         super("AttributeSwapper",
@@ -54,8 +53,6 @@ public class AttributeSwapper extends Module {
     public void onDisable() {
         restoreIfNeeded();
         restoreSlot = -1;
-        swappedThisPress = false;
-        super.onDisable();
     }
 
     @Override
@@ -82,28 +79,16 @@ public class AttributeSwapper extends Module {
                         restoreSlot = cur;
                     }
                     InvUtils.selectHotbar(player, best);
-                    swappedThisPress = true;
+                }
+                if (swapBack.get() && onlyOnAttack.get() && restoreSlot >= 0
+                        && attacking
+                        && player.getAttackStrengthScale(0.5f) < 0.15f) {
+                    InvUtils.selectHotbar(player, restoreSlot);
+                    restoreSlot = -1;
                 }
             } else if (swapBack.get() && restoreSlot >= 0) {
-                // Attack released / not aiming entity → restore
                 InvUtils.selectHotbar(player, restoreSlot);
                 restoreSlot = -1;
-                swappedThisPress = false;
-            }
-
-            // Same-tick style when fully charged: if we just swapped for an attack and
-            // attack strength is high, restore immediately after the swing frame.
-            // (KillAura handles its own same-tick path; this covers manual clicks.)
-            if (swapBack.get()
-                    && onlyOnAttack.get()
-                    && swappedThisPress
-                    && restoreSlot >= 0
-                    && attacking
-                    && player.getAttackStrengthScale(0.5f) < 0.15f) {
-                // Just swung — put original item back
-                InvUtils.selectHotbar(player, restoreSlot);
-                restoreSlot = -1;
-                swappedThisPress = false;
             }
         }
 
@@ -163,69 +148,59 @@ public class AttributeSwapper extends Module {
         return swapped;
     }
 
-    private boolean tryEquipSlot(LocalPlayer player, Minecraft mc, EquipmentSlot slot, String... hints) {
-        Inventory inv = player.getInventory();
+    private boolean tryEquipSlot(LocalPlayer player, Minecraft mc, EquipmentSlot slot, String... nameHints) {
         ItemStack current = player.getItemBySlot(slot);
-        double currentScore = scoreArmor(current);
+        double currentScore = scoreArmorPiece(current, slot);
 
-        int bestInv = -1;
+        Inventory inv = player.getInventory();
+        int bestHotbar = -1;
         double bestScore = currentScore;
-        // Search main inv (9–35) + hotbar
-        for (int i = 0; i < 36; i++) {
-            ItemStack s = inv.getItem(i);
-            if (s.isEmpty()) continue;
-            if (!matchesArmorHint(s, hints)) continue;
-            double sc = scoreArmor(s);
-            if (sc > bestScore) {
-                bestScore = sc;
-                bestInv = i;
+
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = inv.getItem(i);
+            if (stack.isEmpty()) continue;
+            if (!matchesArmorHint(stack, nameHints) && scoreArmorPiece(stack, slot) <= 0) continue;
+            double score = scoreArmorPiece(stack, slot);
+            if (score <= 0) {
+                if (current.isEmpty() && matchesArmorHint(stack, nameHints)) {
+                    score = heuristicArmor(stack);
+                } else {
+                    continue;
+                }
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                bestHotbar = i;
             }
         }
-        if (bestInv < 0) return false;
 
-        // Prefer silent container swap when possible
-        try {
-            int armorMenuSlot = switch (slot) {
-                case HEAD -> 5;
-                case CHEST -> 6;
-                case LEGS -> 7;
-                case FEET -> 8;
-                default -> -1;
-            };
-            if (armorMenuSlot < 0 || mc.gameMode == null) return false;
-            int from = bestInv < 9 ? bestInv + 36 : bestInv;
-            // SWAP click: button = armor menu slot index in player inventory menu
-            // Use pickup/swap via InvUtils if available pattern — fall back to selected+use
-            mc.gameMode.handleInventoryMouseClick(
-                    player.containerMenu.containerId,
-                    from,
-                    armorMenuSlot,
-                    net.minecraft.world.inventory.ClickType.SWAP,
-                    player);
-            return true;
-        } catch (Throwable t) {
-            return false;
-        }
+        if (bestHotbar < 0) return false;
+
+        int prev = inv.getSelectedSlot();
+        InvUtils.selectHotbar(player, bestHotbar);
+        mc.gameMode.useItem(player, InteractionHand.MAIN_HAND);
+        InvUtils.selectHotbar(player, prev);
+        return true;
     }
 
-    private double scoreArmor(ItemStack stack) {
-        if (stack == null || stack.isEmpty()) return 0;
-        double armor = readAttribute(stack, Attributes.ARMOR, null);
-        double toughness = readAttribute(stack, Attributes.ARMOR_TOUGHNESS, null);
-        if (armor <= 0) armor = heuristicArmor(stack);
+    private double scoreArmorPiece(ItemStack stack, EquipmentSlot slot) {
+        if (stack.isEmpty()) return 0;
+        double armor = readAttribute(stack, Attributes.ARMOR, slot);
+        double toughness = readAttribute(stack, Attributes.ARMOR_TOUGHNESS, slot);
+        if (armor <= 0 && toughness <= 0) {
+            return heuristicArmor(stack);
+        }
         return armor + toughness * 0.5;
     }
 
-    private double readAttribute(ItemStack stack, Attribute attribute, EquipmentSlot preferred) {
+    private double readAttribute(ItemStack stack, Holder<Attribute> attribute, EquipmentSlot slot) {
         AtomicReference<Double> total = new AtomicReference<>(0.0);
         try {
-            if (preferred != null) {
-                stack.forEachModifier(preferred, (attr, modifier) -> {
-                    if (attr == attribute || (attr != null && attr.is(attribute))) {
-                        total.updateAndGet(v -> v + modifier.amount());
-                    }
-                });
-            }
+            stack.forEachModifier(slot, (attr, modifier) -> {
+                if (attr == attribute || (attr != null && attr.is(attribute))) {
+                    total.updateAndGet(v -> v + modifier.amount());
+                }
+            });
         } catch (Throwable ignored) {}
 
         if (total.get() != 0) return total.get();
