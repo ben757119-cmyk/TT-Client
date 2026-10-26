@@ -62,7 +62,6 @@ public class Nuker extends Module implements BlockListModule {
     }
 
     public void clearBlocks() { selected.clear(); }
-
     public void loadBlocks(String csv) {
         selected.clear();
         if (csv == null || csv.isBlank()) return;
@@ -71,7 +70,6 @@ public class Nuker extends Module implements BlockListModule {
             if (n != null) selected.add(n);
         }
     }
-
     public String saveBlocks() { return String.join(",", selected); }
 
     @Override
@@ -127,7 +125,13 @@ public class Nuker extends Module implements BlockListModule {
     public void onTick() {
         Minecraft mc = mc();
         if (mc == null || mc.player == null || mc.level == null || mc.gameMode == null) return;
-        if (mc.screen != null) return;
+        try {
+            Object scr = null;
+            try { scr = mc.gui.screen(); } catch (Throwable t) {
+                try { scr = Minecraft.class.getMethod("getScreen").invoke(mc); } catch (Throwable ignored) {}
+            }
+            if (scr != null) return;
+        } catch (Throwable ignored) {}
 
         String m = String.valueOf(mode.get());
         if ("Selective".equalsIgnoreCase(m) && selected.isEmpty()) return;
