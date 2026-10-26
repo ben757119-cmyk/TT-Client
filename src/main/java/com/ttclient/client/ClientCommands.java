@@ -16,19 +16,22 @@ import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
 
+/** Client-only chat commands starting with ".". Keep public PREFIX, chatOnly, tabComplete. */
 public final class ClientCommands {
+    public static final String PREFIX = ".";
+
     private ClientCommands() {}
 
     public static boolean handle(String raw) {
         if (raw == null) return false;
         String msg = raw.trim();
-        if (!msg.startsWith(".")) return false;
-        String body = msg.substring(1).trim();
+        if (!msg.startsWith(PREFIX)) return false;
+        String body = msg.substring(PREFIX.length()).trim();
         if (body.isEmpty()) return true;
-        List<String> tokens = tokens(body);
-        if (tokens.isEmpty()) return true;
-        String cmd = tokens.get(0).toLowerCase(Locale.ROOT);
-        List<String> args = tokens.size() > 1 ? tokens.subList(1, tokens.size()) : List.of();
+        List<String> parts = splitArgs(body);
+        if (parts.isEmpty()) return true;
+        String cmd = parts.get(0).toLowerCase(Locale.ROOT);
+        List<String> args = parts.size() > 1 ? parts.subList(1, parts.size()) : List.of();
         try {
             switch (cmd) {
                 case "help", "h", "?" -> help();
@@ -43,7 +46,7 @@ public final class ClientCommands {
                 case "ping" -> chat("pong");
                 case "coords", "pos" -> coords();
                 case "say" -> {
-                    if (args.isEmpty()) { chatOnly("Usage: .say <message>"); }
+                    if (args.isEmpty()) chatOnly("Usage: .say <message>");
                     else {
                         Minecraft mc = Minecraft.getInstance();
                         if (mc.player != null && mc.player.connection != null)
@@ -56,6 +59,91 @@ public final class ClientCommands {
             chatOnly("Command error: " + t.getClass().getSimpleName());
         }
         return true;
+    }
+
+    public static boolean isClientCommand(String msg) {
+        return msg != null && msg.trim().startsWith(PREFIX);
+    }
+
+    public static String tabComplete(String buffer) {
+        if (buffer == null || !buffer.startsWith(PREFIX)) return null;
+        String body = buffer.substring(PREFIX.length());
+        if (!body.contains(" ")) {
+            String partial = body.toLowerCase(Locale.ROOT);
+            List<String> cmds = List.of(
+                    "help", "version", "toggle", "modules", "block", "nuker", "chest", "friend", "say", "coords", "ping", "bind"
+            );
+            List<String> hits = new ArrayList<>();
+            for (String c : cmds) if (c.startsWith(partial)) hits.add(PREFIX + c);
+            if (hits.isEmpty()) return null;
+            if (hits.size() == 1) {
+                String h = hits.get(0);
+                if (h.equals(PREFIX + "toggle") || h.equals(PREFIX + "say") || h.equals(PREFIX + "chest")
+                        || h.equals(PREFIX + "block") || h.equals(PREFIX + "friend") || h.equals(PREFIX + "nuker"))
+                    return h + " ";
+                return h;
+            }
+            chatOnly("§7" + String.join(" §8| §7", hits));
+            return commonPrefix(hits);
+        }
+        List<String> parts = splitArgs(body);
+        if (parts.isEmpty()) return null;
+        String cmd = parts.get(0).toLowerCase(Locale.ROOT);
+        if (cmd.equals("toggle") || cmd.equals("t")) {
+            String partial = parts.size() > 1 ? parts.get(1).toLowerCase(Locale.ROOT) : "";
+            if (TTClientClient.modules == null) return null;
+            List<String> hits = new ArrayList<>();
+            for (Module m : TTClientClient.modules.getModules()) {
+                if (m.getName().toLowerCase(Locale.ROOT).startsWith(partial))
+                    hits.add(PREFIX + "toggle " + m.getName());
+            }
+            if (hits.isEmpty()) return null;
+            if (hits.size() == 1) return hits.get(0);
+            chatOnly("§7" + String.join(" §8| §7", hits.stream().limit(8).toList()));
+            return commonPrefix(hits);
+        }
+        if (cmd.equals("friend") || cmd.equals("f") || cmd.equals("friends")) {
+            String partial = parts.size() > 1 ? parts.get(1).toLowerCase(Locale.ROOT) : "";
+            List<String> hits = new ArrayList<>();
+            for (String s : List.of("add", "remove", "list", "clear"))
+                if (s.startsWith(partial)) hits.add(PREFIX + "friend " + s);
+            if (hits.size() == 1) return hits.get(0);
+            if (!hits.isEmpty()) return commonPrefix(hits);
+        }
+        if (cmd.equals("chest") || cmd.equals("cr")) {
+            String partial = parts.size() > 1 ? parts.get(1).toLowerCase(Locale.ROOT) : "";
+            List<String> hits = new ArrayList<>();
+            for (String s : List.of("add", "list", "clear", "remove"))
+                if (s.startsWith(partial)) hits.add(PREFIX + "chest " + s);
+            if (hits.size() == 1) return hits.get(0);
+            if (!hits.isEmpty()) return commonPrefix(hits);
+        }
+        if (cmd.equals("b") || cmd.equals("block")) {
+            String partial = parts.size() > 1 ? parts.get(1).toLowerCase(Locale.ROOT) : "";
+            List<String> hits = new ArrayList<>();
+            for (String s : List.of("add", "remove", "list", "clear"))
+                if (s.startsWith(partial)) hits.add(PREFIX + "b " + s);
+            if (hits.size() == 1) return hits.get(0);
+            if (!hits.isEmpty()) return commonPrefix(hits);
+        }
+        if (cmd.equals("nuker") || cmd.equals("n") || cmd.equals("nuke")) {
+            String partial = parts.size() > 1 ? parts.get(1).toLowerCase(Locale.ROOT) : "";
+            List<String> hits = new ArrayList<>();
+            for (String s : List.of("add", "remove", "list", "clear"))
+                if (s.startsWith(partial)) hits.add(PREFIX + "nuker " + s);
+            if (hits.size() == 1) return hits.get(0);
+            if (!hits.isEmpty()) return commonPrefix(hits);
+        }
+        return null;
+    }
+
+    private static String commonPrefix(List<String> hits) {
+        if (hits.isEmpty()) return null;
+        String p = hits.get(0);
+        for (String h : hits) {
+            while (!h.startsWith(p) && !p.isEmpty()) p = p.substring(0, p.length() - 1);
+        }
+        return p.isEmpty() ? null : p;
     }
 
     private static void help() {
@@ -116,6 +204,7 @@ public final class ClientCommands {
                 chatOnly("Friend - " + args.get(1));
             }
             case "list", "l" -> chatOnly("Friends: " + String.join(", ", FriendsManager.list()));
+            case "clear", "c" -> { FriendsManager.clear(); chatOnly("Friends cleared"); }
             default -> chatOnly(".friend add|remove|list <name>");
         }
     }
@@ -126,10 +215,7 @@ public final class ClientCommands {
         if (relay == null) { chatOnly("ChestRelay missing"); return; }
         if (args.isEmpty()) { chatOnly(".chest list|clear"); return; }
         switch (args.get(0).toLowerCase()) {
-            case "list", "l" -> {
-                try { chatOnly("Chests: " + relay.describeChests()); }
-                catch (Throwable t) { chatOnly("Chests: (see ClickGUI)"); }
-            }
+            case "list", "l" -> chatOnly("Chests: (use ClickGUI / mark via .chest add)");
             case "clear", "c" -> {
                 try { relay.clearChests(); chatOnly("Cleared"); }
                 catch (Throwable t) { chatOnly("Clear failed"); }
@@ -185,17 +271,23 @@ public final class ClientCommands {
         }
     }
 
-    private static void chat(String s) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player != null) mc.player.displayClientMessage(Component.literal("§7[TT] §f" + s), false);
+    public static void chatOnly(String body) {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player == null) return;
+            Component c = Component.literal("§7[TT] §f" + body);
+            try { mc.player.displayClientMessage(c, false); }
+            catch (Throwable t) {
+                try { mc.gui.getChat().addMessage(c); } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {}
     }
 
-    private static void chatOnly(String s) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player != null) mc.player.displayClientMessage(Component.literal("§7[TT] §f" + s), false);
+    public static void chat(String body) {
+        chatOnly(body);
     }
 
-    private static List<String> tokens(String body) {
+    private static List<String> splitArgs(String body) {
         return new ArrayList<>(Arrays.asList(body.trim().split("\\s+")));
     }
 }
