@@ -271,14 +271,85 @@ public final class ClientCommands {
         }
     }
 
+    /** Client-only feedback — no server chat. Reflection for 26.2 API drift. */
     public static void chatOnly(String body) {
+        if (body == null) return;
         try {
             Minecraft mc = Minecraft.getInstance();
-            if (mc.player == null) return;
-            Component c = Component.literal("§7[TT] §f" + body);
-            try { mc.player.displayClientMessage(c, false); }
-            catch (Throwable t) {
-                try { mc.gui.getChat().addMessage(c); } catch (Throwable ignored) {}
+            if (mc == null) return;
+            Component comp = Component.literal("§8[§aTT§8] §f" + body);
+
+            if (mc.player != null) {
+                Object player = mc.player;
+                Class<?> c = player.getClass();
+                while (c != null && c != Object.class) {
+                    for (var m : c.getDeclaredMethods()) {
+                        String name = m.getName();
+                        if (!(name.equals("displayClientMessage")
+                                || name.equals("sendSystemMessage")
+                                || name.equals("sendMessage"))) continue;
+                        Class<?>[] pt = m.getParameterTypes();
+                        try {
+                            m.setAccessible(true);
+                            if (pt.length == 1 && Component.class.isAssignableFrom(pt[0])) {
+                                m.invoke(player, comp);
+                                return;
+                            }
+                            if (pt.length == 2 && Component.class.isAssignableFrom(pt[0])
+                                    && (pt[1] == boolean.class || pt[1] == Boolean.class)) {
+                                m.invoke(player, comp, false);
+                                return;
+                            }
+                        } catch (Throwable ignored) {}
+                    }
+                    c = c.getSuperclass();
+                }
+            }
+
+            if (mc.gui != null) {
+                Object chat = null;
+                try {
+                    chat = mc.gui.getClass().getMethod("getChat").invoke(mc.gui);
+                } catch (Throwable ignored) {}
+                if (chat == null) {
+                    Class<?> gc = mc.gui.getClass();
+                    while (gc != null && gc != Object.class && chat == null) {
+                        for (var f : gc.getDeclaredFields()) {
+                            try {
+                                String cn = f.getType().getName().toLowerCase(Locale.ROOT);
+                                if (cn.contains("chat")) {
+                                    f.setAccessible(true);
+                                    Object v = f.get(mc.gui);
+                                    if (v != null) { chat = v; break; }
+                                }
+                            } catch (Throwable ignored) {}
+                        }
+                        gc = gc.getSuperclass();
+                    }
+                }
+                if (chat != null) {
+                    for (var am : chat.getClass().getMethods()) {
+                        if (!am.getName().equals("addMessage")) continue;
+                        Class<?>[] pt = am.getParameterTypes();
+                        try {
+                            if (pt.length == 1 && Component.class.isAssignableFrom(pt[0])) {
+                                am.invoke(chat, comp);
+                                return;
+                            }
+                            if (pt.length >= 1 && Component.class.isAssignableFrom(pt[0])) {
+                                Object[] args = new Object[pt.length];
+                                args[0] = comp;
+                                for (int i = 1; i < pt.length; i++) {
+                                    if (pt[i] == boolean.class || pt[i] == Boolean.class) args[i] = false;
+                                    else if (pt[i] == int.class || pt[i] == Integer.class) args[i] = 0;
+                                    else args[i] = null;
+                                }
+                                am.invoke(chat, args);
+                                return;
+                            }
+                        } catch (Throwable ignored) {}
+                    }
+                }
             }
         } catch (Throwable ignored) {}
     }
