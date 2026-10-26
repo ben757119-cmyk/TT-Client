@@ -115,7 +115,7 @@ public final class ClientCommands {
                 FriendsManager.remove(args.get(1));
                 chatOnly("Friend - " + args.get(1));
             }
-            case "list", "l" -> chatOnly("Friends: " + String.join(", ", FriendsManager.all()));
+            case "list", "l" -> chatOnly("Friends: " + String.join(", ", FriendsManager.list()));
             default -> chatOnly(".friend add|remove|list <name>");
         }
     }
