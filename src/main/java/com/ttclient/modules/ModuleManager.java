@@ -90,6 +90,7 @@ public class ModuleManager {
         register(new AutoMine());
         register(new AutoSprintReset());
         register(new FastBreak());
+        register(new InstantRebreak());
         register(new FastPlace());
         register(new NoBreakDelay());
         register(new NoFall());
