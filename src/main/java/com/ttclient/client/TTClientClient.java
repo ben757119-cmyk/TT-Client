@@ -28,6 +28,7 @@ import net.neoforged.neoforge.client.event.ClientChatReceivedEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
+import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.event.ViewportEvent;
 import net.neoforged.neoforge.common.NeoForge;
@@ -248,18 +249,49 @@ public class TTClientClient {
             return;
         }
 
-        if (screen != null && !(screen instanceof ClickGUIScreen) && !(screen instanceof TTTitleScreen)) return;
+        // ClickGUI open/close is edge-triggered in onClientTick only — never toggle it here.
+        ClickGUIModule gui = modules.getModule(ClickGUIModule.class);
+        int guiKey = gui != null && gui.getKeyBind() > 0 ? gui.getKeyBind() : GLFW.GLFW_KEY_RIGHT_SHIFT;
+        if (key == guiKey) return;
 
-        // ClickGUI open/close is edge-triggered in onClientTick only.
-        // Toggling ClickGUIModule here races the tick handler and auto-closes the GUI.
-        for (Module m : modules.getModules()) {
-            if (m instanceof ClickGUIModule) continue;
-            if (m.getKeyBind() > 0 && m.getKeyBind() == key && m.getKeyBind() < MOUSE_BIND_BASE) {
-                m.toggle();
+        // Module keybinds only when no screen is open (same as pre-1.35)
+        if (screen != null) return;
+        for (Module mod : modules.getModules()) {
+            if (mod instanceof ClickGUIModule || mod instanceof StreamerMode) continue;
+            int bind = mod.getKeyBind();
+            if (bind > 0 && bind < MOUSE_BIND_BASE && bind == key) {
+                mod.toggle();
                 if (config != null) config.save();
-                return;
             }
         }
+    }
+
+    @SubscribeEvent
+    public void onMouse(InputEvent.MouseButton.Post event) {
+        if (modules == null) return;
+        if (event.getAction() != GLFW.GLFW_PRESS) return;
+        int button = event.getButton();
+        if (button != GLFW.GLFW_MOUSE_BUTTON_4 && button != GLFW.GLFW_MOUSE_BUTTON_5
+                && button != GLFW.GLFW_MOUSE_BUTTON_MIDDLE) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (currentScreen(mc) != null) return;
+        int code = MOUSE_BIND_BASE + button;
+        for (Module mod : modules.getModules()) {
+            if (mod instanceof ClickGUIModule) continue;
+            if (mod.getKeyBind() == code) {
+                mod.toggle();
+                if (config != null) config.save();
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public void onRenderGui(RenderGuiEvent.Post event) {
+        if (modules == null) return;
+        if (StreamerMode.shouldHideLocalUi()) return;
+        try {
+            modules.onRender2D(event.getGuiGraphics(), event.getPartialTick().getGameTimeDeltaPartialTick(false));
+        } catch (Throwable ignored) {}
     }
 
     @SubscribeEvent
