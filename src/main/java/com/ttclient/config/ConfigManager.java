@@ -4,6 +4,7 @@ import com.ttclient.TTClient;
 import com.ttclient.client.TTClientClient;
 import com.ttclient.modules.Module;
 import com.ttclient.modules.render.BlockESP;
+import com.ttclient.modules.world.Nuker;
 import com.ttclient.modules.world.XRay;
 import com.ttclient.settings.*;
 
@@ -39,8 +40,8 @@ public class ConfigManager {
             }
             if (mod instanceof BlockESP be) props.setProperty(prefix + "blocks", be.saveBlocks());
             if (mod instanceof XRay xr) props.setProperty(prefix + "blocks", xr.saveBlocks());
+            if (mod instanceof Nuker nk) props.setProperty(prefix + "blocks", nk.saveBlocks());
         }
-        // ClickGUI panel layout (x, y, open)
         for (Map.Entry<String, double[]> e : PANEL_LAYOUT.entrySet()) {
             String k = e.getKey();
             double[] v = e.getValue();
@@ -85,8 +86,11 @@ public class ConfigManager {
                 String blocks = props.getProperty(prefix + "blocks");
                 if (blocks != null) xr.loadBlocks(blocks);
             }
+            if (mod instanceof Nuker nk) {
+                String blocks = props.getProperty(prefix + "blocks");
+                if (blocks != null) nk.loadBlocks(blocks);
+            }
         }
-        // Load ClickGUI panel layout into static map
         PANEL_LAYOUT.clear();
         for (String name : props.stringPropertyNames()) {
             if (!name.startsWith("gui.panel.") || !name.endsWith(".x")) continue;
