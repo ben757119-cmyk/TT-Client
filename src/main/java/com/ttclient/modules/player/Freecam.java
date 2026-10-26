@@ -1,5 +1,6 @@
 package com.ttclient.modules.player;
 
+import com.ttclient.mixin.CameraAccessor;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
@@ -14,14 +15,18 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
 
-/** Meteor-style freecam — camera via mixins; forceCamera uses reflection (no CameraAccessor required). */
+/**
+ * Detached freecam camera. Body stays frozen; camera position/rotation driven by mixins + accessor.
+ */
 public class Freecam extends Module {
-    public final NumberSetting speed = addSetting(new NumberSetting("Speed", "Camera fly speed", 1.0, 0.1, 10.0, 0.1));
-    public final NumberSetting speed2 = addSetting(new NumberSetting("Speed2", "Sprint multiplier", 2.0, 1.0, 5.0, 0.1));
+    public final NumberSetting speed = addSetting(new NumberSetting("Speed", "Blocks per tick", 2.0, 0.1, 20.0, 0.1));
+    public final NumberSetting speed2 = addSetting(new NumberSetting("Speed2", "Sprint multiplier", 3.0, 1.0, 10.0, 0.1));
     public final BoolSetting wallVision = addSetting(new BoolSetting(
-            "WallVision", "See through terrain in loaded chunks", true));
+            "WallVision", "Hide terrain fillers so caves/structures show", true));
     public final BoolSetting fullbright = addSetting(new BoolSetting(
-            "Fullbright", "Brighten while wall vision on", true));
+            "Fullbright", "Force high gamma while wall vision on", true));
+    public final BoolSetting pitchMove = addSetting(new BoolSetting(
+            "PitchMove", "WASD follows look pitch (fly where you look)", true));
 
     private static volatile boolean activeCache;
     public static volatile boolean wallVisionCache;
@@ -40,7 +45,7 @@ public class Freecam extends Module {
     private boolean forward, backward, left, right, up, down;
 
     public Freecam() {
-        super("Freecam", "Meteor-style detached camera (F4)", Category.PLAYER);
+        super("Freecam", "Detached camera (F4) — body frozen, free fly", Category.PLAYER);
         setKeyBind(GLFW.GLFW_KEY_F4);
     }
 
@@ -61,48 +66,87 @@ public class Freecam extends Module {
     public float getYaw(float td) { return Mth.lerp(td, lastYaw, yaw); }
     public float getPitch(float td) { return Mth.lerp(td, lastPitch, pitch); }
 
-    public void changeLookDirection(double deltaX, double deltaY) {
+    public void changeLookDirection(double deltaYaw, double deltaPitch) {
         lastYaw = yaw;
         lastPitch = pitch;
-        yaw += (float) deltaX;
-        pitch += (float) deltaY;
+        yaw += (float) deltaYaw;
+        pitch += (float) deltaPitch;
         pitch = Mth.clamp(pitch, -90f, 90f);
     }
 
+    /** Apply freecam pos/rot to the active Camera. Prefer invoker, fall back to reflection. */
     public static void forceCamera(Camera cam) {
         if (cam == null || !activeCache) return;
         Freecam fc = get();
         if (fc == null || !fc.saved) return;
-        float pt = 1f;
-        try {
-            pt = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false);
-        } catch (Throwable ignored) {}
+        float pt = partialTick();
         double x = fc.getX(pt), y = fc.getY(pt), z = fc.getZ(pt);
         float yw = fc.getYaw(pt), pi = fc.getPitch(pt);
+        applyCamera(cam, x, y, z, yw, pi);
+    }
+
+    static float partialTick() {
+        try {
+            return Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false);
+        } catch (Throwable t) {
+            return 1f;
+        }
+    }
+
+    static void applyCamera(Camera cam, double x, double y, double z, float yaw, float pitch) {
+        // 1) Accessor invokers (preferred)
+        try {
+            CameraAccessor acc = (CameraAccessor) (Object) cam;
+            acc.ttclient$setPos(x, y, z);
+            try {
+                acc.ttclient$setRot(yaw, pitch);
+            } catch (Throwable ignored) {
+                try {
+                    var m = Camera.class.getDeclaredMethod("setRotation", float.class, float.class, float.class);
+                    m.setAccessible(true);
+                    m.invoke(cam, yaw, pitch, 0f);
+                } catch (Throwable ignored2) {}
+            }
+        } catch (Throwable ignored) {}
+
+        // 2) Reflection fallback for mappings drift
         try {
             for (var m : Camera.class.getDeclaredMethods()) {
-                if (m.getParameterCount() == 3
-                        && m.getParameterTypes()[0] == double.class) {
-                    String n = m.getName().toLowerCase();
-                    if (n.contains("pos")) {
-                        m.setAccessible(true);
-                        m.invoke(cam, x, y, z);
-                    }
+                Class<?>[] pt = m.getParameterTypes();
+                String n = m.getName().toLowerCase();
+                if (pt.length == 3 && pt[0] == double.class && pt[1] == double.class && pt[2] == double.class
+                        && (n.contains("pos") || n.contains("position"))) {
+                    m.setAccessible(true);
+                    try { m.invoke(cam, x, y, z); } catch (Throwable ignored) {}
                 }
-                if (m.getParameterCount() == 2
-                        && m.getParameterTypes()[0] == float.class
-                        && m.getParameterTypes()[1] == float.class) {
-                    String n = m.getName().toLowerCase();
-                    if (n.contains("rot")) {
-                        m.setAccessible(true);
-                        m.invoke(cam, yw, pi);
+                if (pt.length == 2 && pt[0] == float.class && pt[1] == float.class
+                        && (n.contains("rot") || n.contains("rotation"))) {
+                    m.setAccessible(true);
+                    try { m.invoke(cam, yaw, pitch); } catch (Throwable ignored) {}
+                }
+                if (pt.length == 3 && pt[0] == float.class && pt[1] == float.class && pt[2] == float.class
+                        && (n.contains("rot") || n.contains("rotation"))) {
+                    m.setAccessible(true);
+                    try { m.invoke(cam, yaw, pitch, 0f); } catch (Throwable ignored) {}
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        // Mark detached so vanilla doesn't yank camera back to entity eyes
+        try {
+            for (var f : Camera.class.getDeclaredFields()) {
+                if (f.getType() == boolean.class) {
+                    String n = f.getName().toLowerCase();
+                    if (n.contains("detach") || n.contains("detached")) {
+                        f.setAccessible(true);
+                        f.setBoolean(cam, true);
                     }
                 }
             }
         } catch (Throwable ignored) {}
     }
 
-    private static boolean isKeepVisible(String n) {
+    private static boolean isInteresting(String n) {
         return n.contains("ore") || n.contains("raw_iron") || n.contains("raw_gold") || n.contains("raw_copper")
                 || n.contains("chest") || n.contains("barrel") || n.contains("shulker") || n.contains("hopper")
                 || n.contains("spawner") || n.contains("trial_spawner") || n.contains("vault")
@@ -115,7 +159,16 @@ public class Freecam extends Module {
                 || n.contains("slab") || n.contains("stair") || n.contains("water") || n.contains("lava")
                 || n.contains("kelp") || n.contains("amethyst") || n.contains("sculk_sensor")
                 || n.contains("sculk_shrieker") || n.contains("sculk_catalyst") || n.contains("flower")
-                || n.contains("crop") || n.contains("wheat") || n.contains("vine");
+                || n.contains("crop") || n.contains("wheat") || n.contains("vine")
+                || n.contains("crafting") || n.contains("furnace") || n.contains("smoker")
+                || n.contains("blast") || n.contains("anvil") || n.contains("enchant")
+                || n.contains("bookshelf") || n.contains("beacon") || n.contains("conduit")
+                || n.contains("frame") || n.contains("piston") || n.contains("dispenser")
+                || n.contains("dropper") || n.contains("observer") || n.contains("redstone")
+                || n.contains("lever") || n.contains("button") || n.contains("pressure")
+                || n.contains("carpet") || n.contains("bed") || n.contains("banner")
+                || n.contains("skull") || n.contains("head") || n.contains("candle")
+                || n.contains("campfire") || n.contains("brewing") || n.contains("cauldron");
     }
 
     public static boolean shouldHideForWallVision(BlockState st) {
@@ -125,8 +178,8 @@ public class Freecam extends Module {
         } catch (Throwable ignored) {}
         try {
             String n = st.getBlock().toString().toLowerCase();
-            if (isKeepVisible(n)) return false;
-            return n.contains("stone") || n.contains("deepslate") || n.contains("dirt")
+            if (isInteresting(n)) return false;
+            if (n.contains("stone") || n.contains("deepslate") || n.contains("dirt")
                     || n.contains("grass") || n.contains("gravel") || n.contains("sand")
                     || n.contains("andesite") || n.contains("diorite") || n.contains("granite")
                     || n.contains("tuff") || n.contains("calcite") || n.contains("netherrack")
@@ -137,7 +190,13 @@ public class Freecam extends Module {
                     || n.contains("cobble") || n.contains("moss") || n.contains("dripstone")
                     || n.contains("sculk") || n.contains("smooth_basalt") || n.contains("packed_mud")
                     || n.contains("nylium") || n.contains("podzol") || n.contains("mycelium")
-                    || n.contains("infested") || n.contains("reinforced_deepslate");
+                    || n.contains("infested") || n.contains("reinforced_deepslate")
+                    || n.contains("rooted") || n.contains("powder_snow")
+                    || n.contains("nether_wart_block") || n.contains("warped_wart")) {
+                return true;
+            }
+            // Do NOT call st.canOcclude() here — MixinBlockStateBase hooks it and can recurse.
+            return false;
         } catch (Throwable t) {
             return false;
         }
@@ -268,18 +327,46 @@ public class Freecam extends Module {
             if (mc.options.keySprint.isDown()) s *= speed2.get().doubleValue();
         } catch (Throwable ignored) {}
 
-        Vec3 forwardVec = Vec3.directionFromRotation(0, yaw);
-        Vec3 rightVec = Vec3.directionFromRotation(0, yaw + 90);
+        float lookPitch = pitchMove.get() ? pitch : 0f;
+        Vec3 look = Vec3.directionFromRotation(lookPitch, yaw);
+        Vec3 rightVec = Vec3.directionFromRotation(0, yaw + 90f);
+        Vec3 forwardFlat = Vec3.directionFromRotation(0, yaw);
 
         double velX = 0, velY = 0, velZ = 0;
-        if (forward) { velX += forwardVec.x * s; velZ += forwardVec.z * s; }
-        if (backward) { velX -= forwardVec.x * s; velZ -= forwardVec.z * s; }
+        if (forward) {
+            if (pitchMove.get()) {
+                velX += look.x * s;
+                velY += look.y * s;
+                velZ += look.z * s;
+            } else {
+                velX += forwardFlat.x * s;
+                velZ += forwardFlat.z * s;
+            }
+        }
+        if (backward) {
+            if (pitchMove.get()) {
+                velX -= look.x * s;
+                velY -= look.y * s;
+                velZ -= look.z * s;
+            } else {
+                velX -= forwardFlat.x * s;
+                velZ -= forwardFlat.z * s;
+            }
+        }
         if (right) { velX += rightVec.x * s; velZ += rightVec.z * s; }
-        if (left) { velX -= rightVec.x * s; velZ -= rightVec.z * s; }
-        if (up) velY += s;
+        if (left)  { velX -= rightVec.x * s; velZ -= rightVec.z * s; }
+        if (up)   velY += s;
         if (down) velY -= s;
 
-        posX += velX; posY += velY; posZ += velZ;
+        double len = Math.sqrt(velX * velX + velY * velY + velZ * velZ);
+        if (len > s && len > 1e-6) {
+            double scale = s / len;
+            velX *= scale; velY *= scale; velZ *= scale;
+        }
+
+        posX += velX;
+        posY += velY;
+        posZ += velZ;
 
         try {
             p.setDeltaMovement(Vec3.ZERO);
@@ -337,10 +424,7 @@ public class Freecam extends Module {
 
     public void onCameraAngles(net.neoforged.neoforge.client.event.ViewportEvent.ComputeCameraAngles event) {
         if (!activeCache) return;
-        float pt = 1f;
-        try {
-            pt = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false);
-        } catch (Throwable ignored) {}
+        float pt = partialTick();
         try {
             event.setYaw(getYaw(pt));
             event.setPitch(getPitch(pt));
