@@ -250,7 +250,10 @@ public class TTClientClient {
 
         if (screen != null && !(screen instanceof ClickGUIScreen) && !(screen instanceof TTTitleScreen)) return;
 
+        // ClickGUI open/close is edge-triggered in onClientTick only.
+        // Toggling ClickGUIModule here races the tick handler and auto-closes the GUI.
         for (Module m : modules.getModules()) {
+            if (m instanceof ClickGUIModule) continue;
             if (m.getKeyBind() > 0 && m.getKeyBind() == key && m.getKeyBind() < MOUSE_BIND_BASE) {
                 m.toggle();
                 if (config != null) config.save();
