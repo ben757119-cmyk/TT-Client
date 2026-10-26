@@ -15,18 +15,13 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
 
-/**
- * Detached freecam camera. Body stays frozen; camera position/rotation driven by mixins + accessor.
- */
+/** Detached freecam. Body frozen; camera driven by mixins + CameraAccessor. */
 public class Freecam extends Module {
     public final NumberSetting speed = addSetting(new NumberSetting("Speed", "Blocks per tick", 2.0, 0.1, 20.0, 0.1));
     public final NumberSetting speed2 = addSetting(new NumberSetting("Speed2", "Sprint multiplier", 3.0, 1.0, 10.0, 0.1));
-    public final BoolSetting wallVision = addSetting(new BoolSetting(
-            "WallVision", "Hide terrain fillers so caves/structures show", true));
-    public final BoolSetting fullbright = addSetting(new BoolSetting(
-            "Fullbright", "Force high gamma while wall vision on", true));
-    public final BoolSetting pitchMove = addSetting(new BoolSetting(
-            "PitchMove", "WASD follows look pitch (fly where you look)", true));
+    public final BoolSetting wallVision = addSetting(new BoolSetting("WallVision", "Hide terrain fillers so caves/structures show", true));
+    public final BoolSetting fullbright = addSetting(new BoolSetting("Fullbright", "Force high gamma while wall vision on", true));
+    public final BoolSetting pitchMove = addSetting(new BoolSetting("PitchMove", "WASD follows look pitch (fly where you look)", true));
 
     private static volatile boolean activeCache;
     public static volatile boolean wallVisionCache;
@@ -74,18 +69,15 @@ public class Freecam extends Module {
         pitch = Mth.clamp(pitch, -90f, 90f);
     }
 
-    /** Apply freecam pos/rot to the active Camera. Prefer invoker, fall back to reflection. */
     public static void forceCamera(Camera cam) {
         if (cam == null || !activeCache) return;
         Freecam fc = get();
         if (fc == null || !fc.saved) return;
         float pt = partialTick();
-        double x = fc.getX(pt), y = fc.getY(pt), z = fc.getZ(pt);
-        float yw = fc.getYaw(pt), pi = fc.getPitch(pt);
-        applyCamera(cam, x, y, z, yw, pi);
+        applyCamera(cam, fc.getX(pt), fc.getY(pt), fc.getZ(pt), fc.getYaw(pt), fc.getPitch(pt));
     }
 
-    static float partialTick() {
+    public static float partialTick() {
         try {
             return Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false);
         } catch (Throwable t) {
@@ -93,8 +85,7 @@ public class Freecam extends Module {
         }
     }
 
-    static void applyCamera(Camera cam, double x, double y, double z, float yaw, float pitch) {
-        // 1) Accessor invokers (preferred)
+    public static void applyCamera(Camera cam, double x, double y, double z, float yaw, float pitch) {
         try {
             CameraAccessor acc = (CameraAccessor) (Object) cam;
             acc.ttclient$setPos(x, y, z);
@@ -109,7 +100,6 @@ public class Freecam extends Module {
             }
         } catch (Throwable ignored) {}
 
-        // 2) Reflection fallback for mappings drift
         try {
             for (var m : Camera.class.getDeclaredMethods()) {
                 Class<?>[] pt = m.getParameterTypes();
@@ -132,7 +122,6 @@ public class Freecam extends Module {
             }
         } catch (Throwable ignored) {}
 
-        // Mark detached so vanilla doesn't yank camera back to entity eyes
         try {
             for (var f : Camera.class.getDeclaredFields()) {
                 if (f.getType() == boolean.class) {
@@ -179,7 +168,7 @@ public class Freecam extends Module {
         try {
             String n = st.getBlock().toString().toLowerCase();
             if (isInteresting(n)) return false;
-            if (n.contains("stone") || n.contains("deepslate") || n.contains("dirt")
+            return n.contains("stone") || n.contains("deepslate") || n.contains("dirt")
                     || n.contains("grass") || n.contains("gravel") || n.contains("sand")
                     || n.contains("andesite") || n.contains("diorite") || n.contains("granite")
                     || n.contains("tuff") || n.contains("calcite") || n.contains("netherrack")
@@ -192,11 +181,7 @@ public class Freecam extends Module {
                     || n.contains("nylium") || n.contains("podzol") || n.contains("mycelium")
                     || n.contains("infested") || n.contains("reinforced_deepslate")
                     || n.contains("rooted") || n.contains("powder_snow")
-                    || n.contains("nether_wart_block") || n.contains("warped_wart")) {
-                return true;
-            }
-            // Do NOT call st.canOcclude() here — MixinBlockStateBase hooks it and can recurse.
-            return false;
+                    || n.contains("nether_wart_block") || n.contains("warped_wart");
         } catch (Throwable t) {
             return false;
         }
@@ -335,22 +320,16 @@ public class Freecam extends Module {
         double velX = 0, velY = 0, velZ = 0;
         if (forward) {
             if (pitchMove.get()) {
-                velX += look.x * s;
-                velY += look.y * s;
-                velZ += look.z * s;
+                velX += look.x * s; velY += look.y * s; velZ += look.z * s;
             } else {
-                velX += forwardFlat.x * s;
-                velZ += forwardFlat.z * s;
+                velX += forwardFlat.x * s; velZ += forwardFlat.z * s;
             }
         }
         if (backward) {
             if (pitchMove.get()) {
-                velX -= look.x * s;
-                velY -= look.y * s;
-                velZ -= look.z * s;
+                velX -= look.x * s; velY -= look.y * s; velZ -= look.z * s;
             } else {
-                velX -= forwardFlat.x * s;
-                velZ -= forwardFlat.z * s;
+                velX -= forwardFlat.x * s; velZ -= forwardFlat.z * s;
             }
         }
         if (right) { velX += rightVec.x * s; velZ += rightVec.z * s; }
@@ -364,9 +343,7 @@ public class Freecam extends Module {
             velX *= scale; velY *= scale; velZ *= scale;
         }
 
-        posX += velX;
-        posY += velY;
-        posZ += velZ;
+        posX += velX; posY += velY; posZ += velZ;
 
         try {
             p.setDeltaMovement(Vec3.ZERO);
