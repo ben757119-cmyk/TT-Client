@@ -1,22 +1,22 @@
 package com.ttclient.client;
 
 import com.ttclient.TTClient;
-import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.modules.player.ChestRelay;
 import com.ttclient.modules.render.BlockESP;
 import com.ttclient.modules.world.Nuker;
 import com.ttclient.util.FriendsManager;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
-import java.util.stream.Collectors;
 
-/** Client-only chat commands starting with ".". Keep public PREFIX, chatOnly, tabComplete. */
 public final class ClientCommands {
     public static final String PREFIX = ".";
 
@@ -26,43 +26,55 @@ public final class ClientCommands {
         if (raw == null) return false;
         String msg = raw.trim();
         if (!msg.startsWith(PREFIX)) return false;
+
         String body = msg.substring(PREFIX.length()).trim();
-        if (body.isEmpty()) return true;
+        if (body.isEmpty()) {
+            help();
+            return true;
+        }
+
         List<String> parts = splitArgs(body);
-        if (parts.isEmpty()) return true;
+        if (parts.isEmpty()) {
+            help();
+            return true;
+        }
+
         String cmd = parts.get(0).toLowerCase(Locale.ROOT);
         List<String> args = parts.size() > 1 ? parts.subList(1, parts.size()) : List.of();
-        try {
-            switch (cmd) {
-                case "help", "h", "?" -> help();
-                case "v", "version" -> chat("TT Client " + TTClient.VERSION);
-                case "t", "toggle" -> toggle(args);
-                case "modules", "mods", "list" -> listModules(args);
-                case "b", "block", "blockesp", "be" -> blockEsp(args);
-                case "nuker", "n", "nuke" -> nukerCmd(args);
-                case "chest", "chests", "cr", "chestrelay" -> chestRelay(args);
-                case "friend", "friends", "f" -> friends(args);
-                case "bind" -> chat("Right-click a module in ClickGUI to set its bind");
-                case "ping" -> chat("pong");
-                case "coords", "pos" -> coords();
-                case "say" -> {
-                    if (args.isEmpty()) chatOnly("Usage: .say <message>");
-                    else {
-                        Minecraft mc = Minecraft.getInstance();
-                        if (mc.player != null && mc.player.connection != null)
-                            mc.player.connection.sendChat(String.join(" ", args));
-                    }
+
+        switch (cmd) {
+            case "help", "h", "?" -> help();
+            case "v", "version" -> chat("TT Client " + TTClient.VERSION);
+            case "t", "toggle" -> toggle(args);
+            case "modules", "mods", "list" -> listModules(args);
+            case "b", "block", "blockesp", "be" -> blockEsp(args);
+            case "nuker", "n", "nuke" -> nukerCmd(args);
+            case "chest", "chests", "cr", "chestrelay" -> chestRelay(args);
+            case "friend", "friends", "f" -> friends(args);
+            case "bind" -> chat("Right-click a module in ClickGUI to set its bind");
+            case "ping" -> chat("pong");
+            case "coords", "pos" -> coords();
+            case "say" -> {
+                if (args.isEmpty()) chatOnly("Usage: .say <message>");
+                else {
+                    Minecraft mc = Minecraft.getInstance();
+                    if (mc.player != null && mc.player.connection != null)
+                        mc.player.connection.sendChat(String.join(" ", args));
                 }
-                default -> chatOnly("Unknown command. .help for list");
             }
-        } catch (Throwable t) {
-            chatOnly("Command error: " + t.getClass().getSimpleName());
+            default -> chat("Unknown: ." + cmd + "  ·  .help");
         }
         return true;
     }
 
-    public static boolean isClientCommand(String msg) {
-        return msg != null && msg.trim().startsWith(PREFIX);
+    public static String sayPayload(String raw) {
+        if (raw == null) return null;
+        String msg = raw.trim();
+        if (!msg.startsWith(PREFIX)) return null;
+        String body = msg.substring(PREFIX.length()).trim();
+        if (!body.toLowerCase(Locale.ROOT).startsWith("say")) return null;
+        if (body.length() <= 3) return "";
+        return body.substring(3).trim();
     }
 
     public static String tabComplete(String buffer) {
@@ -147,81 +159,140 @@ public final class ClientCommands {
     }
 
     private static void help() {
-        chatOnly("§f.help §7— this list");
-        chatOnly("§f.t <module> §7— toggle module");
-        chatOnly("§f.modules [cat] §7— list modules");
+        chatOnly("§a§lTT Commands §8· §7prefix .");
+        chatOnly("§f.help §8· §f.version §8· §f.ping §8· §f.coords");
+        chatOnly("§f.toggle <module> §8· §f.modules [filter]");
+        chatOnly("§f.friend add|remove|list|clear <name>");
+        chatOnly("§f.say <message> §8· talk on the server");
         chatOnly("§f.b add|remove|list|clear <block>");
         chatOnly("§f.nuker add|remove|list|clear <block>");
-        chatOnly("§f.chest ... §7— ChestRelay helpers");
-        chatOnly("§f.friend add|remove|list <name>");
-        chatOnly("§f.coords §7— print position");
-        chatOnly("§f.say <msg> §7— send chat to server");
+        chatOnly("§f.chest add|list|clear|remove <#>  §8(look at chest)");
+        chatOnly("§7Tab autocompletes. Press . to open chat with prefix.");
     }
 
-    private static void toggle(List<String> args) {
-        if (args.isEmpty()) { chatOnly("Usage: .t <module>"); return; }
-        if (TTClientClient.modules == null) return;
-        Module m = TTClientClient.modules.getModule(args.get(0));
-        if (m == null) { chatOnly("No module: " + args.get(0)); return; }
-        m.toggle();
-        chatOnly(m.getName() + " " + (m.isEnabled() ? "§aON" : "§cOFF"));
-        if (TTClientClient.config != null) TTClientClient.config.save();
-    }
-
-    private static void listModules(List<String> args) {
-        if (TTClientClient.modules == null) return;
-        if (!args.isEmpty()) {
-            String cat = args.get(0).toLowerCase(Locale.ROOT);
-            for (Category c : Category.values()) {
-                if (c.name.toLowerCase(Locale.ROOT).startsWith(cat)) {
-                    var list = TTClientClient.modules.getByCategory(c);
-                    chatOnly(c.name + " (" + list.size() + "): " +
-                            list.stream().map(Module::getName).collect(Collectors.joining(", ")));
-                    return;
-                }
-            }
+    private static void friends(List<String> args) {
+        if (args.isEmpty()) {
+            chatOnly(".friend add|remove|list|clear <name>");
+            chatOnly("§7Local list only — no global TT user directory (needs a server).");
+            return;
         }
-        chatOnly("Modules: " + TTClientClient.modules.getModules().size());
+        switch (args.get(0).toLowerCase(Locale.ROOT)) {
+            case "add", "a" -> {
+                if (args.size() < 2) { chatOnly(".friend add <name>"); return; }
+                String name = args.get(1);
+                chatOnly(FriendsManager.add(name) ? "Added friend §a" + name : "Already friends with " + name);
+            }
+            case "remove", "rm", "del", "r" -> {
+                if (args.size() < 2) { chatOnly(".friend remove <name>"); return; }
+                String name = args.get(1);
+                chatOnly(FriendsManager.remove(name) ? "Removed §c" + name : "Not in friends: " + name);
+            }
+            case "list", "l" -> {
+                List<String> list = FriendsManager.list();
+                if (list.isEmpty()) { chatOnly("(no friends)"); return; }
+                chatOnly("Friends (" + list.size() + "):");
+                for (String f : list) chatOnly("  §a" + f);
+            }
+            case "clear", "c" -> {
+                FriendsManager.clear();
+                chatOnly("Friends cleared");
+            }
+            default -> chatOnly(".friend add|remove|list|clear <name>");
+        }
     }
 
     private static void coords() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
-        chatOnly(String.format("%.1f %.1f %.1f", mc.player.getX(), mc.player.getY(), mc.player.getZ()));
-    }
-
-    private static void friends(List<String> args) {
-        if (args.isEmpty()) { chatOnly(".friend add|remove|list <name>"); return; }
-        switch (args.get(0).toLowerCase()) {
-            case "add", "a" -> {
-                if (args.size() < 2) { chatOnly(".friend add <name>"); return; }
-                FriendsManager.add(args.get(1));
-                chatOnly("Friend + " + args.get(1));
-            }
-            case "remove", "rm", "del", "r" -> {
-                if (args.size() < 2) { chatOnly(".friend remove <name>"); return; }
-                FriendsManager.remove(args.get(1));
-                chatOnly("Friend - " + args.get(1));
-            }
-            case "list", "l" -> chatOnly("Friends: " + String.join(", ", FriendsManager.list()));
-            case "clear", "c" -> { FriendsManager.clear(); chatOnly("Friends cleared"); }
-            default -> chatOnly(".friend add|remove|list <name>");
-        }
+        chatOnly(String.format("XYZ %.1f %.1f %.1f",
+                mc.player.getX(), mc.player.getY(), mc.player.getZ()));
     }
 
     private static void chestRelay(List<String> args) {
         ChestRelay relay = TTClientClient.modules != null
                 ? TTClientClient.modules.getModule(ChestRelay.class) : null;
         if (relay == null) { chatOnly("ChestRelay missing"); return; }
-        if (args.isEmpty()) { chatOnly(".chest list|clear"); return; }
-        switch (args.get(0).toLowerCase()) {
-            case "list", "l" -> chatOnly("Chests: (use ClickGUI / mark via .chest add)");
-            case "clear", "c" -> {
-                try { relay.clearChests(); chatOnly("Cleared"); }
-                catch (Throwable t) { chatOnly("Clear failed"); }
-            }
-            default -> chatOnly(".chest list|clear");
+        if (args.isEmpty()) {
+            chatOnly(".chest add | list | clear | remove <index>");
+            return;
         }
+        String sub = args.get(0).toLowerCase(Locale.ROOT);
+        switch (sub) {
+            case "add", "a", "mark" -> {
+                BlockPos pos = targetedBlock();
+                if (pos == null) { chatOnly("Look at a chest first"); return; }
+                boolean ok = relay.addChest(pos);
+                chatOnly(ok ? "Added #" + relay.getChests().size() + " " + pos.toShortString()
+                        : "Already listed " + pos.toShortString());
+            }
+            case "list", "l" -> {
+                List<BlockPos> list = relay.getChests();
+                if (list.isEmpty()) { chatOnly("(empty)"); return; }
+                for (int i = 0; i < list.size(); i++) {
+                    BlockPos p = list.get(i);
+                    boolean full = relay.getFullMarked().contains(p);
+                    chatOnly("#" + (i + 1) + " " + p.getX() + " " + p.getY() + " " + p.getZ()
+                            + (full ? " FULL" : ""));
+                }
+            }
+            case "clear", "c" -> { relay.clearChests(); chatOnly("Cleared"); }
+            case "remove", "rm", "del", "r" -> {
+                if (args.size() < 2) { chatOnly(".chest remove <index>"); return; }
+                try {
+                    int idx = Integer.parseInt(args.get(1)) - 1;
+                    chatOnly(relay.removeIndex(idx) ? "Removed #" + (idx + 1) : "Bad index");
+                } catch (NumberFormatException e) {
+                    chatOnly("Index must be a number");
+                }
+            }
+            default -> chatOnly(".chest add|list|clear|remove <index>");
+        }
+    }
+
+    private static BlockPos targetedBlock() {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc == null || mc.hitResult == null) return null;
+            HitResult hr = mc.hitResult;
+            if (hr.getType() == HitResult.Type.BLOCK && hr instanceof BlockHitResult bhr)
+                return bhr.getBlockPos();
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private static void toggle(List<String> args) {
+        if (args.isEmpty()) { chatOnly("Usage: .t <module>"); return; }
+        if (TTClientClient.modules == null) return;
+        String name = args.get(0);
+        Module mod = TTClientClient.modules.getModule(name);
+        if (mod == null) {
+            // fuzzy
+            for (Module m : TTClientClient.modules.getModules()) {
+                if (m.getName().toLowerCase(Locale.ROOT).startsWith(name.toLowerCase(Locale.ROOT))) {
+                    mod = m; break;
+                }
+            }
+        }
+        if (mod == null) { chatOnly("No module: " + name); return; }
+        mod.toggle();
+        if (TTClientClient.config != null) TTClientClient.config.save();
+        chatOnly(mod.getName() + (mod.isEnabled() ? " §aenabled" : " §cdisabled"));
+    }
+
+    private static void listModules(List<String> args) {
+        if (TTClientClient.modules == null) return;
+        String filter = args.isEmpty() ? "" : args.get(0).toLowerCase(Locale.ROOT);
+        int n = 0;
+        StringBuilder sb = new StringBuilder();
+        for (Module m : TTClientClient.modules.getModules()) {
+            if (!filter.isEmpty() && !m.getName().toLowerCase(Locale.ROOT).contains(filter)) continue;
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(m.isEnabled() ? "+" : "-").append(m.getName());
+            n++;
+            if (sb.length() > 160) { chatOnly(sb.toString()); sb.setLength(0); }
+        }
+        if (sb.length() > 0) chatOnly(sb.toString());
+        chatOnly(n + " modules");
     }
 
     private static void nukerCmd(List<String> args) {
@@ -271,7 +342,7 @@ public final class ClientCommands {
         }
     }
 
-    /** Client-only feedback — no server chat. Reflection for 26.2 API drift. */
+    /** Client-only feedback — reflection for 26.2 API drift. */
     public static void chatOnly(String body) {
         if (body == null) return;
         try {
