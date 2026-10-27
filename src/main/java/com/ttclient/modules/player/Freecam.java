@@ -89,65 +89,36 @@ public class Freecam extends Module {
         try {
             CameraAccessor acc = (CameraAccessor) (Object) cam;
             acc.ttclient$setPos(x, y, z);
-            try {
-                acc.ttclient$setRot(yaw, pitch);
-            } catch (Throwable ignored) {
-                try {
-                    var m = Camera.class.getDeclaredMethod("setRotation", float.class, float.class, float.class);
-                    m.setAccessible(true);
-                    m.invoke(cam, yaw, pitch, 0f);
-                } catch (Throwable ignored2) {}
-            }
-        } catch (Throwable ignored) {}
-        try {
-            for (var m : Camera.class.getDeclaredMethods()) {
-                Class<?>[] pt = m.getParameterTypes();
-                String n = m.getName().toLowerCase();
-                if (pt.length == 3 && pt[0] == double.class && pt[1] == double.class && pt[2] == double.class
-                        && (n.contains("pos") || n.contains("position"))) {
-                    m.setAccessible(true);
-                    try { m.invoke(cam, x, y, z); } catch (Throwable ignored) {}
-                }
-                if (pt.length == 2 && pt[0] == float.class && pt[1] == float.class
-                        && (n.contains("rot") || n.contains("rotation"))) {
-                    m.setAccessible(true);
-                    try { m.invoke(cam, yaw, pitch); } catch (Throwable ignored) {}
-                }
-            }
+            try { acc.ttclient$setRot(yaw, pitch); } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
     }
 
     public static boolean shouldHideForWallVision(BlockState st) {
         if (st == null || st.isAir()) return false;
-        try {
-            if (!st.getFluidState().isEmpty()) return false;
-        } catch (Throwable ignored) {}
+        try { if (!st.getFluidState().isEmpty()) return false; } catch (Throwable ignored) {}
         try {
             String n = st.getBlock().toString().toLowerCase();
-            if (n.contains("ore") || n.contains("chest") || n.contains("spawner") || n.contains("portal"))
-                return false;
+            if (n.contains("ore") || n.contains("chest") || n.contains("spawner") || n.contains("portal")) return false;
             return n.contains("stone") || n.contains("deepslate") || n.contains("dirt")
                     || n.contains("grass") || n.contains("gravel") || n.contains("sand")
                     || n.contains("andesite") || n.contains("diorite") || n.contains("granite")
                     || n.contains("tuff") || n.contains("netherrack") || n.contains("basalt");
-        } catch (Throwable t) {
-            return false;
-        }
+        } catch (Throwable t) { return false; }
     }
 
-    public static boolean isTerrainFiller(BlockState st) {
-        return shouldHideForWallVision(st);
-    }
+    public static boolean isTerrainFiller(BlockState st) { return shouldHideForWallVision(st); }
 
     /** Continuous key state from GLFW — never spam KeyMapping#setDown(false) each tick. */
-    private static boolean mappingDown(net.minecraft.client.KeyMapping mapping) {
+    private static boolean mappingDown(Object mapping) {
         if (mapping == null) return false;
         try {
             Minecraft mc = Minecraft.getInstance();
-            if (mc == null || mc.getWindow() == null) return mapping.isDown();
+            if (mc == null || mc.getWindow() == null) {
+                return (Boolean) mapping.getClass().getMethod("isDown").invoke(mapping);
+            }
             long window = mc.getWindow().getWindow();
             Object key = mapping.getClass().getMethod("getKey").invoke(mapping);
-            if (key == null) return mapping.isDown();
+            if (key == null) return (Boolean) mapping.getClass().getMethod("isDown").invoke(mapping);
             int value = ((Number) key.getClass().getMethod("getValue").invoke(key)).intValue();
             Object type = null;
             try { type = key.getClass().getMethod("getType").invoke(key); } catch (Throwable ignored) {}
@@ -156,7 +127,8 @@ public class Freecam extends Module {
                 return GLFW.glfwGetMouseButton(window, value) == GLFW.GLFW_PRESS;
             return GLFW.glfwGetKey(window, value) == GLFW.GLFW_PRESS;
         } catch (Throwable t) {
-            try { return mapping.isDown(); } catch (Throwable t2) { return false; }
+            try { return (Boolean) mapping.getClass().getMethod("isDown").invoke(mapping); }
+            catch (Throwable t2) { return false; }
         }
     }
 
@@ -165,33 +137,15 @@ public class Freecam extends Module {
         Minecraft mc = mc();
         if (mc == null || mc.player == null) { setEnabled(false); return; }
         LocalPlayer p = mc.player;
-
         originX = p.getX(); originY = p.getY(); originZ = p.getZ();
         originYaw = p.getYRot(); originPitch = p.getXRot();
-
-        double x = p.getX();
-        double y = p.getY() + p.getEyeHeight();
-        double z = p.getZ();
-        try {
-            Vec3 cp = mc.gameRenderer.mainCamera().position();
-            x = cp.x; y = cp.y; z = cp.z;
-        } catch (Throwable ignored) {}
-
-        posX = prevX = x;
-        posY = prevY = y;
-        posZ = prevZ = z;
-        yaw = lastYaw = p.getYRot();
-        pitch = lastPitch = p.getXRot();
-
-        try {
-            savedPerspective = mc.options.getCameraType();
-            mc.options.setCameraType(CameraType.FIRST_PERSON);
-        } catch (Throwable ignored) {}
-
+        double x = p.getX(), y = p.getY() + p.getEyeHeight(), z = p.getZ();
+        try { Vec3 cp = mc.gameRenderer.mainCamera().position(); x = cp.x; y = cp.y; z = cp.z; } catch (Throwable ignored) {}
+        posX = prevX = x; posY = prevY = y; posZ = prevZ = z;
+        yaw = lastYaw = p.getYRot(); pitch = lastPitch = p.getXRot();
+        try { savedPerspective = mc.options.getCameraType(); mc.options.setCameraType(CameraType.FIRST_PERSON); } catch (Throwable ignored) {}
         forward = backward = left = right = up = down = false;
-        saved = true;
-        activeCache = true;
-
+        saved = true; activeCache = true;
         try {
             forward = mappingDown(mc.options.keyUp);
             backward = mappingDown(mc.options.keyDown);
@@ -200,7 +154,6 @@ public class Freecam extends Module {
             up = mappingDown(mc.options.keyJump);
             down = mappingDown(mc.options.keyShift);
         } catch (Throwable ignored) {}
-
         if (wallVision.get()) {
             wallVisionCache = true;
             if (fullbright.get()) applyGamma(mc);
@@ -214,20 +167,15 @@ public class Freecam extends Module {
         boolean hadWall = wallVisionCache;
         wallVisionCache = false;
         restoreGamma();
-
         Minecraft mc = mc();
         if (mc != null) {
-            try {
-                if (savedPerspective != null) mc.options.setCameraType(savedPerspective);
-            } catch (Throwable ignored) {}
+            try { if (savedPerspective != null) mc.options.setCameraType(savedPerspective); } catch (Throwable ignored) {}
             if (mc.player != null && saved) {
                 LocalPlayer p = mc.player;
                 try {
                     p.setPos(originX, originY, originZ);
-                    p.setYRot(originYaw);
-                    p.setXRot(originPitch);
-                    p.yRotO = originYaw;
-                    p.xRotO = originPitch;
+                    p.setYRot(originYaw); p.setXRot(originPitch);
+                    p.yRotO = originYaw; p.xRotO = originPitch;
                 } catch (Throwable ignored) {}
                 p.setDeltaMovement(Vec3.ZERO);
             }
@@ -242,13 +190,7 @@ public class Freecam extends Module {
         Minecraft mc = mc();
         if (mc == null || mc.player == null) return;
         LocalPlayer p = mc.player;
-
-        try {
-            if (mc.options.getCameraType() != CameraType.FIRST_PERSON) {
-                mc.options.setCameraType(CameraType.FIRST_PERSON);
-            }
-        } catch (Throwable ignored) {}
-
+        try { if (mc.options.getCameraType() != CameraType.FIRST_PERSON) mc.options.setCameraType(CameraType.FIRST_PERSON); } catch (Throwable ignored) {}
         // NEVER KeyMapping#setDown(false) each tick — that causes "move a bit then stop".
         try {
             forward = mappingDown(mc.options.keyUp);
@@ -258,20 +200,14 @@ public class Freecam extends Module {
             up = mappingDown(mc.options.keyJump);
             down = mappingDown(mc.options.keyShift);
         } catch (Throwable ignored) {}
-
         prevX = posX; prevY = posY; prevZ = posZ;
         lastYaw = yaw; lastPitch = pitch;
-
         double s = speed.get().doubleValue();
-        try {
-            if (mappingDown(mc.options.keySprint)) s *= speed2.get().doubleValue();
-        } catch (Throwable ignored) {}
-
+        try { if (mappingDown(mc.options.keySprint)) s *= speed2.get().doubleValue(); } catch (Throwable ignored) {}
         float lookPitch = pitchMove.get() ? pitch : 0f;
         Vec3 look = Vec3.directionFromRotation(lookPitch, yaw);
         Vec3 rightVec = Vec3.directionFromRotation(0, yaw + 90f);
         Vec3 forwardFlat = Vec3.directionFromRotation(0, yaw);
-
         double velX = 0, velY = 0, velZ = 0;
         if (forward) {
             if (pitchMove.get()) { velX += look.x * s; velY += look.y * s; velZ += look.z * s; }
@@ -283,22 +219,15 @@ public class Freecam extends Module {
         }
         if (right) { velX += rightVec.x * s; velZ += rightVec.z * s; }
         if (left)  { velX -= rightVec.x * s; velZ -= rightVec.z * s; }
-        if (up)   velY += s;
+        if (up) velY += s;
         if (down) velY -= s;
-
         double len = Math.sqrt(velX * velX + velY * velY + velZ * velZ);
-        if (len > s && len > 1e-6) {
-            double scale = s / len;
-            velX *= scale; velY *= scale; velZ *= scale;
-        }
-
+        if (len > s && len > 1e-6) { double scale = s / len; velX *= scale; velY *= scale; velZ *= scale; }
         posX += velX; posY += velY; posZ += velZ;
-
         try {
             p.setDeltaMovement(Vec3.ZERO);
             p.setPos(originX, originY, originZ);
-            p.setYRot(originYaw);
-            p.setXRot(originPitch);
+            p.setYRot(originYaw); p.setXRot(originPitch);
             try {
                 Object in = p.input;
                 if (in != null) {
@@ -312,16 +241,13 @@ public class Freecam extends Module {
                 }
             } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
-
         boolean want = wallVision.get() && activeCache;
         if (want != wallVisionCache) {
             wallVisionCache = want;
             if (want && fullbright.get()) applyGamma(mc);
             else if (!want) restoreGamma();
             ChunkMeshReload.request();
-        } else if (want && fullbright.get()) {
-            applyGamma(mc);
-        }
+        } else if (want && fullbright.get()) applyGamma(mc);
     }
 
     private void applyGamma(Minecraft mc) {
@@ -351,9 +277,6 @@ public class Freecam extends Module {
     public void onCameraAngles(net.neoforged.neoforge.client.event.ViewportEvent.ComputeCameraAngles event) {
         if (!activeCache) return;
         float pt = partialTick();
-        try {
-            event.setYaw(getYaw(pt));
-            event.setPitch(getPitch(pt));
-        } catch (Throwable ignored) {}
+        try { event.setYaw(getYaw(pt)); event.setPitch(getPitch(pt)); } catch (Throwable ignored) {}
     }
 }
