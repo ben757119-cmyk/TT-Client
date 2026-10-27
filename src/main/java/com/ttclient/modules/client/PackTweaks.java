@@ -5,17 +5,11 @@ import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
 import com.ttclient.settings.NumberSetting;
 import net.minecraft.client.Minecraft;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 
-/**
- * ClickGUI "Resource Pack" strip — client visual tweaks that complement the TT RP.
- * Rainbow glint applies only while a screen is open (inventory / containers), never world drops.
- */
+/** Resource-pack style visual toggles. Rainbow = inventory GUI only. */
 public class PackTweaks extends Module {
     public final BoolSetting lowFire = addSetting(new BoolSetting(
             "LowFire", "Shorter / quieter fire overlay (pairs with TT RP fire textures)", true));
@@ -39,7 +33,7 @@ public class PackTweaks extends Module {
             "TotemScale", "Totem size multiplier", 0.55, 0.25, 1.0, 0.05));
 
     public PackTweaks() {
-        super("PackTweaks", "Resource-pack style toggles (bottom of ClickGUI)", Category.CLIENT);
+        super("PackTweaks", "Resource-pack style toggles (Client category)", Category.CLIENT);
         setEnabled(true);
     }
 
@@ -79,32 +73,23 @@ public class PackTweaks extends Module {
 
     public static boolean isToolOrWeapon(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
-        Item item = stack.getItem();
-        String id = itemId(item);
+        String id = itemId(stack.getItem());
         if (id.isEmpty()) return false;
         return id.contains("sword") || id.contains("axe") || id.contains("pickaxe")
                 || id.contains("shovel") || id.contains("hoe") || id.contains("mace")
                 || id.contains("spear") || id.contains("trident") || id.contains("bow")
-                || id.contains("crossbow") || id.contains("mace");
+                || id.contains("crossbow");
     }
 
     public static boolean isBlockItem(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
-        try {
-            return stack.getItem() instanceof BlockItem;
-        } catch (Throwable t) {
-            String id = itemId(stack.getItem());
-            return !id.isEmpty() && !isToolOrWeapon(stack);
-        }
+        try { return stack.getItem() instanceof BlockItem; }
+        catch (Throwable t) { return false; }
     }
 
     public static boolean isTotem(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
-        try {
-            return stack.is(Items.TOTEM_OF_UNDYING);
-        } catch (Throwable t) {
-            return itemId(stack.getItem()).contains("totem");
-        }
+        return itemId(stack.getItem()).contains("totem");
     }
 
     public static float totemScaleOrDefault() {
@@ -124,8 +109,12 @@ public class PackTweaks extends Module {
 
     private static String itemId(Item item) {
         try {
-            ResourceLocation rl = BuiltInRegistries.ITEM.getKey(item);
-            return rl != null ? rl.getPath().toLowerCase() : "";
+            String s = String.valueOf(item);
+            int slash = s.lastIndexOf(':');
+            int dot = s.lastIndexOf('.');
+            int cut = Math.max(slash, dot);
+            if (cut >= 0 && cut + 1 < s.length()) s = s.substring(cut + 1);
+            return s.toLowerCase().replace("}", "").trim();
         } catch (Throwable t) {
             return "";
         }
