@@ -179,16 +179,14 @@ public class TTClientClient {
     @SubscribeEvent
     public void onClientTick(ClientTickEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc == null) return;
+        if (mc == null || modules == null) return;
 
-        try {
-            ChunkMeshReload.tick();
-        } catch (Throwable ignored) {}
+        try { ChunkMeshReload.tick(); } catch (Throwable ignored) {}
 
         try {
             if (mc.player != null) {
                 boolean dead = mc.player.isDeadOrDying();
-                if (dead && !wasDead && modules != null) {
+                if (dead && !wasDead) {
                     for (Module m : modules.getModules()) {
                         try {
                             if (m.isEnabled() && m.shouldDisableOnDeath()) m.setEnabled(false);
@@ -203,40 +201,25 @@ public class TTClientClient {
             long win = mc.getWindow().handle();
             boolean down = GLFW.glfwGetKey(win, GLFW.GLFW_KEY_PERIOD) == GLFW.GLFW_PRESS;
             if (down && !periodWasDown) {
-                Screen cur = currentScreen(mc);
-                if (cur == null) openChatWith(mc, ".");
+                if (currentScreen(mc) == null) openChatWith(mc, ".");
             }
             periodWasDown = down;
         } catch (Throwable ignored) {}
 
         try {
-            ClickGUIModule guiMod = modules != null ? modules.getModule(ClickGUIModule.class) : null;
-            int guiKey = guiMod != null ? guiMod.getKeyBind() : GLFW.GLFW_KEY_RIGHT_SHIFT;
-            if (guiKey > 0) {
-                long win = mc.getWindow().handle();
-                boolean down = GLFW.glfwGetKey(win, guiKey) == GLFW.GLFW_PRESS;
-                if (down && !guiKeyWasDown) {
-                    Screen screen = currentScreen(mc);
-                    if (screen instanceof ClickGUIScreen) {
-                        openScreen(mc, null);
-                    } else if (screen == null || screen instanceof TTTitleScreen) {
-                        openScreen(mc, new ClickGUIScreen());
-                    }
-                }
-                guiKeyWasDown = down;
+            ClickGUIModule gui = modules.getModule(ClickGUIModule.class);
+            int guiKey = gui != null && gui.getKeyBind() > 0 ? gui.getKeyBind() : GLFW.GLFW_KEY_RIGHT_SHIFT;
+            long win = mc.getWindow().handle();
+            boolean down = GLFW.glfwGetKey(win, guiKey) == GLFW.GLFW_PRESS;
+            if (down && !guiKeyWasDown) {
+                Screen screen = currentScreen(mc);
+                if (screen instanceof ClickGUIScreen) openScreen(mc, null);
+                else if (screen == null || screen instanceof TTTitleScreen) openScreen(mc, new ClickGUIScreen());
             }
+            guiKeyWasDown = down;
         } catch (Throwable ignored) {}
 
-        if (modules != null) {
-            try { modules.onTick(); } catch (Throwable ignored) {}
-        }
-
-        try {
-            Freecam fc = modules != null ? modules.getModule(Freecam.class) : null;
-            if (fc != null && Freecam.isActive()) {
-                // camera angles via ViewportEvent
-            }
-        } catch (Throwable ignored) {}
+        try { modules.onTick(); } catch (Throwable ignored) {}
     }
 
     @SubscribeEvent
@@ -248,48 +231,54 @@ public class TTClientClient {
     }
 
     @SubscribeEvent
-    public void onRenderGui(RenderGuiEvent.Post event) {
-        try {
-            if (modules == null) return;
-            Minecraft mc = Minecraft.getInstance();
-            if (mc == null) return;
-            Screen s = currentScreen(mc);
-            if (s != null && !(s instanceof ClickGUIScreen)) {
-                // still allow HUD when no screen - only skip full GUIs
-            }
-            if (s != null && !(s instanceof ClickGUIScreen) && !(s instanceof ChatScreen)) return;
-            GuiGraphicsExtractor g = event.getGuiGraphics();
-            if (g == null) return;
-            HudRenderer.render(g, event.getPartialTick());
-        } catch (Throwable ignored) {}
-    }
-
-    @SubscribeEvent
     public void onKey(InputEvent.Key event) {
-        try {
-            if (modules == null) return;
-            if (event.getAction() != GLFW.GLFW_PRESS) return;
-            int key = event.getKey();
-            if (key <= 0) return;
-            Screen s = currentScreen(Minecraft.getInstance());
-            if (s instanceof ClickGUIScreen) return;
-            for (Module m : modules.getModules()) {
-                if (m instanceof ClickGUIModule) continue;
-                if (m.getKeyBind() == key) m.toggle();
+        if (modules == null) return;
+        if (event.getAction() != GLFW.GLFW_PRESS) return;
+        int key = event.getKey();
+        if (key <= 0) return;
+        Minecraft mc = Minecraft.getInstance();
+        Screen screen = currentScreen(mc);
+
+        ClickGUIModule gui = modules.getModule(ClickGUIModule.class);
+        int guiKey = gui != null && gui.getKeyBind() > 0 ? gui.getKeyBind() : GLFW.GLFW_KEY_RIGHT_SHIFT;
+        if (key == guiKey) return;
+
+        if (screen != null) return;
+        for (Module mod : modules.getModules()) {
+            if (mod instanceof ClickGUIModule || mod instanceof StreamerMode) continue;
+            int bind = mod.getKeyBind();
+            if (bind > 0 && bind < MOUSE_BIND_BASE && bind == key) {
+                mod.toggle();
+                if (config != null) config.save();
             }
-        } catch (Throwable ignored) {}
+        }
     }
 
     @SubscribeEvent
     public void onMouse(InputEvent.MouseButton.Post event) {
-        try {
-            if (modules == null) return;
-            if (event.getAction() != GLFW.GLFW_PRESS) return;
-            int btn = event.getButton();
-            int coded = MOUSE_BIND_BASE + btn;
-            for (Module m : modules.getModules()) {
-                if (m.getKeyBind() == coded) m.toggle();
+        if (modules == null) return;
+        if (event.getAction() != GLFW.GLFW_PRESS) return;
+        int button = event.getButton();
+        if (button != GLFW.GLFW_MOUSE_BUTTON_4 && button != GLFW.GLFW_MOUSE_BUTTON_5
+                && button != GLFW.GLFW_MOUSE_BUTTON_MIDDLE) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (currentScreen(mc) != null) return;
+        int code = MOUSE_BIND_BASE + button;
+        for (Module mod : modules.getModules()) {
+            if (mod instanceof ClickGUIModule) continue;
+            if (mod.getKeyBind() == code) {
+                mod.toggle();
+                if (config != null) config.save();
             }
+        }
+    }
+
+    @SubscribeEvent
+    public void onRenderGui(RenderGuiEvent.Post event) {
+        if (modules == null) return;
+        if (StreamerMode.shouldHideLocalUi()) return;
+        try {
+            modules.onRender2D(event.getGuiGraphics(), event.getPartialTick().getGameTimeDeltaPartialTick(false));
         } catch (Throwable ignored) {}
     }
 
@@ -305,11 +294,10 @@ public class TTClientClient {
     @SubscribeEvent
     public void onChatReceived(ClientChatReceivedEvent event) {
         try {
-            AutoChatGame.handleChat(event);
-        } catch (Throwable ignored) {}
-        try {
-            StreamerMode sm = modules != null ? modules.getModule(StreamerMode.class) : null;
-            if (sm != null && sm.isEnabled()) sm.onChat(event);
+            AutoChatGame acg = modules != null ? modules.getModule(AutoChatGame.class) : null;
+            if (acg != null && acg.isEnabled()) {
+                acg.handleChat(event.getMessage().getString());
+            }
         } catch (Throwable ignored) {}
     }
 
