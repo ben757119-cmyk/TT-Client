@@ -8,7 +8,9 @@
     "MixinCamera",
     "MixinGameRenderer",
     "MixinEntity",
-    "MixinMultiPlayerGameMode"
+    "MixinMultiPlayerGameMode",
+    "MixinItemStack",
+    "MixinGuiGraphics"
   ],
   "injectors": {
     "defaultRequire": 0
