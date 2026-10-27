@@ -9,8 +9,7 @@
     "MixinGameRenderer",
     "MixinEntity",
     "MixinMultiPlayerGameMode",
-    "MixinItemStack",
-    "MixinGuiGraphics"
+    "MixinItemStack"
   ],
   "injectors": {
     "defaultRequire": 0

@@ -46,10 +46,23 @@ public class PackTweaks extends Module {
         }
     }
 
+    /** 26.2: screen is mc.gui.screen(), not mc.screen. */
     public static boolean inGuiContext() {
         try {
             Minecraft mc = Minecraft.getInstance();
-            return mc != null && mc.screen != null;
+            if (mc == null) return false;
+            try {
+                if (mc.gui != null && mc.gui.screen() != null) return true;
+            } catch (Throwable ignored) {}
+            // reflection fallback
+            try {
+                Object gui = mc.getClass().getField("gui").get(mc);
+                if (gui != null) {
+                    Object s = gui.getClass().getMethod("screen").invoke(gui);
+                    if (s != null) return true;
+                }
+            } catch (Throwable ignored) {}
+            return false;
         } catch (Throwable t) {
             return false;
         }
