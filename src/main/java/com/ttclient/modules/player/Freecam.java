@@ -116,7 +116,8 @@ public class Freecam extends Module {
             if (mc == null || mc.getWindow() == null) {
                 return (Boolean) mapping.getClass().getMethod("isDown").invoke(mapping);
             }
-            long window = mc.getWindow().getWindow();
+            // 26.2: Window.handle() is the GLFW window pointer (not getWindow()).
+            long window = mc.getWindow().handle();
             Object key = mapping.getClass().getMethod("getKey").invoke(mapping);
             if (key == null) return (Boolean) mapping.getClass().getMethod("isDown").invoke(mapping);
             int value = ((Number) key.getClass().getMethod("getValue").invoke(key)).intValue();
@@ -143,7 +144,7 @@ public class Freecam extends Module {
         try { Vec3 cp = mc.gameRenderer.mainCamera().position(); x = cp.x; y = cp.y; z = cp.z; } catch (Throwable ignored) {}
         posX = prevX = x; posY = prevY = y; posZ = prevZ = z;
         yaw = lastYaw = p.getYRot(); pitch = lastPitch = p.getXRot();
-        try { savedPerspective = mc.options.getCameraType(); mc.options.setCameraType(CameraType.FIRST_PERSON); } catch (Throwable ignored) {}
+        try { savedPerspective = mc.options.getCameraType(); mc.options.setCameraType(CameraType.FIRST_PERSON); } tapcatch (Throwable ignored) {}
         forward = backward = left = right = up = down = false;
         saved = true; activeCache = true;
         try {
@@ -191,7 +192,6 @@ public class Freecam extends Module {
         if (mc == null || mc.player == null) return;
         LocalPlayer p = mc.player;
         try { if (mc.options.getCameraType() != CameraType.FIRST_PERSON) mc.options.setCameraType(CameraType.FIRST_PERSON); } catch (Throwable ignored) {}
-        // NEVER KeyMapping#setDown(false) each tick — that causes "move a bit then stop".
         try {
             forward = mappingDown(mc.options.keyUp);
             backward = mappingDown(mc.options.keyDown);
