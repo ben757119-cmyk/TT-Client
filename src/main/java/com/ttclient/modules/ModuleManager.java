@@ -19,6 +19,7 @@ public class ModuleManager {
     private final List<Module> modules = new ArrayList<>();
 
     public void init() {
+        register(new PackTweaks());
         register(new ClickGUIModule());
         register(new SeizureMode());
         register(new StreamerMode());
