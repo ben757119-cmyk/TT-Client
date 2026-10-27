@@ -9,7 +9,7 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
-/** Resource-pack style visual toggles. Rainbow = inventory GUI only. */
+/** Resource-pack style visual toggles. Lives in its own Pack ClickGUI panel. */
 public class PackTweaks extends Module {
     public final BoolSetting lowFire = addSetting(new BoolSetting(
             "LowFire", "Shorter / quieter fire overlay (pairs with TT RP fire textures)", true));
@@ -22,18 +22,20 @@ public class PackTweaks extends Module {
     public final BoolSetting cleanScoreboard = addSetting(new BoolSetting(
             "CleanScoreboard", "Dim scoreboard background", false));
     public final BoolSetting rainbowTools = addSetting(new BoolSetting(
-            "RainbowTools", "Rainbow glint on tools + weapons in inventory only", false));
+            "RainbowTools", "Animated rainbow on tools + weapons in inventory only", true));
     public final BoolSetting rainbowBlocks = addSetting(new BoolSetting(
-            "RainbowBlocks", "Rainbow glint on block items in inventory only", false));
+            "RainbowBlocks", "Animated rainbow on block items in inventory only", false));
     public final BoolSetting forceGlint = addSetting(new BoolSetting(
-            "ForceGlint", "Force enchanted foil layer when rainbow is on", true));
+            "ForceGlint", "Also force enchanted foil under the rainbow", false));
     public final NumberSetting rainbowSpeed = addSetting(new NumberSetting(
-            "RainbowSpeed", "Rainbow cycle speed", 4.0, 0.5, 20.0, 0.5));
+            "RainbowSpeed", "Hue cycles per second (higher = faster)", 1.0, 0.1, 8.0, 0.1));
+    public final NumberSetting rainbowAlpha = addSetting(new NumberSetting(
+            "RainbowAlpha", "Rainbow overlay opacity", 0.45, 0.1, 0.9, 0.05));
     public final NumberSetting totemScale = addSetting(new NumberSetting(
             "TotemScale", "Totem size multiplier", 0.55, 0.25, 1.0, 0.05));
 
     public PackTweaks() {
-        super("PackTweaks", "Resource-pack style toggles (Client category)", Category.CLIENT);
+        super("PackTweaks", "Resource-pack style visuals + inventory rainbow", Category.PACK);
         setEnabled(true);
     }
 
@@ -54,7 +56,6 @@ public class PackTweaks extends Module {
             try {
                 if (mc.gui != null && mc.gui.screen() != null) return true;
             } catch (Throwable ignored) {}
-            // reflection fallback
             try {
                 Object gui = mc.getClass().getField("gui").get(mc);
                 if (gui != null) {
@@ -108,16 +109,31 @@ public class PackTweaks extends Module {
     public static float totemScaleOrDefault() {
         PackTweaks pt = get();
         if (pt == null || !pt.isEnabled() || !pt.smallTotems.get()) return 1f;
-        return pt.totemScale.get().floatValue();
+        return pt.totemScale.getFloat();
     }
 
-    public static int rainbowArgb(float alpha) {
+    /**
+     * Animated HSV rainbow. {@code RainbowSpeed} = full hue cycles per second.
+     * Slot-stable offset so adjacent items are not identical.
+     */
+    public static int rainbowArgb(float alphaOverride, int slotSalt) {
         PackTweaks pt = get();
-        double speed = pt != null ? pt.rainbowSpeed.get().doubleValue() : 4.0;
-        float hue = (float) ((System.currentTimeMillis() * speed * 0.00015) % 1.0);
+        double speed = pt != null ? pt.rainbowSpeed.get() : 1.0;
+        if (speed < 0.01) speed = 0.01;
+        float alpha = alphaOverride;
+        if (alpha < 0f && pt != null) alpha = pt.rainbowAlpha.getFloat();
+        if (alpha < 0f) alpha = 0.45f;
+        // cycles/sec from NumberSetting; nanoTime for smooth animation
+        double t = System.nanoTime() / 1_000_000_000.0;
+        float hue = (float) ((t * speed + slotSalt * 0.07) % 1.0);
+        if (hue < 0f) hue += 1f;
         int rgb = java.awt.Color.HSBtoRGB(hue, 1f, 1f) & 0x00FFFFFF;
         int a = Math.max(0, Math.min(255, (int) (alpha * 255)));
         return (a << 24) | rgb;
+    }
+
+    public static int rainbowArgb(float alpha) {
+        return rainbowArgb(alpha, 0);
     }
 
     private static String itemId(Item item) {

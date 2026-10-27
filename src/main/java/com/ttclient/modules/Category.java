@@ -8,7 +8,9 @@ public enum Category {
     WORLD("World", 0x55FFFF),
     BASEFIND("Basefind", 0xFFAA00),
     MISC("Misc", 0xFFFF55),
-    CLIENT("Client", 0xAAAAAA);
+    CLIENT("Client", 0xAAAAAA),
+    /** Resource-pack style visual tweaks (PackTweaks, etc.) */
+    PACK("Pack", 0xFF88CC);
 
     public final String name;
     public final int color;
