@@ -69,19 +69,58 @@ public class PackTweaks extends Module {
         }
     }
 
+    public static boolean noPumpkinEnabled() {
+        PackTweaks pt = get();
+        return pt != null && pt.isEnabled() && Boolean.TRUE.equals(pt.noPumpkin.get());
+    }
+
+    public static boolean lowFireEnabled() {
+        PackTweaks pt = get();
+        return pt != null && pt.isEnabled() && Boolean.TRUE.equals(pt.lowFire.get());
+    }
+
+    public static boolean lowShieldEnabled() {
+        PackTweaks pt = get();
+        return pt != null && pt.isEnabled() && Boolean.TRUE.equals(pt.lowShield.get());
+    }
+
+    public static boolean cleanScoreboardEnabled() {
+        PackTweaks pt = get();
+        return pt != null && pt.isEnabled() && Boolean.TRUE.equals(pt.cleanScoreboard.get());
+    }
+
+    public static boolean smallTotemsEnabled() {
+        PackTweaks pt = get();
+        return pt != null && pt.isEnabled() && Boolean.TRUE.equals(pt.smallTotems.get());
+    }
+
+    /** Texture path looks like pumpkin blur overlay. */
+    public static boolean isPumpkinOverlay(Object texture) {
+        if (texture == null) return false;
+        String s = texture.toString().toLowerCase();
+        return s.contains("pumpkin") || s.contains("blur");
+    }
+
+    /** Texture path looks like fire overlay. */
+    public static boolean isFireOverlay(Object texture) {
+        if (texture == null) return false;
+        String s = texture.toString().toLowerCase();
+        return s.contains("fire") || s.contains("burning");
+    }
+
     public static boolean shouldRainbow(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
         PackTweaks pt = get();
         if (pt == null || !pt.isEnabled()) return false;
         if (!inGuiContext()) return false;
-        if (pt.rainbowTools.get() && isToolOrWeapon(stack)) return true;
-        if (pt.rainbowBlocks.get() && isBlockItem(stack)) return true;
+        if (Boolean.TRUE.equals(pt.rainbowTools.get()) && isToolOrWeapon(stack)) return true;
+        if (Boolean.TRUE.equals(pt.rainbowBlocks.get()) && isBlockItem(stack)) return true;
         return false;
     }
 
     public static boolean shouldForceFoil(ItemStack stack) {
         PackTweaks pt = get();
-        if (pt == null || !pt.isEnabled() || !pt.forceGlint.get()) return false;
+        if (pt == null || !pt.isEnabled() || !Boolean.TRUE.equals(pt.forceGlint.get())) return false;
         return shouldRainbow(stack);
     }
 
@@ -108,14 +147,10 @@ public class PackTweaks extends Module {
 
     public static float totemScaleOrDefault() {
         PackTweaks pt = get();
-        if (pt == null || !pt.isEnabled() || !pt.smallTotems.get()) return 1f;
+        if (pt == null || !pt.isEnabled() || !Boolean.TRUE.equals(pt.smallTotems.get())) return 1f;
         return pt.totemScale.getFloat();
     }
 
-    /**
-     * Animated HSV rainbow. {@code RainbowSpeed} = full hue cycles per second.
-     * Slot-stable offset so adjacent items are not identical.
-     */
     public static int rainbowArgb(float alphaOverride, int slotSalt) {
         PackTweaks pt = get();
         double speed = pt != null ? pt.rainbowSpeed.get() : 1.0;
@@ -123,7 +158,6 @@ public class PackTweaks extends Module {
         float alpha = alphaOverride;
         if (alpha < 0f && pt != null) alpha = pt.rainbowAlpha.getFloat();
         if (alpha < 0f) alpha = 0.45f;
-        // cycles/sec from NumberSetting; nanoTime for smooth animation
         double t = System.nanoTime() / 1_000_000_000.0;
         float hue = (float) ((t * speed + slotSalt * 0.07) % 1.0);
         if (hue < 0f) hue += 1f;
