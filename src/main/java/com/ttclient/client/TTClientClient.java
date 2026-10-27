@@ -1,6 +1,7 @@
 package com.ttclient.client;
 
 import com.ttclient.TTClient;
+import com.ttclient.config.ConfigManager;
 import com.ttclient.gui.ClickGUIScreen;
 import com.ttclient.gui.TTBanScreen;
 import com.ttclient.gui.TTConnectScreen;
@@ -9,52 +10,83 @@ import com.ttclient.gui.TTTitleScreen;
 import com.ttclient.modules.Module;
 import com.ttclient.modules.ModuleManager;
 import com.ttclient.modules.client.ClickGUIModule;
-import com.ttclient.modules.client.CustomMainMenu;
+import com.ttclient.modules.client.StreamerMode;
+import com.ttclient.modules.misc.AutoChatGame;
 import com.ttclient.modules.player.Freecam;
-import com.ttclient.util.ConfigManager;
+import com.ttclient.util.ChunkMeshReload;
+import com.ttclient.util.FriendsManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.network.chat.Component;
+import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.client.event.ClientChatEvent;
+import net.neoforged.neoforge.client.event.ClientChatReceivedEvent;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
+import net.neoforged.neoforge.client.event.ViewportEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import org.lwjgl.glfw.GLFW;
 
-import java.util.Locale;
-
+@Mod(value = TTClient.MOD_ID, dist = Dist.CLIENT)
 public class TTClientClient {
+
     public static ModuleManager modules;
     public static ConfigManager config;
+    public static final int MOUSE_BIND_BASE = 2000;
 
-    private boolean periodWasDown;
-    private boolean guiKeyWasDown;
+    private boolean periodWasDown = false;
+    private boolean guiKeyWasDown = false;
+    private boolean wasDead = false;
 
     public TTClientClient() {
         modules = new ModuleManager();
-        modules.init();
+        TTClient.modules = modules;
         config = new ConfigManager();
-        try { config.load(); } catch (Throwable ignored) {}
+        TTClient.config = config;
+        modules.init();
+        config.load();
+        FriendsManager.load();
         NeoForge.EVENT_BUS.register(this);
-    }
-
-    private static Minecraft mc() {
-        return Minecraft.getInstance();
+        TTClient.LOGGER.info("TT Client {} ready with {} modules",
+                TTClient.VERSION, modules.getModules().size());
     }
 
     private static Screen currentScreen(Minecraft mc) {
         try { return mc.gui.screen(); } catch (Throwable t) {
-            try {
-                Object gui = mc.getClass().getField("gui").get(mc);
-                if (gui != null) return (Screen) gui.getClass().getMethod("screen").invoke(gui);
-            } catch (Throwable ignored) {}
-            return null;
+            try { return (Screen) Minecraft.class.getMethod("getScreen").invoke(mc); }
+            catch (Throwable t2) { return null; }
         }
+    }
+
+    private static void openScreen(Minecraft mc, Screen screen) {
+        try { mc.gui.setScreen(screen); return; } catch (Throwable ignored) {}
+        try { Minecraft.class.getMethod("setScreen", Screen.class).invoke(mc, screen); } catch (Throwable ignored) {}
+    }
+
+    private static void openChatWith(Minecraft mc, String initial) {
+        try {
+            try {
+                var ctor = ChatScreen.class.getConstructor(String.class);
+                openScreen(mc, ctor.newInstance(initial));
+                return;
+            } catch (Throwable ignored) {}
+            try {
+                var ctor = ChatScreen.class.getConstructor(String.class, boolean.class);
+                openScreen(mc, ctor.newInstance(initial, false));
+                return;
+            } catch (Throwable ignored) {}
+            try {
+                openScreen(mc, ChatScreen.class.getDeclaredConstructor().newInstance());
+            } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {}
     }
 
     @SubscribeEvent
@@ -65,8 +97,8 @@ public class TTClientClient {
             if (next instanceof TTTitleScreen || next instanceof TTConnectScreen
                     || next instanceof TTDisconnectedScreen || next instanceof TTBanScreen) return;
 
-            String n = next.getClass().getName().toLowerCase(Locale.ROOT);
-            String simple = next.getClass().getSimpleName().toLowerCase(Locale.ROOT);
+            String n = next.getClass().getName().toLowerCase();
+            String simple = next.getClass().getSimpleName().toLowerCase();
 
             boolean isTitle = next instanceof TitleScreen
                     || n.endsWith(".titlescreen")
@@ -146,17 +178,33 @@ public class TTClientClient {
 
     @SubscribeEvent
     public void onClientTick(ClientTickEvent.Post event) {
-        Minecraft mc = mc();
+        Minecraft mc = Minecraft.getInstance();
         if (mc == null) return;
+
+        try {
+            ChunkMeshReload.tick();
+        } catch (Throwable ignored) {}
+
+        try {
+            if (mc.player != null) {
+                boolean dead = mc.player.isDeadOrDying();
+                if (dead && !wasDead && modules != null) {
+                    for (Module m : modules.getModules()) {
+                        try {
+                            if (m.isEnabled() && m.shouldDisableOnDeath()) m.setEnabled(false);
+                        } catch (Throwable ignored) {}
+                    }
+                }
+                wasDead = dead;
+            }
+        } catch (Throwable ignored) {}
 
         try {
             long win = mc.getWindow().handle();
             boolean down = GLFW.glfwGetKey(win, GLFW.GLFW_KEY_PERIOD) == GLFW.GLFW_PRESS;
             if (down && !periodWasDown) {
                 Screen cur = currentScreen(mc);
-                if (cur == null) {
-                    try { mc.gui.setScreen(new ChatScreen(".")); } catch (Throwable ignored) {}
-                }
+                if (cur == null) openChatWith(mc, ".");
             }
             periodWasDown = down;
         } catch (Throwable ignored) {}
@@ -170,29 +218,46 @@ public class TTClientClient {
                 if (down && !guiKeyWasDown) {
                     Screen screen = currentScreen(mc);
                     if (screen instanceof ClickGUIScreen) {
-                        try { mc.gui.setScreen(null); } catch (Throwable ignored) {}
+                        openScreen(mc, null);
                     } else if (screen == null || screen instanceof TTTitleScreen) {
-                        try { mc.gui.setScreen(new ClickGUIScreen()); } catch (Throwable ignored) {}
+                        openScreen(mc, new ClickGUIScreen());
                     }
                 }
                 guiKeyWasDown = down;
             }
         } catch (Throwable ignored) {}
 
-        if (modules != null) modules.onTick();
+        if (modules != null) {
+            try { modules.onTick(); } catch (Throwable ignored) {}
+        }
 
-        Freecam fc = modules != null ? modules.getModule(Freecam.class) : null;
-        // freecam camera angles handled elsewhere
+        try {
+            Freecam fc = modules != null ? modules.getModule(Freecam.class) : null;
+            if (fc != null && Freecam.isActive()) {
+                // camera angles via ViewportEvent
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    @SubscribeEvent
+    public void onCameraAngles(ViewportEvent.ComputeCameraAngles event) {
+        try {
+            Freecam fc = modules != null ? modules.getModule(Freecam.class) : null;
+            if (fc != null) fc.onCameraAngles(event);
+        } catch (Throwable ignored) {}
     }
 
     @SubscribeEvent
     public void onRenderGui(RenderGuiEvent.Post event) {
         try {
             if (modules == null) return;
-            Minecraft mc = mc();
+            Minecraft mc = Minecraft.getInstance();
             if (mc == null) return;
             Screen s = currentScreen(mc);
-            if (s != null && !(s instanceof ClickGUIScreen)) return;
+            if (s != null && !(s instanceof ClickGUIScreen)) {
+                // still allow HUD when no screen - only skip full GUIs
+            }
+            if (s != null && !(s instanceof ClickGUIScreen) && !(s instanceof ChatScreen)) return;
             GuiGraphicsExtractor g = event.getGuiGraphics();
             if (g == null) return;
             HudRenderer.render(g, event.getPartialTick());
@@ -201,13 +266,12 @@ public class TTClientClient {
 
     @SubscribeEvent
     public void onKey(InputEvent.Key event) {
-        // ClickGUI open/close is edge-triggered in onClientTick only — never toggle it here.
         try {
             if (modules == null) return;
             if (event.getAction() != GLFW.GLFW_PRESS) return;
             int key = event.getKey();
             if (key <= 0) return;
-            Screen s = currentScreen(mc());
+            Screen s = currentScreen(Minecraft.getInstance());
             if (s instanceof ClickGUIScreen) return;
             for (Module m : modules.getModules()) {
                 if (m instanceof ClickGUIModule) continue;
@@ -217,35 +281,46 @@ public class TTClientClient {
     }
 
     @SubscribeEvent
-    public void onMouse(InputEvent.MouseButton.Pre event) {
+    public void onMouse(InputEvent.MouseButton.Post event) {
         try {
             if (modules == null) return;
             if (event.getAction() != GLFW.GLFW_PRESS) return;
             int btn = event.getButton();
-            // mouse binds: GLFW mouse buttons map as negative-ish or high keys depending on module
+            int coded = MOUSE_BIND_BASE + btn;
             for (Module m : modules.getModules()) {
-                int bind = m.getKeyBind();
-                if (bind < 0 && btn == -bind - 100) { // optional encoding
-                    m.toggle();
-                }
+                if (m.getKeyBind() == coded) m.toggle();
             }
         } catch (Throwable ignored) {}
     }
 
-    public static void chat(String msg) {
+    @SubscribeEvent
+    public void onChat(ClientChatEvent event) {
         try {
-            Minecraft mc = Minecraft.getInstance();
-            if (mc != null && mc.player != null) {
-                mc.player.displayClientMessage(Component.literal(msg), false);
+            if (ClientCommands.handle(event.getMessage())) {
+                event.setCanceled(true);
             }
         } catch (Throwable ignored) {}
     }
 
-    public static void chat(Component c) {
+    @SubscribeEvent
+    public void onChatReceived(ClientChatReceivedEvent event) {
         try {
-            Minecraft mc = Minecraft.getInstance();
-            if (mc != null && mc.player != null) {
-                mc.player.displayClientMessage(c, false);
+            AutoChatGame.handleChat(event);
+        } catch (Throwable ignored) {}
+        try {
+            StreamerMode sm = modules != null ? modules.getModule(StreamerMode.class) : null;
+            if (sm != null && sm.isEnabled()) sm.onChat(event);
+        } catch (Throwable ignored) {}
+    }
+
+    @SubscribeEvent
+    public void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+        try {
+            if (modules == null) return;
+            for (Module m : modules.getModules()) {
+                try {
+                    if (m.isEnabled() && m.shouldDisableOnServerChange()) m.setEnabled(false);
+                } catch (Throwable ignored) {}
             }
         } catch (Throwable ignored) {}
     }
