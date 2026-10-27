@@ -108,27 +108,49 @@ public class Freecam extends Module {
 
     public static boolean isTerrainFiller(BlockState st) { return shouldHideForWallVision(st); }
 
-    private static boolean mappingDown(Object mapping) {
-        if (mapping == null) return false;
+    /** True if mapping is held OR the default GLFW key is held. Never call setDown(false). */
+    private static boolean keyHeld(Object mapping, int defaultGlfw) {
+        try {
+            if (mapping != null) {
+                Object down = mapping.getClass().getMethod("isDown").invoke(mapping);
+                if (down instanceof Boolean b && b) return true;
+            }
+        } catch (Throwable ignored) {}
         try {
             Minecraft mc = Minecraft.getInstance();
-            if (mc == null || mc.getWindow() == null) {
-                return (Boolean) mapping.getClass().getMethod("isDown").invoke(mapping);
-            }
+            if (mc == null || mc.getWindow() == null) return false;
             long window = mc.getWindow().handle();
-            Object key = mapping.getClass().getMethod("getKey").invoke(mapping);
-            if (key == null) return (Boolean) mapping.getClass().getMethod("isDown").invoke(mapping);
-            int value = ((Number) key.getClass().getMethod("getValue").invoke(key)).intValue();
-            Object type = null;
-            try { type = key.getClass().getMethod("getType").invoke(key); } catch (Throwable ignored) {}
-            String typeName = type != null ? type.toString().toLowerCase() : "";
-            if (typeName.contains("mouse"))
-                return GLFW.glfwGetMouseButton(window, value) == GLFW.GLFW_PRESS;
-            return GLFW.glfwGetKey(window, value) == GLFW.GLFW_PRESS;
-        } catch (Throwable t) {
-            try { return (Boolean) mapping.getClass().getMethod("isDown").invoke(mapping); }
-            catch (Throwable t2) { return false; }
-        }
+            // Prefer the bound key code when available
+            if (mapping != null) {
+                try {
+                    Object key = mapping.getClass().getMethod("getKey").invoke(mapping);
+                    if (key != null) {
+                        int value = ((Number) key.getClass().getMethod("getValue").invoke(key)).intValue();
+                        Object type = null;
+                        try { type = key.getClass().getMethod("getType").invoke(key); } catch (Throwable ignored) {}
+                        String typeName = type != null ? type.toString().toLowerCase() : "";
+                        if (typeName.contains("mouse")) {
+                            if (GLFW.glfwGetMouseButton(window, value) == GLFW.GLFW_PRESS) return true;
+                        } else if (value >= 0 && value < 512) {
+                            if (GLFW.glfwGetKey(window, value) == GLFW.GLFW_PRESS) return true;
+                        }
+                    }
+                } catch (Throwable ignored) {}
+            }
+            if (defaultGlfw >= 0 && GLFW.glfwGetKey(window, defaultGlfw) == GLFW.GLFW_PRESS) return true;
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    private void pollKeys(Minecraft mc) {
+        // Defaults match vanilla WASD / space / shift / ctrl — OR'd with KeyMapping.isDown
+        forward  = keyHeld(mc.options.keyUp,     GLFW.GLFW_KEY_W);
+        backward = keyHeld(mc.options.keyDown,   GLFW.GLFW_KEY_S);
+        left     = keyHeld(mc.options.keyLeft,   GLFW.GLFW_KEY_A);
+        right    = keyHeld(mc.options.keyRight,  GLFW.GLFW_KEY_D);
+        up       = keyHeld(mc.options.keyJump,   GLFW.GLFW_KEY_SPACE);
+        down     = keyHeld(mc.options.keyShift,  GLFW.GLFW_KEY_LEFT_SHIFT)
+                || keyHeld(null, GLFW.GLFW_KEY_RIGHT_SHIFT);
     }
 
     @Override
@@ -148,14 +170,7 @@ public class Freecam extends Module {
         } catch (Throwable ignored) {}
         forward = backward = left = right = up = down = false;
         saved = true; activeCache = true;
-        try {
-            forward = mappingDown(mc.options.keyUp);
-            backward = mappingDown(mc.options.keyDown);
-            left = mappingDown(mc.options.keyLeft);
-            right = mappingDown(mc.options.keyRight);
-            up = mappingDown(mc.options.keyJump);
-            down = mappingDown(mc.options.keyShift);
-        } catch (Throwable ignored) {}
+        try { pollKeys(mc); } catch (Throwable ignored) {}
         if (wallVision.get()) {
             wallVisionCache = true;
             if (fullbright.get()) applyGamma(mc);
@@ -192,24 +207,29 @@ public class Freecam extends Module {
         Minecraft mc = mc();
         if (mc == null || mc.player == null) return;
         LocalPlayer p = mc.player;
-        try { if (mc.options.getCameraType() != CameraType.FIRST_PERSON) mc.options.setCameraType(CameraType.FIRST_PERSON); } catch (Throwable ignored) {}
         try {
-            forward = mappingDown(mc.options.keyUp);
-            backward = mappingDown(mc.options.keyDown);
-            left = mappingDown(mc.options.keyLeft);
-            right = mappingDown(mc.options.keyRight);
-            up = mappingDown(mc.options.keyJump);
-            down = mappingDown(mc.options.keyShift);
+            if (mc.options.getCameraType() != CameraType.FIRST_PERSON)
+                mc.options.setCameraType(CameraType.FIRST_PERSON);
         } catch (Throwable ignored) {}
+
+        try { pollKeys(mc); } catch (Throwable ignored) {}
+
         prevX = posX; prevY = posY; prevZ = posZ;
         lastYaw = yaw; lastPitch = pitch;
+
         double s = speed.get().doubleValue();
-        try { if (mappingDown(mc.options.keySprint)) s *= speed2.get().doubleValue(); } catch (Throwable ignored) {}
+        try {
+            if (keyHeld(mc.options.keySprint, GLFW.GLFW_KEY_LEFT_CONTROL)
+                    || keyHeld(null, GLFW.GLFW_KEY_RIGHT_CONTROL))
+                s *= speed2.get().doubleValue();
+        } catch (Throwable ignored) {}
+
         float lookPitch = pitchMove.get() ? pitch : 0f;
         Vec3 look = Vec3.directionFromRotation(lookPitch, yaw);
         Vec3 rightVec = Vec3.directionFromRotation(0, yaw + 90f);
         Vec3 forwardFlat = Vec3.directionFromRotation(0, yaw);
         double velX = 0, velY = 0, velZ = 0;
+
         if (forward) {
             if (pitchMove.get()) { velX += look.x * s; velY += look.y * s; velZ += look.z * s; }
             else { velX += forwardFlat.x * s; velZ += forwardFlat.z * s; }
@@ -222,9 +242,15 @@ public class Freecam extends Module {
         if (left)  { velX -= rightVec.x * s; velZ -= rightVec.z * s; }
         if (up) velY += s;
         if (down) velY -= s;
+
         double len = Math.sqrt(velX * velX + velY * velY + velZ * velZ);
-        if (len > s && len > 1e-6) { double scale = s / len; velX *= scale; velY *= scale; velZ *= scale; }
+        if (len > s && len > 1e-6) {
+            double scale = s / len;
+            velX *= scale; velY *= scale; velZ *= scale;
+        }
         posX += velX; posY += velY; posZ += velZ;
+
+        // Freeze body at origin — do NOT KeyMapping.setDown(false)
         try {
             p.setDeltaMovement(Vec3.ZERO);
             p.setPos(originX, originY, originZ);
@@ -242,13 +268,16 @@ public class Freecam extends Module {
                 }
             } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
+
         boolean want = wallVision.get() && activeCache;
         if (want != wallVisionCache) {
             wallVisionCache = want;
             if (want && fullbright.get()) applyGamma(mc);
             else if (!want) restoreGamma();
             ChunkMeshReload.request();
-        } else if (want && fullbright.get()) applyGamma(mc);
+        } else if (want && fullbright.get()) {
+            applyGamma(mc);
+        }
     }
 
     private void applyGamma(Minecraft mc) {
