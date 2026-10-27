@@ -108,7 +108,6 @@ public class Freecam extends Module {
 
     public static boolean isTerrainFiller(BlockState st) { return shouldHideForWallVision(st); }
 
-    /** Continuous key state from GLFW — never spam KeyMapping#setDown(false) each tick. */
     private static boolean mappingDown(Object mapping) {
         if (mapping == null) return false;
         try {
@@ -116,7 +115,6 @@ public class Freecam extends Module {
             if (mc == null || mc.getWindow() == null) {
                 return (Boolean) mapping.getClass().getMethod("isDown").invoke(mapping);
             }
-            // 26.2: Window.handle() is the GLFW window pointer (not getWindow()).
             long window = mc.getWindow().handle();
             Object key = mapping.getClass().getMethod("getKey").invoke(mapping);
             if (key == null) return (Boolean) mapping.getClass().getMethod("isDown").invoke(mapping);
@@ -144,7 +142,10 @@ public class Freecam extends Module {
         try { Vec3 cp = mc.gameRenderer.mainCamera().position(); x = cp.x; y = cp.y; z = cp.z; } catch (Throwable ignored) {}
         posX = prevX = x; posY = prevY = y; posZ = prevZ = z;
         yaw = lastYaw = p.getYRot(); pitch = lastPitch = p.getXRot();
-        try { savedPerspective = mc.options.getCameraType(); mc.options.setCameraType(CameraType.FIRST_PERSON); } tapcatch (Throwable ignored) {}
+        try {
+            savedPerspective = mc.options.getCameraType();
+            mc.options.setCameraType(CameraType.FIRST_PERSON);
+        } catch (Throwable ignored) {}
         forward = backward = left = right = up = down = false;
         saved = true; activeCache = true;
         try {
