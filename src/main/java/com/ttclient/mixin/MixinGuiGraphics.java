@@ -8,10 +8,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/**
- * Soft GUI item overlay for PackTweaks rainbow frame.
- * require=0 so missing overloads never brick the client.
- */
 @Mixin(GuiGraphics.class)
 public abstract class MixinGuiGraphics {
 
@@ -25,12 +21,24 @@ public abstract class MixinGuiGraphics {
             if (!PackTweaks.shouldRainbow(stack)) return;
             GuiGraphics g = (GuiGraphics) (Object) this;
             int c = PackTweaks.rainbowArgb(0.9f);
-            g.fill(x, y, x + 16, y + 1, c);
-            g.fill(x, y + 15, x + 16, y + 16, c);
-            g.fill(x, y, x + 1, y + 16, c);
-            g.fill(x + 15, y, x + 16, y + 16, c);
+            fill(g, x, y, x + 16, y + 1, c);
+            fill(g, x, y + 15, x + 16, y + 16, c);
+            fill(g, x, y, x + 1, y + 16, c);
+            fill(g, x + 15, y, x + 16, y + 16, c);
             int c2 = PackTweaks.rainbowArgb(0.22f);
-            g.fill(x + 1, y + 1, x + 15, y + 15, c2);
+            fill(g, x + 1, y + 1, x + 15, y + 15, c2);
+        } catch (Throwable ignored) {}
+    }
+
+    private static void fill(GuiGraphics g, int x1, int y1, int x2, int y2, int color) {
+        try {
+            try {
+                g.getClass().getMethod("fill", int.class, int.class, int.class, int.class, int.class)
+                        .invoke(g, x1, y1, x2, y2, color);
+            } catch (NoSuchMethodException e) {
+                g.getClass().getMethod("fills", int.class, int.class, int.class, int.class, int.class)
+                        .invoke(g, x1, y1, x2, y2, color);
+            }
         } catch (Throwable ignored) {}
     }
 }
