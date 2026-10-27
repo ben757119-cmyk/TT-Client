@@ -11,6 +11,8 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -63,60 +65,53 @@ public class TTTitleScreen extends Screen {
         g.fill(0, 0, width, height, 0xFF05060A);
         ensureParticles();
         boolean seizure = ClickGUIModule.isSeizure();
+        int ac = accent();
         for (Particle p : particles) {
-            p.y += p.vy;
             p.x += p.vx;
-            if (p.y > height + 6) {
-                p.y = -6;
-                p.x = (float) (Math.random() * Math.max(1, width));
+            p.y += p.vy;
+            if (p.y > height + 4) {
+                p.y = -4;
+                p.x = (float) (Math.random() * width);
                 p.respawn();
             }
-            if (p.x < -8) p.x = width + 4;
-            if (p.x > width + 8) p.x = -4;
-            int s = Math.max(1, (int) p.size);
-            int rgb;
+            int col;
             if (seizure) {
-                float hue = ((System.currentTimeMillis() + p.hueOffset) % 1200L) / 1200f;
-                rgb = java.awt.Color.HSBtoRGB(hue, 1f, 1f) & 0x00FFFFFF;
+                float hue = (float) (((System.currentTimeMillis() / 8 + p.hueOffset) % 360) / 360.0);
+                col = (java.awt.Color.HSBtoRGB(hue, 1f, 1f) & 0x00FFFFFF) | (p.alpha << 24);
             } else {
-                rgb = accent() & 0x00FFFFFF;
+                col = (p.alpha << 24) | (ac & 0x00FFFFFF);
             }
-            g.fill((int) p.x, (int) p.y, (int) p.x + s, (int) p.y + s, (p.alpha << 24) | rgb);
+            int s = Math.max(1, (int) p.size);
+            g.fill((int) p.x, (int) p.y, (int) p.x + s, (int) p.y + s, col);
         }
-        g.fill(0, 0, width, 36, 0x40000000);
-        g.fill(0, height - 36, width, height, 0x50000000);
     }
 
-    @Override protected void extractBlurredBackground(GuiGraphicsExtractor graphics) {}
-    @Override public void extractTransparentBackground(GuiGraphicsExtractor graphics) {}
-    @Override protected void extractMenuBackground(GuiGraphicsExtractor graphics) {}
+    @Override protected void extractBlurredBackground(GuiGraphicsExtractor g) {}
+    @Override public void extractTransparentBackground(GuiGraphicsExtractor g) {}
+    @Override protected void extractMenuBackground(GuiGraphicsExtractor g) {}
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
         int ac = accent();
+        g.fill(0, 0, width, 2, ac);
+        g.fill(0, height - 2, width, height, ac);
+
         String title = "TT CLIENT";
-        int tw = font.width(title);
-        int titleY = height / 2 - 88;
-        g.text(font, title, width / 2 - tw / 2, titleY, TEXT, false);
-        String sub = "v" + TTClient.VERSION;
-        g.text(font, sub, width / 2 - font.width(sub) / 2, titleY + 14, TEXT_DIM, false);
-        int lineW = 48;
-        g.fill(width / 2 - lineW / 2, titleY + 28, width / 2 + lineW / 2, titleY + 29, ac);
+        g.text(font, title, width / 2 - font.width(title) / 2, height / 2 - 68, ac, false);
+        String ver = "v" + TTClient.VERSION;
+        g.text(font, ver, width / 2 - font.width(ver) / 2, height / 2 - 54, TEXT_DIM, false);
 
         for (MenuButton b : buttons) {
             boolean hov = mouseX >= b.x && mouseX <= b.x + b.w && mouseY >= b.y && mouseY <= b.y + b.h;
             drawButton(g, b, hov, ac);
         }
-
-        String tip = ClickGUIModule.isSeizure()
-                ? "seizure mode  ·  rshift / clickgui"
-                : "rshift or clickgui  ·  the third";
-        g.text(font, tip, 12, height - 16, TEXT_DIM, false);
     }
 
     private void drawButton(GuiGraphicsExtractor g, MenuButton b, boolean hov, int ac) {
-        roundedFill(g, b.x, b.y, b.x + b.w, b.y + b.h, 6, hov ? BTN_HOV : BTN);
-        if (hov) g.fill(b.x, b.y + 4, b.x + 2, b.y + b.h - 4, ac);
+        roundedFill(g, b.x, b.y, b.x + b.w, b.y + b.h, 4, hov ? BTN_HOV : BTN);
+        if (hov) {
+            g.fill(b.x, b.y, b.x + 2, b.y + b.h, ac);
+        }
         g.fill(b.x + 6, b.y + b.h - 1, b.x + b.w - 6, b.y + b.h, hov ? (ac & 0x55FFFFFF) : 0x18FFFFFF);
         g.text(font, b.label, b.x + (b.w - font.width(b.label)) / 2, b.y + (b.h - 8) / 2, hov ? ac : TEXT, false);
     }
@@ -169,52 +164,131 @@ public class TTTitleScreen extends Screen {
     private void openOptions() {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) return;
-        // NeoForge 26.2: OptionsScreen(Screen parent, Options options)
-        Object options = null;
-        try { options = mc.options; } catch (Throwable ignored) {}
-        if (options == null) {
-            try { options = Minecraft.class.getField("options").get(mc); } catch (Throwable ignored) {}
-        }
-        if (options == null) {
-            try { options = Minecraft.class.getMethod("getOptions").invoke(mc); } catch (Throwable ignored) {}
-        }
 
+        Object options = resolveOptions(mc);
         String[] names = {
                 "net.minecraft.client.gui.screens.options.OptionsScreen",
-                "net.minecraft.client.gui.screens.OptionsScreen"
+                "net.minecraft.client.gui.screens.OptionsScreen",
+                "net.minecraft.client.gui.screens.options.OptionsSubScreen"
         };
+
         for (String className : names) {
-            try {
-                Class<?> cls = Class.forName(className);
-                Object screen = null;
-                for (Constructor<?> c : cls.getConstructors()) {
-                    Class<?>[] p = c.getParameterTypes();
+            if (tryOpenOptionsClass(mc, className, options)) return;
+        }
+
+        // Last resort: scan loaded classes for *OptionsScreen with a usable ctor
+        try {
+            for (Package pkg : Package.getPackages()) {
+                // too broad — skip
+            }
+        } catch (Throwable ignored) {}
+
+        TTClient.LOGGER.warn("Could not open OptionsScreen — ctor mismatch (options={})",
+                options == null ? "null" : options.getClass().getName());
+    }
+
+    private static Object resolveOptions(Minecraft mc) {
+        Object options = null;
+        try { options = mc.options; } catch (Throwable ignored) {}
+        if (options != null) return options;
+        try {
+            Field f = Minecraft.class.getField("options");
+            options = f.get(mc);
+            if (options != null) return options;
+        } catch (Throwable ignored) {}
+        try {
+            for (Field f : Minecraft.class.getDeclaredFields()) {
+                f.setAccessible(true);
+                Object v = f.get(mc);
+                if (v == null) continue;
+                String n = v.getClass().getName().toLowerCase();
+                if (n.endsWith(".options") || n.contains("clientoptions") || n.endsWith("options"))
+                    return v;
+            }
+        } catch (Throwable ignored) {}
+        try { return Minecraft.class.getMethod("getOptions").invoke(mc); } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private boolean tryOpenOptionsClass(Minecraft mc, String className, Object options) {
+        try {
+            Class<?> cls = Class.forName(className);
+            if (Modifier.isAbstract(cls.getModifiers())) return false;
+
+            Constructor<?>[] ctors = cls.getDeclaredConstructors();
+            // Prefer (Screen, Options)
+            for (Constructor<?> c : ctors) {
+                c.setAccessible(true);
+                Class<?>[] p = c.getParameterTypes();
+                if (p.length != 2) continue;
+                if (!Screen.class.isAssignableFrom(p[0])) continue;
+                if (options == null) continue;
+                if (p[1].isInstance(options) || p[1].isAssignableFrom(options.getClass())
+                        || p[1].getName().toLowerCase().contains("options")) {
                     try {
-                        if (p.length == 2 && Screen.class.isAssignableFrom(p[0]) && options != null
-                                && p[1].isInstance(options)) {
-                            screen = c.newInstance(this, options);
-                            break;
+                        Object screen = c.newInstance(this, options);
+                        if (screen instanceof Screen s) {
+                            setScreen(mc, s);
+                            return true;
                         }
-                        if (p.length == 2 && Screen.class.isAssignableFrom(p[0])
-                                && p[1].getName().toLowerCase().contains("options") && options != null) {
-                            screen = c.newInstance(this, options);
-                            break;
-                        }
-                        if (p.length == 1 && Screen.class.isAssignableFrom(p[0])) {
-                            screen = c.newInstance(this);
-                            break;
+                    } catch (Throwable t) {
+                        TTClient.LOGGER.debug("Options ctor failed: {}", t.toString());
+                    }
+                }
+            }
+            // (Options, Screen)
+            for (Constructor<?> c : ctors) {
+                c.setAccessible(true);
+                Class<?>[] p = c.getParameterTypes();
+                if (p.length != 2 || options == null) continue;
+                if (Screen.class.isAssignableFrom(p[1])
+                        && (p[0].isInstance(options) || p[0].getName().toLowerCase().contains("options"))) {
+                    try {
+                        Object screen = c.newInstance(options, this);
+                        if (screen instanceof Screen s) {
+                            setScreen(mc, s);
+                            return true;
                         }
                     } catch (Throwable ignored) {}
                 }
-                if (screen instanceof Screen s) {
-                    setScreen(mc, s);
-                    return;
-                }
-            } catch (Throwable t) {
-                TTClient.LOGGER.warn("Options open via {}: {}", className, t.toString());
             }
+            // (Screen only)
+            for (Constructor<?> c : ctors) {
+                c.setAccessible(true);
+                Class<?>[] p = c.getParameterTypes();
+                if (p.length == 1 && Screen.class.isAssignableFrom(p[0])) {
+                    try {
+                        Object screen = c.newInstance(this);
+                        if (screen instanceof Screen s) {
+                            setScreen(mc, s);
+                            return true;
+                        }
+                    } catch (Throwable ignored) {}
+                }
+            }
+            // (Minecraft, Screen) / (Screen, Minecraft)
+            for (Constructor<?> c : ctors) {
+                c.setAccessible(true);
+                Class<?>[] p = c.getParameterTypes();
+                if (p.length != 2) continue;
+                try {
+                    Object screen = null;
+                    if (Screen.class.isAssignableFrom(p[0]) && Minecraft.class.isAssignableFrom(p[1]))
+                        screen = c.newInstance(this, mc);
+                    else if (Minecraft.class.isAssignableFrom(p[0]) && Screen.class.isAssignableFrom(p[1]))
+                        screen = c.newInstance(mc, this);
+                    if (screen instanceof Screen s) {
+                        setScreen(mc, s);
+                        return true;
+                    }
+                } catch (Throwable ignored) {}
+            }
+        } catch (ClassNotFoundException e) {
+            // not present on this mapping
+        } catch (Throwable t) {
+            TTClient.LOGGER.warn("Options open via {}: {}", className, t.toString());
         }
-        TTClient.LOGGER.warn("Could not open OptionsScreen — ctor mismatch");
+        return false;
     }
 
     private void quitGame() {
@@ -243,7 +317,8 @@ public class TTTitleScreen extends Screen {
         try {
             Class<?> cls = Class.forName(className);
             Object screen = null;
-            for (Constructor<?> c : cls.getConstructors()) {
+            for (Constructor<?> c : cls.getDeclaredConstructors()) {
+                c.setAccessible(true);
                 Class<?>[] p = c.getParameterTypes();
                 try {
                     if (p.length == 1 && Screen.class.isAssignableFrom(p[0])) {
@@ -252,7 +327,8 @@ public class TTTitleScreen extends Screen {
                 } catch (Throwable ignored) {}
             }
             if (screen == null) {
-                for (Constructor<?> c : cls.getConstructors()) {
+                for (Constructor<?> c : cls.getDeclaredConstructors()) {
+                    c.setAccessible(true);
                     Class<?>[] p = c.getParameterTypes();
                     try {
                         if (p.length == 0) { screen = c.newInstance(); break; }
