@@ -31,6 +31,7 @@ public class ClickGUIScreen extends Screen {
     private Module bindingModule = null;
     private boolean suppressBindClick = false;
     private Module hoveredModule = null;
+    private String packHoverTip = null;
     private String searchQuery = "";
     private boolean searchFocused = true;
     private NumberSetting sliding = null;
@@ -74,9 +75,7 @@ public class ClickGUIScreen extends Screen {
         }
     }
 
-    private int accent() {
-        return ClickGUIModule.globalAccent();
-    }
+    private int accent() { return ClickGUIModule.globalAccent(); }
 
     private static com.ttclient.modules.ModuleManager manager() {
         return TTClientClient.modules != null ? TTClientClient.modules : TTClient.modules;
@@ -122,10 +121,7 @@ public class ClickGUIScreen extends Screen {
         int acRgb = accent() & 0x00FFFFFF;
         for (Particle p : particles) {
             p.y += p.vy;
-            if (p.y > this.height) {
-                p.y = -4;
-                p.x = (float) (Math.random() * this.width);
-            }
+            if (p.y > this.height) { p.y = -4; p.x = (float) (Math.random() * this.width); }
             int s = Math.max(1, (int) p.size);
             graphics.fill((int) p.x, (int) p.y, (int) p.x + s, (int) p.y + s, (p.alpha << 24) | acRgb);
         }
@@ -141,6 +137,8 @@ public class ClickGUIScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+        hoveredModule = null;
+        packHoverTip = null;
         String shown = searchQuery.isEmpty() ? (searchFocused ? "Search..." : "Search") : searchQuery;
         roundedFill(graphics, SEARCH_X, SEARCH_Y, SEARCH_X + SEARCH_W, SEARCH_Y + SEARCH_H, 5, SEARCH_BG);
         graphics.fill(SEARCH_X, SEARCH_Y + 3, SEARCH_X + 2, SEARCH_Y + SEARCH_H - 3, accent());
@@ -150,15 +148,14 @@ public class ClickGUIScreen extends Screen {
         for (Panel panel : panelList) panel.render(graphics, mouseX, mouseY);
         renderPackStrip(graphics, mouseX, mouseY);
 
-        if (hoveredModule != null) {
-            String tip = hoveredModule.getDescription();
-            if (tip != null && !tip.isEmpty()) {
-                int tw = this.font.width(tip) + 10;
-                int tx = Math.min(mouseX + 12, this.width - tw - 4);
-                int ty = mouseY + 12;
-                roundedFill(graphics, tx, ty, tx + tw, ty + 14, 3, 0xF00C0E14);
-                graphics.text(this.font, tip, tx + 5, ty + 3, 0xFFE8EAED, false);
-            }
+        String tip = packHoverTip;
+        if (tip == null && hoveredModule != null) tip = hoveredModule.getDescription();
+        if (tip != null && !tip.isEmpty()) {
+            int tw = this.font.width(tip) + 10;
+            int tx = Math.min(mouseX + 12, this.width - tw - 4);
+            int ty = mouseY + 12;
+            roundedFill(graphics, tx, ty, tx + tw, ty + 14, 3, 0xF00C0E14);
+            graphics.text(this.font, tip, tx + 5, ty + 3, 0xFFE8EAED, false);
         }
     }
 
@@ -210,6 +207,9 @@ public class ClickGUIScreen extends Screen {
         int my = y0 + 3;
         roundedFill(g, mx, my, mx + mw, my + 12, 3, on ? 0x4000E8A0 : 0x28FFFFFF);
         g.text(this.font, master, mx + 6, my + 2, on ? ac : TEXT_DIM, false);
+        if (mouseX >= mx && mouseX <= mx + mw && mouseY >= my && mouseY <= my + 12) {
+            packHoverTip = "Enable / disable all PackTweaks";
+        }
         packChipBounds.add(new int[]{mx, my, mw, 12, -1});
 
         BoolSetting[] chips = {
@@ -225,6 +225,9 @@ public class ClickGUIScreen extends Screen {
             if (cx + cw > x0 + w0 - 8) break;
             boolean son = Boolean.TRUE.equals(s.get());
             boolean hov = mouseX >= cx && mouseX <= cx + cw && mouseY >= cy && mouseY <= cy + PACK_CHIP_H;
+            if (hov) {
+                try { packHoverTip = s.getDescription(); } catch (Throwable ignored) { packHoverTip = s.getName(); }
+            }
             int bg = son ? 0x4000E8A0 : (hov ? 0x28FFFFFF : 0x18FFFFFF);
             roundedFill(g, cx, cy, cx + cw, cy + PACK_CHIP_H, 4, bg);
             if (son) g.fill(cx, cy, cx + 2, cy + PACK_CHIP_H, ac);
