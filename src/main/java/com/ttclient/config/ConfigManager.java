@@ -3,29 +3,27 @@ package com.ttclient.config;
 import com.ttclient.TTClient;
 import com.ttclient.client.TTClientClient;
 import com.ttclient.modules.Module;
-import com.ttclient.modules.render.BlockESP;
-import com.ttclient.modules.world.Nuker;
-import com.ttclient.modules.world.XRay;
 import com.ttclient.settings.*;
 
 import java.io.*;
 import java.nio.file.*;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Properties;
 
 public class ConfigManager {
+    /** Classic/Meteor panel layout: category name -> {x, y, open(0/1)}. */
+    public static final java.util.Map<String, double[]> PANEL_LAYOUT = new java.util.concurrent.ConcurrentHashMap<>();
+
     private final Path configDir;
     private final Path configFile;
-
-    /** Shared layout: category display name -> [x, y, open(1/0)] */
-    public static final Map<String, double[]> PANEL_LAYOUT = new HashMap<>();
 
     public ConfigManager() {
         configDir = Path.of("config", "ttclient");
         configFile = configDir.resolve("config.properties");
-        try { Files.createDirectories(configDir); }
-        catch (IOException e) { TTClient.LOGGER.error("Failed to create config dir", e); }
+        try {
+            Files.createDirectories(configDir);
+        } catch (IOException e) {
+            TTClient.LOGGER.error("Failed to create config dir", e);
+        }
     }
 
     public void save() {
@@ -38,17 +36,14 @@ public class ConfigManager {
             for (Setting<?> s : mod.getSettings()) {
                 props.setProperty(prefix + s.getName().replace(" ", "_"), String.valueOf(s.get()));
             }
-            if (mod instanceof BlockESP be) props.setProperty(prefix + "blocks", be.saveBlocks());
-            if (mod instanceof XRay xr) props.setProperty(prefix + "blocks", xr.saveBlocks());
-            if (mod instanceof Nuker nk) props.setProperty(prefix + "blocks", nk.saveBlocks());
         }
-        for (Map.Entry<String, double[]> e : PANEL_LAYOUT.entrySet()) {
-            String k = e.getKey();
+        for (var e : PANEL_LAYOUT.entrySet()) {
             double[] v = e.getValue();
-            if (v == null || v.length < 2) continue;
-            props.setProperty("gui.panel." + k + ".x", String.valueOf(v[0]));
-            props.setProperty("gui.panel." + k + ".y", String.valueOf(v[1]));
-            if (v.length >= 3) props.setProperty("gui.panel." + k + ".open", String.valueOf(v[2] >= 0.5));
+            if (v != null && v.length >= 3) {
+                props.setProperty("gui.panel." + e.getKey() + ".x", String.valueOf(v[0]));
+                props.setProperty("gui.panel." + e.getKey() + ".y", String.valueOf(v[1]));
+                props.setProperty("gui.panel." + e.getKey() + ".open", String.valueOf(v[2]));
+            }
         }
         try (OutputStream out = Files.newOutputStream(configFile)) {
             props.store(out, "TT Client Config");
@@ -60,8 +55,12 @@ public class ConfigManager {
     public void load() {
         if (!Files.exists(configFile) || TTClientClient.modules == null) return;
         Properties props = new Properties();
-        try (InputStream in = Files.newInputStream(configFile)) { props.load(in); }
-        catch (IOException e) { TTClient.LOGGER.error("Failed to load config", e); return; }
+        try (InputStream in = Files.newInputStream(configFile)) {
+            props.load(in);
+        } catch (IOException e) {
+            TTClient.LOGGER.error("Failed to load config", e);
+            return;
+        }
         for (Module mod : TTClientClient.modules.getModules()) {
             String prefix = mod.getName().replace(" ", "_") + ".";
             String enabled = props.getProperty(prefix + "enabled");
@@ -78,35 +77,16 @@ public class ConfigManager {
                     else if (s instanceof ColorSetting cs) cs.set(Integer.parseInt(val));
                 } catch (Exception ignored) {}
             }
-            if (mod instanceof BlockESP be) {
-                String blocks = props.getProperty(prefix + "blocks");
-                if (blocks != null) be.loadBlocks(blocks);
-            }
-            if (mod instanceof XRay xr) {
-                String blocks = props.getProperty(prefix + "blocks");
-                if (blocks != null) xr.loadBlocks(blocks);
-            }
-            if (mod instanceof Nuker nk) {
-                String blocks = props.getProperty(prefix + "blocks");
-                if (blocks != null) nk.loadBlocks(blocks);
-            }
         }
-        PANEL_LAYOUT.clear();
-        for (String name : props.stringPropertyNames()) {
-            if (!name.startsWith("gui.panel.") || !name.endsWith(".x")) continue;
-            String cat = name.substring("gui.panel.".length(), name.length() - 2);
+        for (String key : props.stringPropertyNames()) {
+            if (!key.startsWith("gui.panel.") || !key.endsWith(".x")) continue;
+            String cat = key.substring("gui.panel.".length(), key.length() - 2);
             try {
-                double px = Double.parseDouble(props.getProperty("gui.panel." + cat + ".x", "0"));
-                double py = Double.parseDouble(props.getProperty("gui.panel." + cat + ".y", "0"));
-                boolean open = Boolean.parseBoolean(props.getProperty("gui.panel." + cat + ".open", "true"));
-                PANEL_LAYOUT.put(cat, new double[]{px, py, open ? 1.0 : 0.0});
+                double x = Double.parseDouble(props.getProperty("gui.panel." + cat + ".x", "20"));
+                double y = Double.parseDouble(props.getProperty("gui.panel." + cat + ".y", "30"));
+                double open = Double.parseDouble(props.getProperty("gui.panel." + cat + ".open", "1"));
+                PANEL_LAYOUT.put(cat, new double[]{x, y, open});
             } catch (Exception ignored) {}
         }
-    }
-
-    public void savePanelLayout(Map<String, double[]> layout) {
-        PANEL_LAYOUT.clear();
-        if (layout != null) PANEL_LAYOUT.putAll(layout);
-        save();
     }
 }
