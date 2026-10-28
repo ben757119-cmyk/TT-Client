@@ -2,7 +2,6 @@ package com.ttclient.modules.client;
 
 import com.ttclient.client.TTClientClient;
 import com.ttclient.gui.ClickGUIScreen;
-import com.ttclient.gui.TTTitleScreen;
 import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
@@ -18,8 +17,8 @@ public class ClickGUIModule extends Module {
     public final ModeSetting style = addSetting(new ModeSetting(
             "Style",
             "ClickGUI layout style",
-            "Island",
-            "Island", "Classic", "Sidebar", "Meteor", "Wurst", "Radial"));
+            "Center",
+            "Center", "Classic", "Sidebar", "Meteor", "Wurst", "Radial"));
 
     public ClickGUIModule() {
         super("ClickGUI", "Opens the TT Client ClickGUI (Right Shift)", Category.CLIENT);
@@ -29,9 +28,11 @@ public class ClickGUIModule extends Module {
     public String styleName() {
         try {
             String s = style.get();
-            return s == null ? "Island" : s;
+            if (s == null) return "Center";
+            if (s.equalsIgnoreCase("Island")) return "Center";
+            return s;
         } catch (Throwable t) {
-            return "Island";
+            return "Center";
         }
     }
 
@@ -42,9 +43,10 @@ public class ClickGUIModule extends Module {
                 if (m != null) return m.styleName();
             }
         } catch (Throwable ignored) {}
-        return "Island";
+        return "Center";
     }
 
+    /** Live accent — solid color or full-speed rainbow when SeizureMode module is on. */
     public int liveAccent() {
         if (isSeizure()) {
             float hue = (System.currentTimeMillis() % 1200L) / 1200f;
@@ -66,10 +68,9 @@ public class ClickGUIModule extends Module {
 
     public static boolean isSeizure() {
         try {
-            if (TTClientClient.modules != null) {
-                SeizureMode s = TTClientClient.modules.getModule(SeizureMode.class);
-                if (s != null && s.isEnabled()) return true;
-            }
+            if (TTClientClient.modules == null) return false;
+            Module s = TTClientClient.modules.getModule("SeizureMode");
+            return s != null && s.isEnabled();
         } catch (Throwable ignored) {}
         return false;
     }
@@ -81,20 +82,12 @@ public class ClickGUIModule extends Module {
             setEnabled(false);
             return;
         }
-        Screen cur;
         try {
-            cur = minecraft.gui.screen();
+            minecraft.gui.setScreen(new ClickGUIScreen());
         } catch (Throwable t) {
-            cur = null;
-        }
-        if (cur == null || cur instanceof TTTitleScreen) {
             try {
-                minecraft.gui.setScreen(new ClickGUIScreen());
-            } catch (Throwable t) {
-                try {
-                    Minecraft.class.getMethod("setScreen", Screen.class).invoke(minecraft, new ClickGUIScreen());
-                } catch (Throwable ignored) {}
-            }
+                Minecraft.class.getMethod("setScreen", Screen.class).invoke(minecraft, new ClickGUIScreen());
+            } catch (Throwable ignored) {}
         }
         setEnabled(false);
     }
