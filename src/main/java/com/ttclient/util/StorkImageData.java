@@ -10,7 +10,9 @@ public final class StorkImageData {
 
     public static byte[] jpegBytes() {
         try {
-            byte[] z = Base64.getDecoder().decode(StorkImageDataA.PART + StorkImageDataB.PART);
+            String b64 = StorkImageDataP0.PART + StorkImageDataP1.PART + StorkImageDataP2.PART
+                    + StorkImageDataP3.PART + StorkImageDataP4.PART + StorkImageDataP5.PART;
+            byte[] z = Base64.getDecoder().decode(b64);
             InflaterInputStream in = new InflaterInputStream(new ByteArrayInputStream(z));
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             byte[] buf = new byte[4096];

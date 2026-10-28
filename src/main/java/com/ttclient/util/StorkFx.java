@@ -7,9 +7,6 @@ import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.Identifier;
 
 import java.io.ByteArrayInputStream;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.Random;
 
 /** Lightning Stork splash (real image) + spoken lines + machine-gun FX. */
@@ -85,34 +82,16 @@ public final class StorkFx {
         } catch (Throwable ignored) {}
     }
 
-    private static String loadPart(String name) {
-        try (InputStream in = StorkFx.class.getResourceAsStream(
-                "/assets/ttclient/textures/gui/" + name)) {
-            if (in == null) return "";
-            return new String(in.readAllBytes(), StandardCharsets.US_ASCII).replaceAll("\\s", "");
-        } catch (Throwable t) {
-            return "";
-        }
-    }
-
     private static void ensureTexture() {
         if (textureReady || textureFailed) return;
         try {
-            String b64 = loadPart("lightning_stork_0.b64")
-                    + loadPart("lightning_stork_1.b64")
-                    + loadPart("lightning_stork_2.b64");
-            if (b64.isEmpty()) {
-                // legacy single-file fallback
-                b64 = loadPart("lightning_stork.b64");
-            }
-            if (b64.isEmpty()) {
+            byte[] raw = StorkImageData.jpegBytes();
+            if (raw == null || raw.length == 0) {
                 textureFailed = true;
                 return;
             }
-            byte[] raw = Base64.getDecoder().decode(b64);
-
             Class<?> niCl = Class.forName("com.mojang.blaze3d.platform.NativeImage");
-            Object nativeImg = niCl.getMethod("read", InputStream.class)
+            Object nativeImg = niCl.getMethod("read", java.io.InputStream.class)
                     .invoke(null, new ByteArrayInputStream(raw));
             DynamicTexture dyn = DynamicTexture.class.getConstructor(niCl).newInstance(nativeImg);
             Object texMgr = Minecraft.getInstance().getTextureManager();
@@ -158,7 +137,7 @@ public final class StorkFx {
             g.fill(ix, iy, ix + img, iy + img, (a << 24) | 0x102038);
         }
 
-        // ring only — no written titles by the image (spoken instead)
+        // ring only — spoken lines, no text written by the image
         spinAngle += 10f;
         int cx = sw / 2, cy = iy + img / 2;
         for (int i = 0; i < 16; i++) {
@@ -193,8 +172,6 @@ public final class StorkFx {
             }
             g.fill(0, 0, sw, 4, ((a / 3) << 24) | 0xFF3030);
             g.fill(0, sh - 4, sw, sh, ((a / 3) << 24) | 0xFF3030);
-            g.fill(0, 0, 4, sh, ((a / 4) << 24) | 0xFF3030);
-            g.fill(sw - 4, 0, sw, sh, ((a / 4) << 24) | 0xFF3030);
             flashAlpha = Math.max(0, flashAlpha - 28);
         }
         String tag = "MACHINE GUN // STRIKING";
