@@ -4,7 +4,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -14,8 +14,8 @@ import java.util.Random;
 
 /** Lightning Stork activation splash + machine-gun strike FX. */
 public final class StorkFx {
-    private static final ResourceLocation TEX_ID =
-            ResourceLocation.fromNamespaceAndPath("ttclient", "gui/lightning_stork_dyn");
+    private static final Identifier TEX_ID =
+            Identifier.fromNamespaceAndPath("ttclient", "gui/lightning_stork_dyn");
     private static boolean textureReady;
     private static boolean textureFailed;
     private static final Random RND = new Random();
@@ -70,7 +70,7 @@ public final class StorkFx {
                     .invoke(null, new ByteArrayInputStream(raw));
             DynamicTexture dyn = DynamicTexture.class.getConstructor(niCl).newInstance(nativeImg);
             Object texMgr = Minecraft.getInstance().getTextureManager();
-            texMgr.getClass().getMethod("register", ResourceLocation.class,
+            texMgr.getClass().getMethod("register", Identifier.class,
                             Class.forName("net.minecraft.client.renderer.texture.AbstractTexture"))
                     .invoke(texMgr, TEX_ID, dyn);
             textureReady = true;
@@ -171,11 +171,11 @@ public final class StorkFx {
             for (var m : g.getClass().getMethods()) {
                 if (!m.getName().toLowerCase().contains("blit")) continue;
                 Class<?>[] p = m.getParameterTypes();
-                if (p.length >= 9 && ResourceLocation.class.isAssignableFrom(p[0])) {
+                if (p.length >= 9 && Identifier.class.isAssignableFrom(p[0])) {
                     m.invoke(g, TEX_ID, x, y, 0f, 0f, w, h, w, h);
                     return;
                 }
-                if (p.length >= 6 && ResourceLocation.class.isAssignableFrom(p[0])) {
+                if (p.length >= 6 && Identifier.class.isAssignableFrom(p[0])) {
                     m.invoke(g, TEX_ID, x, y, 0, 0, w, h);
                     return;
                 }
@@ -187,7 +187,7 @@ public final class StorkFx {
                 for (var m : inner.getClass().getMethods()) {
                     if (!m.getName().toLowerCase().contains("blit")) continue;
                     Class<?>[] p = m.getParameterTypes();
-                    if (p.length >= 9 && ResourceLocation.class.isAssignableFrom(p[0])) {
+                    if (p.length >= 9 && Identifier.class.isAssignableFrom(p[0])) {
                         m.invoke(inner, TEX_ID, x, y, 0f, 0f, w, h, w, h);
                         return;
                     }
