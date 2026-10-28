@@ -34,7 +34,7 @@ public class ESP extends Module {
     public final NumberSetting hitRange = addSetting(new NumberSetting("HitRange", "Range treated as attackable", 4.5, 2, 8, 0.1));
 
     public ESP() {
-        super("ESP", "Entity highlighting (aim colors)", Category.RENDER, Module.Risk.GHOST);
+        super("ESP", "Entity highlighting (aim colors)", Category.RENDER);
     }
 
     @Override
