@@ -3,18 +3,14 @@ package com.ttclient.util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.resources.Identifier;
 
-import java.io.ByteArrayInputStream;
 import java.util.Random;
 
-/** Lightning Stork splash (real image) + spoken lines + machine-gun FX. */
+/**
+ * Im Storking It FX — giant crosshair activation splash, spoken lines, strike flashes.
+ * No stork image; pure geometric crosshair.
+ */
 public final class StorkFx {
-    private static final Identifier TEX_ID =
-            Identifier.fromNamespaceAndPath("ttclient", "gui/lightning_stork_dyn");
-    private static boolean textureReady;
-    private static boolean textureFailed;
     private static final Random RND = new Random();
 
     private static long splashUntil;
@@ -22,16 +18,25 @@ public final class StorkFx {
     private static long nextFlashAt;
     private static int flashAlpha;
     private static float spinAngle;
-    private static boolean spoken;
+    private static boolean spokenActivate;
+    private static boolean spokenDeath;
 
     private StorkFx() {}
 
     public static void startSplash() {
-        splashUntil = System.currentTimeMillis() + 3600L;
+        splashUntil = System.currentTimeMillis() + 3200L;
         spinAngle = 0f;
-        spoken = false;
-        ensureTexture();
-        speakNow();
+        spokenActivate = false;
+        spokenDeath = false;
+        speak("Want to see death in its cold dark eyes?",
+                "Want to see death in its cold dark eyes?");
+        spokenActivate = true;
+    }
+
+    public static void speakDeath() {
+        if (spokenDeath) return;
+        spokenDeath = true;
+        speak("Death embraces you.", "Death embraces you.");
     }
 
     public static void setGunActive(boolean on) {
@@ -40,15 +45,11 @@ public final class StorkFx {
     }
 
     public static void onHit() {
-        if (!gunActive) return;
-        flashAlpha = 230;
-        nextFlashAt = System.currentTimeMillis() + 30L;
+        flashAlpha = 240;
+        nextFlashAt = System.currentTimeMillis() + 24L;
     }
 
-    private static void speakNow() {
-        if (spoken) return;
-        spoken = true;
-        String lines = "Lighting Stork activated. 360 spin initiated";
+    private static void speak(String narratorLine, String notifyBody) {
         try {
             Minecraft mc = Minecraft.getInstance();
             try {
@@ -58,11 +59,11 @@ public final class StorkFx {
                         if (!m.getName().equals("say") && !m.getName().equals("saySystemMessage")) continue;
                         Class<?>[] p = m.getParameterTypes();
                         if (p.length == 2 && p[0] == String.class && p[1] == boolean.class) {
-                            m.invoke(narrator, lines, true);
+                            m.invoke(narrator, narratorLine, true);
                             return;
                         }
                         if (p.length == 1 && p[0] == String.class) {
-                            m.invoke(narrator, lines);
+                            m.invoke(narrator, narratorLine);
                             return;
                         }
                     }
@@ -71,143 +72,141 @@ public final class StorkFx {
             try {
                 Class<?> nCl = Class.forName("com.mojang.text2speech.Narrator");
                 Object n = nCl.getMethod("getNarrator").invoke(null);
-                nCl.getMethod("say", String.class, boolean.class).invoke(n, lines, true);
+                nCl.getMethod("say", String.class, boolean.class).invoke(n, narratorLine, true);
                 return;
             } catch (Throwable ignored) {}
             try {
                 Class.forName("com.ttclient.client.NotificationManager")
                         .getMethod("push", String.class, String.class)
-                        .invoke(null, "LIGHTING STORK ACTIVATED", "360 SPIN INITIADED");
+                        .invoke(null, "Im Storking It", notifyBody);
+            } catch (Throwable ignored) {}
+            try {
+                if (mc.player != null) {
+                    mc.player.displayClientMessage(
+                            net.minecraft.network.chat.Component.literal("§c" + notifyBody), false);
+                }
             } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
     }
 
-    private static void ensureTexture() {
-        if (textureReady || textureFailed) return;
-        try {
-            byte[] raw = StorkImageData.jpegBytes();
-            if (raw == null || raw.length == 0) {
-                textureFailed = true;
-                return;
-            }
-            Class<?> niCl = Class.forName("com.mojang.blaze3d.platform.NativeImage");
-            Object nativeImg = niCl.getMethod("read", java.io.InputStream.class)
-                    .invoke(null, new ByteArrayInputStream(raw));
-            DynamicTexture dyn = DynamicTexture.class.getConstructor(niCl).newInstance(nativeImg);
-            Object texMgr = Minecraft.getInstance().getTextureManager();
-            texMgr.getClass().getMethod("register", Identifier.class,
-                            Class.forName("net.minecraft.client.renderer.texture.AbstractTexture"))
-                    .invoke(texMgr, TEX_ID, dyn);
-            textureReady = true;
-        } catch (Throwable t) {
-            textureFailed = true;
-        }
-    }
-
     public static void render(GuiGraphicsExtractor g, Font font, int sw, int sh) {
         long now = System.currentTimeMillis();
-        if (now < splashUntil) renderSplash(g, font, sw, sh, now);
+        if (now < splashUntil) renderCrosshairSplash(g, sw, sh, now);
         if (gunActive) renderGun(g, font, sw, sh, now);
     }
 
-    private static void renderSplash(GuiGraphicsExtractor g, Font font, int sw, int sh, long now) {
+    /** Giant animated crosshair — replaces the old stork image. */
+    private static void renderCrosshairSplash(GuiGraphicsExtractor g, int sw, int sh, long now) {
         long left = splashUntil - now;
-        float life = 1f - (left / 3600f);
+        float life = 1f - (left / 3200f);
         float alpha;
-        if (life < 0.12f) alpha = life / 0.12f;
-        else if (life > 0.80f) alpha = (1f - life) / 0.20f;
+        if (life < 0.15f) alpha = life / 0.15f;
+        else if (life > 0.75f) alpha = (1f - life) / 0.25f;
         else alpha = 1f;
-        int a = Math.max(0, Math.min(255, (int) (alpha * 245)));
+        int a = Math.max(0, Math.min(255, (int) (alpha * 230)));
 
-        g.fill(0, 0, sw, sh, (Math.min(200, a) << 24));
+        // dark veil
+        g.fill(0, 0, sw, sh, (Math.min(180, a) << 24));
 
-        int img = Math.min(220, Math.min(sw, sh) * 2 / 5);
-        int ix = (sw - img) / 2;
-        int iy = (sh - img) / 2 - 8;
+        int cx = sw / 2;
+        int cy = sh / 2;
+        spinAngle += 6f;
 
-        g.fill(ix - 10, iy - 10, ix + img + 10, iy + img + 10, (a << 24) | 0x080A12);
-        g.fill(ix - 10, iy - 10, ix - 7, iy + img + 10, (a << 24) | 0x00A8FF);
-        g.fill(ix + img + 7, iy - 10, ix + img + 10, iy + img + 10, (a << 24) | 0x00A8FF);
-        g.fill(ix - 10, iy - 10, ix + img + 10, iy - 7, (a << 24) | 0x00A8FF);
-        g.fill(ix - 10, iy + img + 7, ix + img + 10, iy + img + 10, (a << 24) | 0x00A8FF);
-
-        if (textureReady) {
-            tryBlit(g, ix, iy, img, img);
-        } else {
-            g.fill(ix, iy, ix + img, iy + img, (a << 24) | 0x102038);
+        // outer rotating ring ticks
+        int ringR = Math.min(sw, sh) * 28 / 100;
+        for (int i = 0; i < 24; i++) {
+            double ang = Math.toRadians(spinAngle + i * 15.0);
+            int len = (i % 3 == 0) ? 18 : 10;
+            int x1 = cx + (int) (Math.cos(ang) * ringR);
+            int y1 = cy + (int) (Math.sin(ang) * ringR);
+            int x2 = cx + (int) (Math.cos(ang) * (ringR + len));
+            int y2 = cy + (int) (Math.sin(ang) * (ringR + len));
+            thickLine(g, x1, y1, x2, y2, 2, (a << 24) | 0xE8F0FF);
         }
 
-        // ring only — spoken lines, no text written by the image
-        spinAngle += 10f;
-        int cx = sw / 2, cy = iy + img / 2;
-        for (int i = 0; i < 16; i++) {
-            double ang = Math.toRadians(spinAngle + i * 22.5);
-            int x1 = cx + (int) (Math.cos(ang) * (img / 2 + 8));
-            int y1 = cy + (int) (Math.sin(ang) * (img / 2 + 8));
-            int x2 = cx + (int) (Math.cos(ang) * (img / 2 + 20));
-            int y2 = cy + (int) (Math.sin(ang) * (img / 2 + 20));
-            g.fill(Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2) + 2, Math.max(y1, y2) + 2,
-                    (a << 24) | 0x00A8FF);
+        // giant crosshair arms
+        int arm = Math.min(sw, sh) * 22 / 100;
+        int gap = 18;
+        int t = 4;
+        int col = (a << 24) | 0xFF3040;
+        int colCore = (a << 24) | 0xFFFFFF;
+
+        // horizontal
+        g.fill(cx - arm, cy - t, cx - gap, cy + t, col);
+        g.fill(cx + gap, cy - t, cx + arm, cy + t, col);
+        // vertical
+        g.fill(cx - t, cy - arm, cx + t, cy - gap, col);
+        g.fill(cx - t, cy + gap, cx + t, cy + arm, col);
+
+        // inner bright core
+        g.fill(cx - 2, cy - 2, cx + 2, cy + 2, colCore);
+
+        // corner brackets
+        int br = arm + 12;
+        int bl = 16;
+        int bt = 3;
+        // top-left
+        g.fill(cx - br, cy - br, cx - br + bl, cy - br + bt, col);
+        g.fill(cx - br, cy - br, cx - br + bt, cy - br + bl, col);
+        // top-right
+        g.fill(cx + br - bl, cy - br, cx + br, cy - br + bt, col);
+        g.fill(cx + br - bt, cy - br, cx + br, cy - br + bl, col);
+        // bottom-left
+        g.fill(cx - br, cy + br - bt, cx - br + bl, cy + br, col);
+        g.fill(cx - br, cy + br - bl, cx - br + bt, cy + br, col);
+        // bottom-right
+        g.fill(cx + br - bl, cy + br - bt, cx + br, cy + br, col);
+        g.fill(cx + br - bt, cy + br - bl, cx + br, cy + br, col);
+
+        // pulsing diamond
+        int pulse = 6 + (int) (4 * Math.sin(now / 80.0));
+        g.fill(cx - pulse, cy - 1, cx + pulse, cy + 1, (a << 24) | 0xFF6680);
+        g.fill(cx - 1, cy - pulse, cx + 1, cy + pulse, (a << 24) | 0xFF6680);
+    }
+
+    private static void thickLine(GuiGraphicsExtractor g, int x1, int y1, int x2, int y2, int t, int color) {
+        int dx = Math.abs(x2 - x1);
+        int dy = Math.abs(y2 - y1);
+        int steps = Math.max(dx, dy);
+        if (steps < 1) {
+            g.fill(x1 - t / 2, y1 - t / 2, x1 + t / 2 + 1, y1 + t / 2 + 1, color);
+            return;
+        }
+        for (int i = 0; i <= steps; i++) {
+            int x = x1 + (x2 - x1) * i / steps;
+            int y = y1 + (y2 - y1) * i / steps;
+            g.fill(x - t / 2, y - t / 2, x + t / 2 + 1, y + t / 2 + 1, color);
         }
     }
 
     private static void renderGun(GuiGraphicsExtractor g, Font font, int sw, int sh, long now) {
         if (now >= nextFlashAt) {
-            flashAlpha = 170 + RND.nextInt(70);
-            nextFlashAt = now + 28 + RND.nextInt(25);
+            flashAlpha = 180 + RND.nextInt(70);
+            nextFlashAt = now + 22 + RND.nextInt(30);
         }
         if (flashAlpha > 0) {
             int a = Math.min(255, flashAlpha);
             int cx = sw / 2, cy = sh / 2;
-            int s = 8 + RND.nextInt(22);
+            // crosshair flash
+            int s = 14 + RND.nextInt(28);
             g.fill(cx - s, cy - 2, cx + s, cy + 2, (a << 24) | 0xFFE8A0);
             g.fill(cx - 2, cy - s, cx + 2, cy + s, (a << 24) | 0xFFC040);
-            for (int i = 0; i < 7; i++) {
+            // lightning spokes
+            for (int i = 0; i < 8; i++) {
                 double ang = RND.nextDouble() * Math.PI * 2;
-                int len = 24 + RND.nextInt(60);
+                int len = 30 + RND.nextInt(70);
                 int x2 = cx + (int) (Math.cos(ang) * len);
                 int y2 = cy + (int) (Math.sin(ang) * len);
-                g.fill(Math.min(cx, x2), Math.min(cy, y2), Math.max(cx, x2) + 1, Math.max(cy, y2) + 1,
-                        ((a * 2 / 3) << 24) | 0xFFEE88);
+                thickLine(g, cx, cy, x2, y2, 2, ((a * 2 / 3) << 24) | 0xFFEE88);
             }
-            g.fill(0, 0, sw, 4, ((a / 3) << 24) | 0xFF3030);
-            g.fill(0, sh - 4, sw, sh, ((a / 3) << 24) | 0xFF3030);
-            flashAlpha = Math.max(0, flashAlpha - 28);
+            g.fill(0, 0, sw, 5, ((a / 3) << 24) | 0xFF3030);
+            g.fill(0, sh - 5, sw, sh, ((a / 3) << 24) | 0xFF3030);
+            flashAlpha = Math.max(0, flashAlpha - 32);
         }
-        String tag = "MACHINE GUN // STRIKING";
+        String tag = "STRIKING";
         int tw = font.width(tag);
         g.fill(sw / 2 - tw / 2 - 8, 8, sw / 2 + tw / 2 + 8, 22, 0xD0080A0E);
         g.fill(sw / 2 - tw / 2 - 8, 8, sw / 2 - tw / 2 - 5, 22, 0xFFFF4466);
         g.text(font, tag, (sw - tw) / 2, 11, 0xFFFF6680, false);
-    }
-
-    private static void tryBlit(GuiGraphicsExtractor g, int x, int y, int w, int h) {
-        try {
-            for (var m : g.getClass().getMethods()) {
-                if (!m.getName().toLowerCase().contains("blit")) continue;
-                Class<?>[] p = m.getParameterTypes();
-                if (p.length >= 9 && Identifier.class.isAssignableFrom(p[0])) {
-                    m.invoke(g, TEX_ID, x, y, 0f, 0f, w, h, w, h);
-                    return;
-                }
-                if (p.length >= 6 && Identifier.class.isAssignableFrom(p[0])) {
-                    m.invoke(g, TEX_ID, x, y, 0, 0, w, h);
-                    return;
-                }
-            }
-            for (var f : g.getClass().getDeclaredFields()) {
-                f.setAccessible(true);
-                Object inner = f.get(g);
-                if (inner == null) continue;
-                for (var m : inner.getClass().getMethods()) {
-                    if (!m.getName().toLowerCase().contains("blit")) continue;
-                    Class<?>[] p = m.getParameterTypes();
-                    if (p.length >= 9 && Identifier.class.isAssignableFrom(p[0])) {
-                        m.invoke(inner, TEX_ID, x, y, 0f, 0f, w, h, w, h);
-                        return;
-                    }
-                }
-            }
-        } catch (Throwable ignored) {}
     }
 }
