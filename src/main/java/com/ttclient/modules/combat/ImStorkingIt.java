@@ -17,13 +17,17 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.Comparator;
+import java.util.Random;
 
 /**
- * Im Storking It — LightningStork-style TP aura for NeoForge 26.2.
+ * Im Storking It — faithful NeoForge 26.2 port of LightningStork.
  *
- * Sequence: hover intro → rise to Height while spinning body (silent rot keeps POV)
- * → freeze → hold altitude and hop-attack nearest player (position packets), hop home.
- * Client body stays at the top; server-side position is spoofed for hits.
+ * Sequence:
+ *   INTRO  — hover in place
+ *   RISING — climb to Height while body spins (silent rot keeps camera)
+ *   FROZEN — hold altitude, keep spinning
+ *   STRIKING — soft timer boost + hop packets to target, attack, hop home.
+ * Client body stays at the top; only server-side position is spoofed for hits.
  */
 public class ImStorkingIt extends Module {
     public final NumberSetting height = addSetting(new NumberSetting(
@@ -31,7 +35,7 @@ public class ImStorkingIt extends Module {
     public final NumberSetting riseSpeed = addSetting(new NumberSetting(
             "RiseSpeed", "Vertical rise speed", 0.25, 0.05, 1.0, 0.05));
     public final NumberSetting range = addSetting(new NumberSetting(
-            "Range", "Target search range", 128.0, 16.0, 256.0, 1.0));
+            "Range", "Target search range", 256.0, 16.0, 256.0, 1.0));
     public final NumberSetting hopSize = addSetting(new NumberSetting(
             "Hop", "Max blocks per move packet (servers reject >=10)", 8.5, 2.0, 9.5, 0.1));
     public final NumberSetting strikeDist = addSetting(new NumberSetting(
@@ -63,6 +67,10 @@ public class ImStorkingIt extends Module {
 
     private static final float MIN_SPIN = 4.0f;
     private static final float MAX_SPIN = 45.0f;
+    private static final long BOLT_EVERY_NANOS = 150_000_000L;
+    private static final long SHAKE_NANOS = 280_000_000L;
+    private static final float SHAKE_DEGREES = 2.5f;
+    private static final Random RANDOM = new Random();
 
     private int phase = IDLE;
     private float spinYaw;
@@ -70,6 +78,7 @@ public class ImStorkingIt extends Module {
     private int introLeft;
     private long nextHitAt;
     private long nextBoltAt;
+    private long shakeUntil;
     private int boltId;
     private boolean timerOn;
 
@@ -92,6 +101,7 @@ public class ImStorkingIt extends Module {
         freezeLeft = 0;
         nextHitAt = 0L;
         nextBoltAt = 0L;
+        shakeUntil = 0L;
         timerOn = false;
     }
 
@@ -102,6 +112,7 @@ public class ImStorkingIt extends Module {
         freezeLeft = 0;
         introLeft = 0;
         nextHitAt = 0L;
+        shakeUntil = 0L;
     }
 
     @Override
@@ -137,7 +148,7 @@ public class ImStorkingIt extends Module {
                 spin(player, MAX_SPIN);
                 if (--freezeLeft <= 0) {
                     phase = STRIKING;
-                    setTimer(mc, (float) timerSpeed.get());
+                    setTimer(mc, timerSpeed.getFloat());
                 }
             }
             case STRIKING -> {
@@ -150,8 +161,10 @@ public class ImStorkingIt extends Module {
                 aim(player, target);
                 long now = System.nanoTime();
                 float charge = 0.0f;
-                try { charge = player.getAttackStrengthScale(0.5f); } catch (Throwable ignored) {}
-                if (now >= nextHitAt && charge >= (float) minCharge.get()) {
+                try {
+                    charge = player.getAttackStrengthScale(0.5f);
+                } catch (Throwable ignored) {}
+                if (now >= nextHitAt && charge >= minCharge.getFloat()) {
                     nextHitAt = now + (long) (1_000_000_000L / Math.max(0.5, cps.get()));
                     teleportHit(mc, player, target);
                 }
@@ -174,10 +187,15 @@ public class ImStorkingIt extends Module {
         Vec3 strike = target.position().add(offset);
 
         hop(connection, player, home, strike);
-        try { mc.gameMode.attack(player, target); } catch (Throwable ignored) {}
-        try { player.swing(InteractionHand.MAIN_HAND); } catch (Throwable ignored) {}
+        try {
+            mc.gameMode.attack(player, target);
+        } catch (Throwable ignored) {}
+        try {
+            player.swing(InteractionHand.MAIN_HAND);
+        } catch (Throwable ignored) {}
         hop(connection, player, strike, home);
 
+        shakeUntil = System.nanoTime() + SHAKE_NANOS;
         if (visualBolt.get()) strikeBolt(mc, target);
         SilentRotate.markTarget(target);
     }
@@ -187,7 +205,9 @@ public class ImStorkingIt extends Module {
         double hop = hopSize.get();
         int steps = Math.max(1, (int) Math.ceil(path.length() / hop));
         boolean horiz = false;
-        try { horiz = player.horizontalCollision; } catch (Throwable ignored) {}
+        try {
+            horiz = player.horizontalCollision;
+        } catch (Throwable ignored) {}
         for (int i = 1; i <= steps; i++) {
             Vec3 at = from.add(path.scale(i / (double) steps));
             sendPos(connection, at.x, at.y, at.z, false, horiz);
@@ -229,7 +249,7 @@ public class ImStorkingIt extends Module {
     private void strikeBolt(Minecraft mc, Player target) {
         long now = System.nanoTime();
         if (now < nextBoltAt || mc.level == null) return;
-        nextBoltAt = now + 150_000_000L;
+        nextBoltAt = now + BOLT_EVERY_NANOS;
         try {
             Object bolt = null;
             Class<?> types = Class.forName("net.minecraft.world.entity.EntityType");
@@ -238,7 +258,7 @@ public class ImStorkingIt extends Module {
                 Class<?> reason = Class.forName("net.minecraft.world.entity.EntitySpawnReason");
                 Object triggered = reason.getField("TRIGGERED").get(null);
                 bolt = type.getClass().getMethod("create",
-                        net.minecraft.world.level.Level.class, reason)
+                                net.minecraft.world.level.Level.class, reason)
                         .invoke(type, mc.level, triggered);
             } catch (Throwable t1) {
                 try {
@@ -247,7 +267,9 @@ public class ImStorkingIt extends Module {
                 } catch (Throwable ignored) {}
             }
             if (bolt == null) return;
-            try { bolt.getClass().getMethod("setVisualOnly", boolean.class).invoke(bolt, true); } catch (Throwable ignored) {}
+            try {
+                bolt.getClass().getMethod("setVisualOnly", boolean.class).invoke(bolt, true);
+            } catch (Throwable ignored) {}
             try {
                 bolt.getClass().getMethod("setId", int.class)
                         .invoke(bolt, -1_000_000 - (boltId++ & 0xFFFF));
@@ -266,6 +288,22 @@ public class ImStorkingIt extends Module {
                 } catch (Throwable ignored) {}
             }
         } catch (Throwable ignored) {}
+    }
+
+    /** Optional camera shake amount after a hit (for external render hooks). */
+    public float shakeYaw() {
+        return shake();
+    }
+
+    public float shakePitch() {
+        return shake() * 0.6f;
+    }
+
+    private float shake() {
+        long left = shakeUntil - System.nanoTime();
+        if (left <= 0) return 0.0f;
+        float strength = SHAKE_DEGREES * left / (float) SHAKE_NANOS;
+        return (RANDOM.nextFloat() * 2.0f - 1.0f) * strength;
     }
 
     private double heightAboveGround(Minecraft client, LocalPlayer player) {
@@ -322,15 +360,38 @@ public class ImStorkingIt extends Module {
                 .filter(other -> other != self && other.isAlive() && !other.isSpectator())
                 .filter(other -> {
                     if (ignoreFriends.get()) {
-                        try {
-                            String name = other.getGameProfile().getName();
-                            if (FriendsManager.isFriend(name)) return false;
-                        } catch (Throwable ignored) {}
+                        String name = playerName(other);
+                        if (name != null && FriendsManager.isFriend(name)) return false;
                     }
                     return self.distanceToSqr(other) <= r2;
                 })
                 .min(Comparator.comparingDouble(self::distanceToSqr))
                 .orElse(null);
+    }
+
+    /** Robust name extraction for 26.2 GameProfile API differences. */
+    private static String playerName(Player p) {
+        if (p == null) return null;
+        try {
+            var profile = p.getGameProfile();
+            if (profile == null) return null;
+            try {
+                return (String) profile.getClass().getMethod("getName").invoke(profile);
+            } catch (Throwable t1) {
+                try {
+                    return (String) profile.getClass().getMethod("name").invoke(profile);
+                } catch (Throwable t2) {
+                    try {
+                        Object name = profile.getClass().getMethod("name").invoke(profile);
+                        if (name != null) return name.toString();
+                    } catch (Throwable ignored) {}
+                }
+            }
+        } catch (Throwable ignored) {}
+        try {
+            return p.getName().getString();
+        } catch (Throwable ignored) {}
+        return null;
     }
 
     private void setTimer(Minecraft client, float speed) {
