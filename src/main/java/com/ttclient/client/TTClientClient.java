@@ -89,6 +89,18 @@ public class TTClientClient {
         } catch (Throwable ignored) {}
     }
 
+    /** True while on connect / progress / receiving-level screens — skip heavy module work. */
+    private static boolean isConnectingScreen(Screen s) {
+        if (s == null) return false;
+        if (s instanceof TTConnectScreen) return true;
+        String n = s.getClass().getName().toLowerCase();
+        String simple = s.getClass().getSimpleName().toLowerCase();
+        return (n.contains("connect") && !n.contains("disconnect"))
+                || n.contains("progressscreen")
+                || n.contains("receivinglevel")
+                || (simple.contains("connect") && !simple.contains("disconnect"));
+    }
+
     @SubscribeEvent
     public void onScreenOpen(ScreenEvent.Opening event) {
         try {
@@ -168,8 +180,10 @@ public class TTClientClient {
         try {
             Screen s = event.getScreen();
             if (s == null) return;
+            // Skip brand chrome on connect path — reduces join jank
             if (s instanceof TTConnectScreen || s instanceof TTDisconnectedScreen
                     || s instanceof TTBanScreen || s instanceof TTTitleScreen) return;
+            if (isConnectingScreen(s)) return;
             GuiGraphicsExtractor g = event.getGuiGraphics();
             if (g == null) return;
             TTBrand.drawAll(g, s);
@@ -181,7 +195,13 @@ public class TTClientClient {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || modules == null) return;
 
-        try { ChunkMeshReload.tick(); } catch (Throwable ignored) {}
+        Screen screen = currentScreen(mc);
+        boolean connecting = isConnectingScreen(screen);
+
+        // During connect: skip ChunkMeshReload + full module ticks (join lag)
+        if (!connecting) {
+            try { ChunkMeshReload.tick(); } catch (Throwable ignored) {}
+        }
 
         try {
             if (mc.player != null) {
@@ -201,7 +221,7 @@ public class TTClientClient {
             long win = mc.getWindow().handle();
             boolean down = GLFW.glfwGetKey(win, GLFW.GLFW_KEY_PERIOD) == GLFW.GLFW_PRESS;
             if (down && !periodWasDown) {
-                if (currentScreen(mc) == null) openChatWith(mc, ".");
+                if (screen == null) openChatWith(mc, ".");
             }
             periodWasDown = down;
         } catch (Throwable ignored) {}
@@ -212,14 +232,15 @@ public class TTClientClient {
             long win = mc.getWindow().handle();
             boolean down = GLFW.glfwGetKey(win, guiKey) == GLFW.GLFW_PRESS;
             if (down && !guiKeyWasDown) {
-                Screen screen = currentScreen(mc);
                 if (screen instanceof ClickGUIScreen) openScreen(mc, null);
                 else if (screen == null || screen instanceof TTTitleScreen) openScreen(mc, new ClickGUIScreen());
             }
             guiKeyWasDown = down;
         } catch (Throwable ignored) {}
 
-        try { modules.onTick(); } catch (Throwable ignored) {}
+        if (!connecting) {
+            try { modules.onTick(); } catch (Throwable ignored) {}
+        }
     }
 
     @SubscribeEvent

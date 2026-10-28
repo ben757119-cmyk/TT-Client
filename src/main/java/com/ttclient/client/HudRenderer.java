@@ -6,6 +6,7 @@ import com.ttclient.modules.client.ArrayListMod;
 import com.ttclient.modules.client.HUD;
 import com.ttclient.modules.client.Keystrokes;
 import com.ttclient.modules.client.Notifications;
+import com.ttclient.modules.client.StreamerMode;
 import com.ttclient.modules.combat.Destroyer;
 import com.ttclient.modules.render.Crosshair;
 import net.minecraft.client.Minecraft;
@@ -20,7 +21,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/** In-game HUD — montage / CPVP client style. */
+/** In-game HUD — montage / CPVP client style. Respects StreamerMode local-hide. */
 public class HudRenderer {
 
     private static final int ACCENT = 0xFF00E8A0;
@@ -30,6 +31,9 @@ public class HudRenderer {
 
     @SubscribeEvent
     public void onRenderGui(RenderGuiEvent.Post event) {
+        // StreamerMode: OS capture-exclude keeps UI for you; local-hide fallback skips draw
+        if (StreamerMode.shouldHideLocalUi()) return;
+
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
         try {
@@ -51,7 +55,6 @@ public class HudRenderer {
             drawArrayList(g, font, array, sw);
         }
 
-        // Target HUD when Destroyer is on
         Destroyer dest = TTClient.modules != null ? TTClient.modules.getModule(Destroyer.class) : null;
         if (dest != null && dest.isEnabled()) {
             drawTargetHud(g, font, mc, sw, sh);

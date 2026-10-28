@@ -9,13 +9,16 @@ import java.util.Locale;
 import java.util.Random;
 
 /**
- * Im Storking It FX — giant crosshair activation splash, spoken lines, strike flashes.
- * No stork image; pure geometric crosshair.
+ * Im Storking It FX — giant crosshair stays up from activation until target death
+ * (or module disable). Chat lines + strike flashes.
  */
 public final class StorkFx {
     private static final Random RND = new Random();
 
-    private static long splashUntil;
+    /** Crosshair active from enable until death/disable (not a short timed splash). */
+    private static boolean splashActive;
+    private static long splashStartedAt;
+    private static long splashFadeOutUntil; // after death, brief fade then clear
     private static boolean gunActive;
     private static long nextFlashAt;
     private static int flashAlpha;
@@ -26,7 +29,9 @@ public final class StorkFx {
     private StorkFx() {}
 
     public static void startSplash() {
-        splashUntil = System.currentTimeMillis() + 3200L;
+        splashActive = true;
+        splashStartedAt = System.currentTimeMillis();
+        splashFadeOutUntil = 0L;
         spinAngle = 0f;
         spokenActivate = false;
         spokenDeath = false;
@@ -35,10 +40,21 @@ public final class StorkFx {
         spokenActivate = true;
     }
 
+    /** Target died — say the line, then fade crosshair out over ~1.2s. */
     public static void speakDeath() {
         if (spokenDeath) return;
         spokenDeath = true;
         speak("Death embraces you.", "Death embraces you.");
+        // Keep crosshair visible briefly then fade; user asked it last until they die
+        splashFadeOutUntil = System.currentTimeMillis() + 1200L;
+    }
+
+    /** Module disabled / cancelled — drop FX immediately. */
+    public static void endSplash() {
+        splashActive = false;
+        splashFadeOutUntil = 0L;
+        gunActive = false;
+        flashAlpha = 0;
     }
 
     public static void setGunActive(boolean on) {
@@ -52,7 +68,6 @@ public final class StorkFx {
     }
 
     private static void speak(String narratorLine, String notifyBody) {
-        // Always put the line in chat first (user request). Narrator / notify are extras.
         chatClientOnly("§c[Stork] §f" + notifyBody);
         try {
             Minecraft mc = Minecraft.getInstance();
@@ -81,7 +96,6 @@ public final class StorkFx {
         } catch (Throwable ignored) {}
     }
 
-    /** 26.2-safe client chat: reflection over displayClientMessage / sendSystemMessage / ChatComponent.addMessage. */
     private static void chatClientOnly(String body) {
         if (body == null) return;
         try {
@@ -166,20 +180,33 @@ public final class StorkFx {
 
     public static void render(GuiGraphicsExtractor g, Font font, int sw, int sh) {
         long now = System.currentTimeMillis();
-        if (now < splashUntil) renderCrosshairSplash(g, sw, sh, now);
+
+        // After death: fade then clear
+        if (splashFadeOutUntil > 0L) {
+            if (now >= splashFadeOutUntil) {
+                splashActive = false;
+                splashFadeOutUntil = 0L;
+            }
+        }
+
+        if (splashActive) renderCrosshairSplash(g, sw, sh, now);
         if (gunActive) renderGun(g, font, sw, sh, now);
     }
 
     private static void renderCrosshairSplash(GuiGraphicsExtractor g, int sw, int sh, long now) {
-        long left = splashUntil - now;
-        float life = 1f - (left / 3200f);
-        float alpha;
-        if (life < 0.15f) alpha = life / 0.15f;
-        else if (life > 0.75f) alpha = (1f - life) / 0.25f;
-        else alpha = 1f;
+        float alpha = 1f;
+        // Fade in first 400ms
+        long alive = now - splashStartedAt;
+        if (alive < 400L) alpha = alive / 400f;
+        // Fade out after death
+        if (splashFadeOutUntil > 0L) {
+            long left = splashFadeOutUntil - now;
+            alpha = Math.min(alpha, Math.max(0f, left / 1200f));
+        }
         int a = Math.max(0, Math.min(255, (int) (alpha * 230)));
+        if (a <= 0) return;
 
-        g.fill(0, 0, sw, sh, (Math.min(180, a) << 24));
+        g.fill(0, 0, sw, sh, (Math.min(160, a) << 24));
 
         int cx = sw / 2;
         int cy = sh / 2;
