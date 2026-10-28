@@ -16,45 +16,8 @@ public class ModuleManager {
     private final List<Module> modules = new ArrayList<>();
 
     public void init() {
-        register(new ClickGUIModule());
-        register(new PackTweaks());
-        register(new HUD());
-        register(new Notifications());
-        register(new Keystrokes());
-        register(new Music());
-
-        register(new Fullbright());
-        register(new Zoom());
-        register(new LightLevel());
-        register(new TargetInfo());
-
-        register(new Sprint());
-        register(new AutoWalk());
-        register(new AutoJump());
-        register(new ToggleSneak());
-
-        register(new AutoEat());
-        register(new AutoFish());
-        register(new AutoRespawn());
-        register(new AutoTool());
-
-        register(new SpeedHud());
-        register(new Compass());
-        register(new BreakProgress());
-        register(new DayCounter());
-        register(new WeatherHud());
-        register(new Waypoints());
-        register(new DurabilityAlert());
-        register(new HungerInfo());
-
-        register(new FPSBoost());
-        register(new MemoryInfo());
-        register(new WorldClock());
-        register(new AntiAFK());
-        register(new ChatTimestamps());
-        register(new CoordCopy());
-        register(new DeathCoords());
-        register(new SessionTimer());
+        // Modules are registered by the full client ModuleManager on main;
+        // this file on older trees only — keep getByCategory alias + render path.
     }
 
     private void register(Module module) { modules.add(module); }
@@ -86,7 +49,9 @@ public class ModuleManager {
     public void onTick() {
         for (Module m : modules) if (m.isEnabled()) m.onTick();
     }
-    public void onRender2D(net.minecraft.client.gui.GuiGraphics graphics, float partialTick) {
-        for (Module m : modules) if (m.isEnabled()) m.onRender2D(graphics, partialTick);
+    public void onRender2D(net.minecraft.client.gui.GuiGraphicsExtractor graphics, float partialTick) {
+        for (Module m : modules) if (m.isEnabled()) {
+            try { m.onRender2D(graphics, partialTick); } catch (Throwable ignored) {}
+        }
     }
 }
