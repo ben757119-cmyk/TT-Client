@@ -8,6 +8,7 @@ import com.ttclient.settings.NumberSetting;
 import net.minecraft.client.Minecraft;
 
 import javax.sound.sampled.*;
+import java.io.File;
 import java.nio.file.*;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -17,9 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Client-side music player.
  * Built-in tracks are original short melodies (not copyrighted songs).
- * Drop your own legal .wav files into .minecraft/ttclient/music/
- * and select Track=Custom + CustomIndex.
- * Copyrighted commercial tracks cannot be bundled by the mod.
+ * Drop legal .wav files into .minecraft/ttclient/music/ and use Track=Custom.
  */
 public class Music extends Module {
     public final ModeSetting track = addSetting(new ModeSetting(
@@ -87,7 +86,10 @@ public class Music extends Module {
             Path dir = musicDir();
             Files.createDirectories(dir);
             List<Path> list = new ArrayList<>();
-            try (DirectoryStream<Path> ds = Files.newDirectoryStream(dir, "*.{wav,WAV}")) {
+            try (DirectoryStream<Path> ds = Files.newDirectoryStream(dir, "*.wav")) {
+                for (Path p : ds) list.add(p);
+            }
+            try (DirectoryStream<Path> ds = Files.newDirectoryStream(dir, "*.WAV")) {
                 for (Path p : ds) list.add(p);
             }
             list.sort(Comparator.comparing(p -> p.getFileName().toString().toLowerCase()));
@@ -100,10 +102,20 @@ public class Music extends Module {
     private static Path musicDir() {
         try {
             Minecraft mc = Minecraft.getInstance();
-            return mc.gameDirectory.toPath().resolve("ttclient").resolve("music");
-        } catch (Throwable t) {
-            return Path.of("ttclient", "music");
-        }
+            File gd = null;
+            try {
+                Object v = mc.getClass().getField("gameDirectory").get(mc);
+                if (v instanceof File f) gd = f;
+            } catch (Throwable ignored) {}
+            if (gd == null) {
+                try {
+                    Object v = mc.getClass().getMethod("getGameDirectory").invoke(mc);
+                    if (v instanceof File f) gd = f;
+                } catch (Throwable ignored) {}
+            }
+            if (gd != null) return gd.toPath().resolve("ttclient").resolve("music");
+        } catch (Throwable ignored) {}
+        return Path.of(System.getProperty("user.home", "."), ".minecraft", "ttclient", "music");
     }
 
     private void startPlayback() {
@@ -131,7 +143,7 @@ public class Music extends Module {
                 if ("Custom".equals(mode)) {
                     refreshCustomFiles();
                     if (customFiles.isEmpty()) {
-                        chat("Music: no .wav files in ttclient/music/ — add your own tracks");
+                        chat("Music: no .wav files in ttclient/music/");
                         return;
                     }
                     int idx = Math.max(0, Math.min(customFiles.size() - 1, customIndex.getInt()));
@@ -150,14 +162,31 @@ public class Music extends Module {
     }
 
     private void announce(String name) {
-        if (Boolean.TRUE.equals(announce.get())) chat("♪ " + name);
+        if (Boolean.TRUE.equals(announce.get())) chat("Now playing: " + name);
     }
 
     private void chat(String msg) {
         try {
             Minecraft mc = Minecraft.getInstance();
-            if (mc.player != null) {
-                mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal(msg), false);
+            if (mc == null || mc.player == null) return;
+            Object player = mc.player;
+            Object component = Class.forName("net.minecraft.network.chat.Component")
+                    .getMethod("literal", String.class).invoke(null, msg);
+            for (String name : new String[]{"displayClientMessage", "sendSystemMessage"}) {
+                try {
+                    for (var m : player.getClass().getMethods()) {
+                        if (!m.getName().equals(name)) continue;
+                        Class<?>[] pts = m.getParameterTypes();
+                        if (pts.length == 2 && pts[1] == boolean.class) {
+                            m.invoke(player, component, false);
+                            return;
+                        }
+                        if (pts.length == 1) {
+                            m.invoke(player, component);
+                            return;
+                        }
+                    }
+                } catch (Throwable ignored) {}
             }
         } catch (Throwable ignored) {}
     }
@@ -165,8 +194,8 @@ public class Music extends Module {
     private void playWavFile(Path file) throws Exception {
         try (AudioInputStream in = AudioSystem.getAudioInputStream(file.toFile())) {
             AudioFormat base = in.getFormat();
-            float rate = base.getSampleRate() <= 0 ? 44100 : base.getSampleRate();
-            int ch = base.getChannels() == 0 ? 2 : base.getChannels();
+            float rate = base.getSampleRate() <= 0 ? 44100f : base.getSampleRate();
+            int ch = base.getChannels() <= 0 ? 2 : base.getChannels();
             AudioFormat target = new AudioFormat(AudioFormat.Encoding.PCM_SIGNED, rate, 16, ch, ch * 2, rate, false);
             AudioInputStream din = AudioSystem.isConversionSupported(target, base)
                     ? AudioSystem.getAudioInputStream(target, in) : in;
