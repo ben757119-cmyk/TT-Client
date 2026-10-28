@@ -27,16 +27,10 @@ public final class ClientCommands {
         if (!msg.startsWith(PREFIX)) return false;
 
         String body = msg.substring(PREFIX.length()).trim();
-        if (body.isEmpty()) {
-            help();
-            return true;
-        }
+        if (body.isEmpty()) { help(); return true; }
 
         List<String> parts = splitArgs(body);
-        if (parts.isEmpty()) {
-            help();
-            return true;
-        }
+        if (parts.isEmpty()) { help(); return true; }
 
         String cmd = parts.get(0).toLowerCase(Locale.ROOT);
         List<String> args = parts.size() > 1 ? parts.subList(1, parts.size()) : List.of();
@@ -300,10 +294,30 @@ public final class ClientCommands {
             if (mc == null) return;
             Component comp = Component.literal("§8[§aTT§8] §f" + body);
             if (mc.player != null) {
-                try {
-                    mc.player.displayClientMessage(comp, false);
-                    return;
-                } catch (Throwable ignored) {}
+                Object player = mc.player;
+                Class<?> c = player.getClass();
+                while (c != null && c != Object.class) {
+                    for (var m : c.getDeclaredMethods()) {
+                        String name = m.getName();
+                        if (!(name.equals("displayClientMessage")
+                                || name.equals("sendSystemMessage")
+                                || name.equals("sendMessage"))) continue;
+                        Class<?>[] pt = m.getParameterTypes();
+                        try {
+                            m.setAccessible(true);
+                            if (pt.length == 1 && Component.class.isAssignableFrom(pt[0])) {
+                                m.invoke(player, comp);
+                                return;
+                            }
+                            if (pt.length == 2 && Component.class.isAssignableFrom(pt[0])
+                                    && (pt[1] == boolean.class || pt[1] == Boolean.class)) {
+                                m.invoke(player, comp, false);
+                                return;
+                            }
+                        } catch (Throwable ignored) {}
+                    }
+                    c = c.getSuperclass();
+                }
             }
         } catch (Throwable ignored) {}
     }
