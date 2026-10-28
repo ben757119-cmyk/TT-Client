@@ -12,9 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Random;
 
-/**
- * Lightning Stork activation splash + machine-gun strike FX.
- */
+/** Lightning Stork activation splash + machine-gun strike FX. */
 public final class StorkFx {
     private static final ResourceLocation TEX_ID =
             ResourceLocation.fromNamespaceAndPath("ttclient", "gui/lightning_stork_dyn");
@@ -47,17 +45,24 @@ public final class StorkFx {
         nextFlashAt = System.currentTimeMillis() + 30L;
     }
 
+    private static String loadB64Part(String name) {
+        try (InputStream in = StorkFx.class.getResourceAsStream(
+                "/assets/ttclient/textures/gui/" + name)) {
+            if (in == null) return "";
+            return new String(in.readAllBytes(), StandardCharsets.US_ASCII).replaceAll("\\s", "");
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
     private static void ensureTexture() {
         if (textureReady || textureFailed) return;
         try {
-            InputStream in = StorkFx.class.getResourceAsStream(
-                    "/assets/ttclient/textures/gui/lightning_stork.b64");
-            if (in == null) {
+            String b64 = loadB64Part("lightning_stork_a.b64") + loadB64Part("lightning_stork_b.b64");
+            if (b64.isEmpty()) {
                 textureFailed = true;
                 return;
             }
-            String b64 = new String(in.readAllBytes(), StandardCharsets.US_ASCII).replaceAll("\\s", "");
-            in.close();
             byte[] raw = Base64.getDecoder().decode(b64);
 
             Class<?> niCl = Class.forName("com.mojang.blaze3d.platform.NativeImage");
