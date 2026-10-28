@@ -9,10 +9,10 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
-/** Resource-pack style visual toggles. Static helpers used by mixins. */
+/** Resource-pack style visual toggles. Lives in its own Pack ClickGUI panel. */
 public class PackTweaks extends Module {
     public final BoolSetting lowFire = addSetting(new BoolSetting(
-            "LowFire", "Shorter / quieter fire overlay", true));
+            "LowFire", "Shorter / quieter fire overlay (pairs with TT RP fire textures)", true));
     public final BoolSetting smallTotems = addSetting(new BoolSetting(
             "SmallTotems", "Scale down Totem of Undying in GUI / hand", true));
     public final BoolSetting lowShield = addSetting(new BoolSetting(
@@ -55,6 +55,13 @@ public class PackTweaks extends Module {
             try {
                 if (mc.gui != null && mc.gui.screen() != null) return true;
             } catch (Throwable ignored) {}
+            try {
+                Object gui = mc.getClass().getField("gui").get(mc);
+                if (gui != null) {
+                    Object s = gui.getClass().getMethod("screen").invoke(gui);
+                    if (s != null) return true;
+                }
+            } catch (Throwable ignored) {}
             return false;
         } catch (Throwable t) {
             return false;
@@ -71,10 +78,25 @@ public class PackTweaks extends Module {
         return pt != null && pt.isEnabled() && Boolean.TRUE.equals(pt.lowFire.get());
     }
 
+    public static boolean lowShieldEnabled() {
+        PackTweaks pt = get();
+        return pt != null && pt.isEnabled() && Boolean.TRUE.equals(pt.lowShield.get());
+    }
+
+    public static boolean cleanScoreboardEnabled() {
+        PackTweaks pt = get();
+        return pt != null && pt.isEnabled() && Boolean.TRUE.equals(pt.cleanScoreboard.get());
+    }
+
+    public static boolean smallTotemsEnabled() {
+        PackTweaks pt = get();
+        return pt != null && pt.isEnabled() && Boolean.TRUE.equals(pt.smallTotems.get());
+    }
+
     public static boolean isPumpkinOverlay(Object texture) {
         if (texture == null) return false;
         String s = String.valueOf(texture).toLowerCase();
-        return s.contains("pumpkinblur") || s.contains("pumpkin_blur") || s.contains("pumpkin");
+        return s.contains("pumpkinblur") || s.contains("pumpkin_blur") || s.contains("/pumpkin");
     }
 
     public static boolean isFireOverlay(Object texture) {
@@ -87,27 +109,73 @@ public class PackTweaks extends Module {
         if (stack == null || stack.isEmpty()) return false;
         PackTweaks pt = get();
         if (pt == null || !pt.isEnabled() || !inGuiContext()) return false;
-        Item item = stack.getItem();
-        if (item instanceof BlockItem) return Boolean.TRUE.equals(pt.rainbowBlocks.get());
-        return Boolean.TRUE.equals(pt.rainbowTools.get());
+        if (isBlockItem(stack)) return Boolean.TRUE.equals(pt.rainbowBlocks.get());
+        if (isToolOrWeapon(stack)) return Boolean.TRUE.equals(pt.rainbowTools.get());
+        return false;
     }
 
     public static boolean shouldForceFoil(ItemStack stack) {
         PackTweaks pt = get();
-        if (pt == null || !pt.isEnabled()) return false;
-        if (!Boolean.TRUE.equals(pt.forceGlint.get())) return false;
+        if (pt == null || !pt.isEnabled() || !Boolean.TRUE.equals(pt.forceGlint.get())) return false;
         return shouldRainbow(stack);
     }
 
-    public static int rainbowArgb(float alphaOverride, int salt) {
+    public static boolean isToolOrWeapon(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        String id = itemId(stack.getItem());
+        if (id.isEmpty()) return false;
+        return id.contains("sword") || id.contains("axe") || id.contains("pickaxe")
+                || id.contains("shovel") || id.contains("hoe") || id.contains("mace")
+                || id.contains("spear") || id.contains("trident") || id.contains("bow")
+                || id.contains("crossbow");
+    }
+
+    public static boolean isBlockItem(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        try { return stack.getItem() instanceof BlockItem; }
+        catch (Throwable t) { return false; }
+    }
+
+    public static boolean isTotem(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        return itemId(stack.getItem()).contains("totem");
+    }
+
+    public static float totemScaleOrDefault() {
+        PackTweaks pt = get();
+        if (pt == null || !pt.isEnabled() || !Boolean.TRUE.equals(pt.smallTotems.get())) return 1f;
+        return (float) pt.totemScale.get();
+    }
+
+    public static int rainbowArgb(float alphaOverride, int slotSalt) {
         PackTweaks pt = get();
         double speed = pt != null ? pt.rainbowSpeed.get() : 1.0;
-        double baseA = pt != null ? pt.rainbowAlpha.get() : 0.45;
-        float hue = (float) (((System.currentTimeMillis() / 1000.0) * speed + salt * 0.07) % 1.0);
-        int rgb = java.awt.Color.HSBtoRGB(hue, 1f, 1f);
-        int a = alphaOverride >= 0f
-                ? Math.max(0, Math.min(255, (int) (alphaOverride * 255)))
-                : Math.max(0, Math.min(255, (int) (baseA * 255)));
-        return (a << 24) | (rgb & 0x00FFFFFF);
+        if (speed < 0.01) speed = 0.01;
+        float alpha = alphaOverride;
+        if (alpha < 0f && pt != null) alpha = pt.rainbowAlpha.get().floatValue();
+        if (alpha < 0f) alpha = 0.45f;
+        double t = System.nanoTime() / 1_000_000_000.0;
+        float hue = (float) ((t * speed + slotSalt * 0.07) % 1.0);
+        if (hue < 0f) hue += 1f;
+        int rgb = java.awt.Color.HSBtoRGB(hue, 1f, 1f) & 0x00FFFFFF;
+        int a = Math.max(0, Math.min(255, (int) (alpha * 255)));
+        return (a << 24) | rgb;
+    }
+
+    public static int rainbowArgb(float alpha) {
+        return rainbowArgb(alpha, 0);
+    }
+
+    private static String itemId(Item item) {
+        try {
+            String s = String.valueOf(item);
+            int slash = s.lastIndexOf(':');
+            int dot = s.lastIndexOf('.');
+            int cut = Math.max(slash, dot);
+            if (cut >= 0 && cut + 1 < s.length()) s = s.substring(cut + 1);
+            return s.toLowerCase().replace("}", "").trim();
+        } catch (Throwable t) {
+            return "";
+        }
     }
 }
