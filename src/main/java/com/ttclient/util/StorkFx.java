@@ -12,9 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Random;
 
-/**
- * Lightning Stork activation splash (your image) + spoken lines + machine-gun strike FX.
- */
+/** Lightning Stork splash (real image) + spoken lines + machine-gun FX. */
 public final class StorkFx {
     private static final Identifier TEX_ID =
             Identifier.fromNamespaceAndPath("ttclient", "gui/lightning_stork_dyn");
@@ -50,12 +48,10 @@ public final class StorkFx {
         nextFlashAt = System.currentTimeMillis() + 30L;
     }
 
-    /** Speak the activation lines (Narrator / accessibility TTS). No text drawn on the image. */
     private static void speakNow() {
         if (spoken) return;
         spoken = true;
-        String line1 = "Lighting Stork activated";
-        String line2 = "360 spin initiated";
+        String lines = "Lighting Stork activated. 360 spin initiated";
         try {
             Minecraft mc = Minecraft.getInstance();
             try {
@@ -65,11 +61,11 @@ public final class StorkFx {
                         if (!m.getName().equals("say") && !m.getName().equals("saySystemMessage")) continue;
                         Class<?>[] p = m.getParameterTypes();
                         if (p.length == 2 && p[0] == String.class && p[1] == boolean.class) {
-                            m.invoke(narrator, line1 + ". " + line2, true);
+                            m.invoke(narrator, lines, true);
                             return;
                         }
                         if (p.length == 1 && p[0] == String.class) {
-                            m.invoke(narrator, line1 + ". " + line2);
+                            m.invoke(narrator, lines);
                             return;
                         }
                     }
@@ -78,28 +74,37 @@ public final class StorkFx {
             try {
                 Class<?> nCl = Class.forName("com.mojang.text2speech.Narrator");
                 Object n = nCl.getMethod("getNarrator").invoke(null);
-                nCl.getMethod("say", String.class, boolean.class).invoke(n, line1 + ". " + line2, true);
+                nCl.getMethod("say", String.class, boolean.class).invoke(n, lines, true);
                 return;
             } catch (Throwable ignored) {}
             try {
-                Class<?> nm = Class.forName("com.ttclient.client.NotificationManager");
-                nm.getMethod("push", String.class, String.class)
+                Class.forName("com.ttclient.client.NotificationManager")
+                        .getMethod("push", String.class, String.class)
                         .invoke(null, "LIGHTING STORK ACTIVATED", "360 SPIN INITIADED");
             } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
     }
 
+    private static String loadPart(String name) {
+        try (InputStream in = StorkFx.class.getResourceAsStream(
+                "/assets/ttclient/textures/gui/" + name)) {
+            if (in == null) return "";
+            return new String(in.readAllBytes(), StandardCharsets.US_ASCII).replaceAll("\\s", "");
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
     private static void ensureTexture() {
         if (textureReady || textureFailed) return;
         try {
-            InputStream in = StorkFx.class.getResourceAsStream(
-                    "/assets/ttclient/textures/gui/lightning_stork.b64");
-            if (in == null) {
-                textureFailed = true;
-                return;
+            String b64 = loadPart("lightning_stork_0.b64")
+                    + loadPart("lightning_stork_1.b64")
+                    + loadPart("lightning_stork_2.b64");
+            if (b64.isEmpty()) {
+                // legacy single-file fallback
+                b64 = loadPart("lightning_stork.b64");
             }
-            String b64 = new String(in.readAllBytes(), StandardCharsets.US_ASCII).replaceAll("\\s", "");
-            in.close();
             if (b64.isEmpty()) {
                 textureFailed = true;
                 return;
@@ -153,6 +158,7 @@ public final class StorkFx {
             g.fill(ix, iy, ix + img, iy + img, (a << 24) | 0x102038);
         }
 
+        // ring only — no written titles by the image (spoken instead)
         spinAngle += 10f;
         int cx = sw / 2, cy = iy + img / 2;
         for (int i = 0; i < 16; i++) {
