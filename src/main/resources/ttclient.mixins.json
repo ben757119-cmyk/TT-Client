@@ -11,7 +11,9 @@
     "MixinMultiPlayerGameMode",
     "MixinItemStack",
     "MixinGuiGraphicsExtractor",
-    "MixinGui"
+    "MixinGui",
+    "MixinItemInHandRenderer",
+    "MixinLivingEntitySwing"
   ],
   "injectors": {
     "defaultRequire": 0
