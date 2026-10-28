@@ -13,7 +13,8 @@
     "MixinGuiGraphicsExtractor",
     "MixinGui",
     "MixinItemInHandRenderer",
-    "MixinLivingEntitySwing"
+    "MixinLivingEntitySwing",
+    "MixinDeltaTrackerTimer"
   ],
   "injectors": {
     "defaultRequire": 0

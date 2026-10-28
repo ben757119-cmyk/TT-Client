@@ -6,6 +6,7 @@ import com.ttclient.settings.BoolSetting;
 import com.ttclient.settings.NumberSetting;
 import com.ttclient.util.FriendsManager;
 import com.ttclient.util.SilentRotate;
+import com.ttclient.util.TimerHooks;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.player.LocalPlayer;
@@ -20,13 +21,13 @@ import java.util.Comparator;
 import java.util.Random;
 
 /**
- * Im Storking It — faithful NeoForge 26.2 port of LightningStork.
+ * Im Storking It — NeoForge 26.2 port of LightningStork.
  *
  * Sequence:
  *   INTRO  — hover in place
  *   RISING — climb to Height while body spins (silent rot keeps camera)
  *   FROZEN — hold altitude, keep spinning
- *   STRIKING — soft timer boost + hop packets to target, attack, hop home.
+ *   STRIKING — client Timer boost + hop packets to target, attack, hop home.
  * Client body stays at the top; only server-side position is spoofed for hits.
  */
 public class ImStorkingIt extends Module {
@@ -45,7 +46,7 @@ public class ImStorkingIt extends Module {
     public final NumberSetting minCharge = addSetting(new NumberSetting(
             "MinCharge", "Min attack strength scale", 0.9, 0.0, 1.0, 0.05));
     public final NumberSetting timerSpeed = addSetting(new NumberSetting(
-            "Timer", "Client timer multiplier while striking (soft)", 8.0, 1.0, 10.0, 0.5));
+            "Timer", "Client timer multiplier while striking", 8.0, 1.0, 10.0, 0.5));
     public final NumberSetting introTicks = addSetting(new NumberSetting(
             "IntroTicks", "Hover ticks before rise", 32, 0, 80, 1));
     public final NumberSetting freezeTicks = addSetting(new NumberSetting(
@@ -80,7 +81,6 @@ public class ImStorkingIt extends Module {
     private long nextBoltAt;
     private long shakeUntil;
     private int boltId;
-    private boolean timerOn;
 
     public ImStorkingIt() {
         super("Im Storking It", "Rise, spin, TP-aura strike nearest player", Category.COMBAT);
@@ -102,12 +102,12 @@ public class ImStorkingIt extends Module {
         nextHitAt = 0L;
         nextBoltAt = 0L;
         shakeUntil = 0L;
-        timerOn = false;
+        TimerHooks.reset();
     }
 
     @Override
     public void onDisable() {
-        resetTimer();
+        TimerHooks.reset();
         phase = IDLE;
         freezeLeft = 0;
         introLeft = 0;
@@ -148,10 +148,12 @@ public class ImStorkingIt extends Module {
                 spin(player, MAX_SPIN);
                 if (--freezeLeft <= 0) {
                     phase = STRIKING;
-                    setTimer(mc, timerSpeed.getFloat());
+                    TimerHooks.set(timerSpeed.getFloat());
                 }
             }
             case STRIKING -> {
+                // Re-apply every tick so nothing else can stick timer at 1.0
+                TimerHooks.set(timerSpeed.getFloat());
                 holdHeight(player, h, targetH);
                 Player target = nearestPlayer(mc, player);
                 if (target == null) {
@@ -290,7 +292,6 @@ public class ImStorkingIt extends Module {
         } catch (Throwable ignored) {}
     }
 
-    /** Optional camera shake amount after a hit (for external render hooks). */
     public float shakeYaw() {
         return shake();
     }
@@ -369,7 +370,6 @@ public class ImStorkingIt extends Module {
                 .orElse(null);
     }
 
-    /** Robust name extraction for 26.2 GameProfile API differences. */
     private static String playerName(Player p) {
         if (p == null) return null;
         try {
@@ -392,78 +392,5 @@ public class ImStorkingIt extends Module {
             return p.getName().getString();
         } catch (Throwable ignored) {}
         return null;
-    }
-
-    private void setTimer(Minecraft client, float speed) {
-        if (speed == 1.0f) {
-            resetTimer();
-            return;
-        }
-        try {
-            Class<?> hooks = Class.forName("com.ttclient.util.TimerHooks");
-            hooks.getField("speed").setFloat(null, speed);
-            timerOn = true;
-            return;
-        } catch (Throwable ignored) {}
-        try {
-            Object timer = null;
-            for (String field : new String[]{"timer", "f_91012_", "timerUtil"}) {
-                try {
-                    var f = client.getClass().getDeclaredField(field);
-                    f.setAccessible(true);
-                    timer = f.get(client);
-                    if (timer != null) break;
-                } catch (Throwable ignored2) {}
-            }
-            if (timer != null) {
-                for (String mf : new String[]{"msPerTick", "tickLength", "tPs"}) {
-                    try {
-                        var f = timer.getClass().getDeclaredField(mf);
-                        f.setAccessible(true);
-                        if (f.getType() == float.class) {
-                            float base = f.getFloat(timer);
-                            if (base > 0 && base < 1000) {
-                                f.setFloat(timer, 50.0f / speed);
-                                timerOn = true;
-                                return;
-                            }
-                        }
-                    } catch (Throwable ignored3) {}
-                }
-            }
-        } catch (Throwable ignored) {}
-        timerOn = false;
-    }
-
-    private void resetTimer() {
-        if (!timerOn) return;
-        Minecraft client = mc();
-        try {
-            Class<?> hooks = Class.forName("com.ttclient.util.TimerHooks");
-            hooks.getField("speed").setFloat(null, 1.0f);
-        } catch (Throwable ignored) {}
-        if (client != null) {
-            try {
-                Object timer = null;
-                for (String field : new String[]{"timer", "f_91012_", "timerUtil"}) {
-                    try {
-                        var f = client.getClass().getDeclaredField(field);
-                        f.setAccessible(true);
-                        timer = f.get(client);
-                        if (timer != null) break;
-                    } catch (Throwable ignored2) {}
-                }
-                if (timer != null) {
-                    for (String mf : new String[]{"msPerTick", "tickLength", "tPs"}) {
-                        try {
-                            var f = timer.getClass().getDeclaredField(mf);
-                            f.setAccessible(true);
-                            if (f.getType() == float.class) f.setFloat(timer, 50.0f);
-                        } catch (Throwable ignored3) {}
-                    }
-                }
-            } catch (Throwable ignored) {}
-        }
-        timerOn = false;
     }
 }
