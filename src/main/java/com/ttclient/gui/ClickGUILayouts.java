@@ -11,26 +11,26 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/** Layout helpers for Classic, Meteor, Wurst, Radial ClickGUI styles. */
+/** Layout render helpers for Classic, Meteor, Wurst, Radial styles. */
 final class ClickGUILayouts {
     private ClickGUILayouts() {}
 
+    /** Classic — draggable category panels. panel = int[]{x, y, open(0/1)}. */
     static void renderClassic(GuiGraphicsExtractor g, Font font, int mx, int my, int ac,
                               Map<Category, int[]> panels, ModuleManager m, List<String> tips) {
-        if (m == null) return;
+        if (m == null || panels == null) return;
         for (var e : panels.entrySet()) {
             Category cat = e.getKey();
             if (m.getByCategory(cat).isEmpty()) continue;
-            int[] p = e.getValue(); // x,y,open
-            int px = p[0], py = p[1];
-            boolean open = p[2] != 0;
+            int[] p = e.getValue();
+            int px = p[0], py = p[1], open = p[2];
             int pw = 110;
-            int ph = 22 + (open ? m.getByCategory(cat).size() * 28 : 0);
+            int ph = 22 + (open != 0 ? m.getByCategory(cat).size() * 28 : 0);
             g.fill(px, py, px + pw, py + 22, 0xFF0E1A16);
             g.fill(px, py + 20, px + pw, py + 22, ac);
             g.text(font, cat.name, px + 8, py + 7, 0xFFF0F2F5, false);
-            g.text(font, open ? "-" : "+", px + pw - 12, py + 7, 0xFF8E96A8, false);
-            if (open) {
+            g.text(font, open != 0 ? "-" : "+", px + pw - 12, py + 7, 0xFF8E96A8, false);
+            if (open != 0) {
                 g.fill(px, py + 22, px + pw, py + ph, 0xF0121620);
                 int y = py + 24;
                 for (Module mod : m.getByCategory(cat)) {
@@ -46,9 +46,10 @@ final class ClickGUILayouts {
         }
     }
 
+    /** Meteor — compact stacked columns, always expanded. */
     static void renderMeteor(GuiGraphicsExtractor g, Font font, int mx, int my, int ac,
                              Map<Category, int[]> panels, ModuleManager m, List<String> tips) {
-        if (m == null) return;
+        if (m == null || panels == null) return;
         for (Category c : Category.values()) {
             if (m.getByCategory(c).isEmpty()) continue;
             int[] p = panels.get(c);
@@ -72,6 +73,7 @@ final class ClickGUILayouts {
         }
     }
 
+    /** Wurst — light gray tab window, left module list, right settings. */
     static void renderWurst(GuiGraphicsExtractor g, Font font, int width, int height,
                             Category selected, Module selectedModule, int listScroll,
                             ModuleManager m, List<int[]> catBounds, List<Module> visible) {
@@ -125,6 +127,7 @@ final class ClickGUILayouts {
         }
     }
 
+    /** Radial — center hub with category orbit + fan module list. */
     static void renderRadial(GuiGraphicsExtractor g, Font font, int mx, int my, int ac,
                              int width, int height, Category selected, Category radialOpen,
                              ModuleManager m, List<int[]> catBounds, List<String> tips) {
@@ -134,7 +137,11 @@ final class ClickGUILayouts {
         g.fill(cx - 30, cy - 30, cx + 30, cy + 30, 0xFF161922);
         g.text(font, "TT", cx - font.width("TT") / 2, cy - 4, ac, false);
         List<Category> cats = new ArrayList<>();
-        if (m != null) for (Category c : Category.values()) if (!m.getByCategory(c).isEmpty()) cats.add(c);
+        if (m != null) {
+            for (Category c : Category.values()) {
+                if (!m.getByCategory(c).isEmpty()) cats.add(c);
+            }
+        }
         int n = Math.max(1, cats.size());
         for (int i = 0; i < n; i++) {
             Category cat = cats.get(i);
