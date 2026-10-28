@@ -13,7 +13,6 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
@@ -51,7 +50,7 @@ public final class ClientCommands {
             case "nuker", "n", "nuke" -> nukerCmd(args);
             case "chest", "chests", "cr", "chestrelay" -> chestRelay(args);
             case "friend", "friends", "f" -> friends(args);
-            case "bind" -> chat("Right-click a module in ClickGUI to set its bind");
+            case "bind", "keybind" -> ModuleBindCommands.handle(args.toArray(new String[0]));
             case "ping" -> chat("pong");
             case "coords", "pos" -> coords();
             case "say" -> {
@@ -91,60 +90,13 @@ public final class ClientCommands {
             if (hits.size() == 1) {
                 String h = hits.get(0);
                 if (h.equals(PREFIX + "toggle") || h.equals(PREFIX + "say") || h.equals(PREFIX + "chest")
-                        || h.equals(PREFIX + "block") || h.equals(PREFIX + "friend") || h.equals(PREFIX + "nuker"))
+                        || h.equals(PREFIX + "block") || h.equals(PREFIX + "friend") || h.equals(PREFIX + "nuker")
+                        || h.equals(PREFIX + "bind"))
                     return h + " ";
                 return h;
             }
             chatOnly("§7" + String.join(" §8| §7", hits));
             return commonPrefix(hits);
-        }
-        List<String> parts = splitArgs(body);
-        if (parts.isEmpty()) return null;
-        String cmd = parts.get(0).toLowerCase(Locale.ROOT);
-        if (cmd.equals("toggle") || cmd.equals("t")) {
-            String partial = parts.size() > 1 ? parts.get(1).toLowerCase(Locale.ROOT) : "";
-            if (TTClientClient.modules == null) return null;
-            List<String> hits = new ArrayList<>();
-            for (Module m : TTClientClient.modules.getModules()) {
-                if (m.getName().toLowerCase(Locale.ROOT).startsWith(partial))
-                    hits.add(PREFIX + "toggle " + m.getName());
-            }
-            if (hits.isEmpty()) return null;
-            if (hits.size() == 1) return hits.get(0);
-            chatOnly("§7" + String.join(" §8| §7", hits.stream().limit(8).toList()));
-            return commonPrefix(hits);
-        }
-        if (cmd.equals("friend") || cmd.equals("f") || cmd.equals("friends")) {
-            String partial = parts.size() > 1 ? parts.get(1).toLowerCase(Locale.ROOT) : "";
-            List<String> hits = new ArrayList<>();
-            for (String s : List.of("add", "remove", "list", "clear"))
-                if (s.startsWith(partial)) hits.add(PREFIX + "friend " + s);
-            if (hits.size() == 1) return hits.get(0);
-            if (!hits.isEmpty()) return commonPrefix(hits);
-        }
-        if (cmd.equals("chest") || cmd.equals("cr")) {
-            String partial = parts.size() > 1 ? parts.get(1).toLowerCase(Locale.ROOT) : "";
-            List<String> hits = new ArrayList<>();
-            for (String s : List.of("add", "list", "clear", "remove"))
-                if (s.startsWith(partial)) hits.add(PREFIX + "chest " + s);
-            if (hits.size() == 1) return hits.get(0);
-            if (!hits.isEmpty()) return commonPrefix(hits);
-        }
-        if (cmd.equals("b") || cmd.equals("block")) {
-            String partial = parts.size() > 1 ? parts.get(1).toLowerCase(Locale.ROOT) : "";
-            List<String> hits = new ArrayList<>();
-            for (String s : List.of("add", "remove", "list", "clear"))
-                if (s.startsWith(partial)) hits.add(PREFIX + "b " + s);
-            if (hits.size() == 1) return hits.get(0);
-            if (!hits.isEmpty()) return commonPrefix(hits);
-        }
-        if (cmd.equals("nuker") || cmd.equals("n") || cmd.equals("nuke")) {
-            String partial = parts.size() > 1 ? parts.get(1).toLowerCase(Locale.ROOT) : "";
-            List<String> hits = new ArrayList<>();
-            for (String s : List.of("add", "remove", "list", "clear"))
-                if (s.startsWith(partial)) hits.add(PREFIX + "nuker " + s);
-            if (hits.size() == 1) return hits.get(0);
-            if (!hits.isEmpty()) return commonPrefix(hits);
         }
         return null;
     }
@@ -160,8 +112,9 @@ public final class ClientCommands {
 
     private static void help() {
         chatOnly("§a§lTT Commands §8· §7prefix .");
-        chatOnly("§f.help §8· §f.version §8· §f.ping §8· §f.coords");
+        chatOnly("§f.help §8· §f.version §8· §f.ping §8· §f.coords §8· §f.bind");
         chatOnly("§f.toggle <module> §8· §f.modules [filter]");
+        chatOnly("§f.bind <module> <key|none|mouse4|mouse5> §8· §f.bind list");
         chatOnly("§f.friend add|remove|list|clear <name>");
         chatOnly("§f.say <message> §8· talk on the server");
         chatOnly("§f.b add|remove|list|clear <block>");
@@ -173,7 +126,6 @@ public final class ClientCommands {
     private static void friends(List<String> args) {
         if (args.isEmpty()) {
             chatOnly(".friend add|remove|list|clear <name>");
-            chatOnly("§7Local list only — no global TT user directory (needs a server).");
             return;
         }
         switch (args.get(0).toLowerCase(Locale.ROOT)) {
@@ -266,7 +218,6 @@ public final class ClientCommands {
         String name = args.get(0);
         Module mod = TTClientClient.modules.getModule(name);
         if (mod == null) {
-            // fuzzy
             for (Module m : TTClientClient.modules.getModules()) {
                 if (m.getName().toLowerCase(Locale.ROOT).startsWith(name.toLowerCase(Locale.ROOT))) {
                     mod = m; break;
@@ -342,94 +293,37 @@ public final class ClientCommands {
         }
     }
 
-    /** Client-only feedback — reflection for 26.2 API drift. */
     public static void chatOnly(String body) {
         if (body == null) return;
         try {
             Minecraft mc = Minecraft.getInstance();
             if (mc == null) return;
             Component comp = Component.literal("§8[§aTT§8] §f" + body);
-
             if (mc.player != null) {
-                Object player = mc.player;
-                Class<?> c = player.getClass();
-                while (c != null && c != Object.class) {
-                    for (var m : c.getDeclaredMethods()) {
-                        String name = m.getName();
-                        if (!(name.equals("displayClientMessage")
-                                || name.equals("sendSystemMessage")
-                                || name.equals("sendMessage"))) continue;
-                        Class<?>[] pt = m.getParameterTypes();
-                        try {
-                            m.setAccessible(true);
-                            if (pt.length == 1 && Component.class.isAssignableFrom(pt[0])) {
-                                m.invoke(player, comp);
-                                return;
-                            }
-                            if (pt.length == 2 && Component.class.isAssignableFrom(pt[0])
-                                    && (pt[1] == boolean.class || pt[1] == Boolean.class)) {
-                                m.invoke(player, comp, false);
-                                return;
-                            }
-                        } catch (Throwable ignored) {}
-                    }
-                    c = c.getSuperclass();
-                }
-            }
-
-            if (mc.gui != null) {
-                Object chat = null;
                 try {
-                    chat = mc.gui.getClass().getMethod("getChat").invoke(mc.gui);
+                    mc.player.displayClientMessage(comp, false);
+                    return;
                 } catch (Throwable ignored) {}
-                if (chat == null) {
-                    Class<?> gc = mc.gui.getClass();
-                    while (gc != null && gc != Object.class && chat == null) {
-                        for (var f : gc.getDeclaredFields()) {
-                            try {
-                                String cn = f.getType().getName().toLowerCase(Locale.ROOT);
-                                if (cn.contains("chat")) {
-                                    f.setAccessible(true);
-                                    Object v = f.get(mc.gui);
-                                    if (v != null) { chat = v; break; }
-                                }
-                            } catch (Throwable ignored) {}
-                        }
-                        gc = gc.getSuperclass();
-                    }
-                }
-                if (chat != null) {
-                    for (var am : chat.getClass().getMethods()) {
-                        if (!am.getName().equals("addMessage")) continue;
-                        Class<?>[] pt = am.getParameterTypes();
-                        try {
-                            if (pt.length == 1 && Component.class.isAssignableFrom(pt[0])) {
-                                am.invoke(chat, comp);
-                                return;
-                            }
-                            if (pt.length >= 1 && Component.class.isAssignableFrom(pt[0])) {
-                                Object[] args = new Object[pt.length];
-                                args[0] = comp;
-                                for (int i = 1; i < pt.length; i++) {
-                                    if (pt[i] == boolean.class || pt[i] == Boolean.class) args[i] = false;
-                                    else if (pt[i] == int.class || pt[i] == Integer.class) args[i] = 0;
-                                    else args[i] = null;
-                                }
-                                am.invoke(chat, args);
-                                return;
-                            }
-                        } catch (Throwable ignored) {}
-                    }
-                }
             }
         } catch (Throwable ignored) {}
     }
 
-    public static void chat(String body) {
-        chatOnly(body);
-    }
+    private static void chat(String body) { chatOnly(body); }
 
     private static List<String> splitArgs(String body) {
-        return new ArrayList<>(Arrays.asList(body.trim().split("\\s+")));
+        List<String> out = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        boolean quote = false;
+        for (int i = 0; i < body.length(); i++) {
+            char c = body.charAt(i);
+            if (c == '"') { quote = !quote; continue; }
+            if (c == ' ' && !quote) {
+                if (cur.length() > 0) { out.add(cur.toString()); cur.setLength(0); }
+                continue;
+            }
+            cur.append(c);
+        }
+        if (cur.length() > 0) out.add(cur.toString());
+        return out;
     }
 }
