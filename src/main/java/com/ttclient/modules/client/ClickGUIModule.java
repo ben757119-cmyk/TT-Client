@@ -7,6 +7,7 @@ import com.ttclient.modules.Category;
 import com.ttclient.modules.Module;
 import com.ttclient.settings.BoolSetting;
 import com.ttclient.settings.ColorSetting;
+import com.ttclient.settings.ModeSetting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import org.lwjgl.glfw.GLFW;
@@ -14,13 +15,36 @@ import org.lwjgl.glfw.GLFW;
 public class ClickGUIModule extends Module {
     public final ColorSetting accent = addSetting(new ColorSetting("Accent", "Panel accent color", 0xFF00E8A0));
     public final BoolSetting dim = addSetting(new BoolSetting("SolidDim", "Optional solid shade behind panels. Never vanilla blur.", false));
+    public final ModeSetting style = addSetting(new ModeSetting(
+            "Style",
+            "ClickGUI layout style",
+            "Island",
+            "Island", "Classic", "Sidebar", "Meteor", "Wurst", "Radial"));
 
     public ClickGUIModule() {
         super("ClickGUI", "Opens the TT Client ClickGUI (Right Shift)", Category.CLIENT);
         setKeyBind(GLFW.GLFW_KEY_RIGHT_SHIFT);
     }
 
-    /** Live accent — solid color or full-speed rainbow when SeizureMode module is on. */
+    public String styleName() {
+        try {
+            String s = style.get();
+            return s == null ? "Island" : s;
+        } catch (Throwable t) {
+            return "Island";
+        }
+    }
+
+    public static String globalStyle() {
+        try {
+            if (TTClientClient.modules != null) {
+                ClickGUIModule m = TTClientClient.modules.getModule(ClickGUIModule.class);
+                if (m != null) return m.styleName();
+            }
+        } catch (Throwable ignored) {}
+        return "Island";
+    }
+
     public int liveAccent() {
         if (isSeizure()) {
             float hue = (System.currentTimeMillis() % 1200L) / 1200f;
