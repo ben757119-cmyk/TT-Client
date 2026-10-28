@@ -19,6 +19,11 @@ public class ClickGUIModule extends Module {
             "ClickGUI layout style",
             "Center",
             "Center", "Classic", "Sidebar", "Meteor", "Wurst", "Radial"));
+    public final ModeSetting showFilter = addSetting(new ModeSetting(
+            "Show",
+            "Filter modules by risk: Ghost (subtle), Blatant (obvious), or Both",
+            "Both",
+            "Both", "Ghost", "Blatant"));
 
     public ClickGUIModule() {
         super("ClickGUI", "Opens the TT Client ClickGUI (Right Shift)", Category.CLIENT);
@@ -36,6 +41,25 @@ public class ClickGUIModule extends Module {
         }
     }
 
+    public String filterName() {
+        try {
+            String s = showFilter.get();
+            return s == null ? "Both" : s;
+        } catch (Throwable t) {
+            return "Both";
+        }
+    }
+
+    public static String globalFilter() {
+        try {
+            if (TTClientClient.modules != null) {
+                ClickGUIModule m = TTClientClient.modules.getModule(ClickGUIModule.class);
+                if (m != null) return m.filterName();
+            }
+        } catch (Throwable ignored) {}
+        return "Both";
+    }
+
     public static String globalStyle() {
         try {
             if (TTClientClient.modules != null) {
@@ -46,7 +70,6 @@ public class ClickGUIModule extends Module {
         return "Center";
     }
 
-    /** Live accent — solid color or full-speed rainbow when SeizureMode module is on. */
     public int liveAccent() {
         if (isSeizure()) {
             float hue = (System.currentTimeMillis() % 1200L) / 1200f;

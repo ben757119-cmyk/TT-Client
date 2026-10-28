@@ -16,8 +16,45 @@ public class ModuleManager {
     private final List<Module> modules = new ArrayList<>();
 
     public void init() {
-        // Modules are registered by the full client ModuleManager on main;
-        // this file on older trees only — keep getByCategory alias + render path.
+        register(new ClickGUIModule());
+        register(new PackTweaks());
+        register(new HUD());
+        register(new Notifications());
+        register(new Keystrokes());
+        register(new Music());
+
+        register(new Fullbright());
+        register(new Zoom());
+        register(new LightLevel());
+        register(new TargetInfo());
+
+        register(new Sprint());
+        register(new AutoWalk());
+        register(new AutoJump());
+        register(new ToggleSneak());
+
+        register(new AutoEat());
+        register(new AutoFish());
+        register(new AutoRespawn());
+        register(new AutoTool());
+
+        register(new SpeedHud());
+        register(new Compass());
+        register(new BreakProgress());
+        register(new DayCounter());
+        register(new WeatherHud());
+        register(new Waypoints());
+        register(new DurabilityAlert());
+        register(new HungerInfo());
+
+        register(new FPSBoost());
+        register(new MemoryInfo());
+        register(new WorldClock());
+        register(new AntiAFK());
+        register(new ChatTimestamps());
+        register(new CoordCopy());
+        register(new DeathCoords());
+        register(new SessionTimer());
     }
 
     private void register(Module module) { modules.add(module); }
