@@ -20,6 +20,7 @@ public class ModuleManager {
 
     public void init() {
         register(new PackTweaks());
+        register(new ToolStyles());
         register(new ClickGUIModule());
         register(new SeizureMode());
         register(new StreamerMode());
@@ -35,7 +36,7 @@ public class ModuleManager {
         register(new AutoClicker());
         register(new Criticals());
         register(new Reach());
-        register(new Rage());
+register(new Rage());
         register(new Shredder());
         register(new Hitboxes());
         register(new AutoCrystal());
