@@ -3,6 +3,7 @@ package com.ttclient.config;
 import com.ttclient.TTClient;
 import com.ttclient.client.TTClientClient;
 import com.ttclient.modules.Module;
+import com.ttclient.modules.client.ClickGUIModule;
 import com.ttclient.settings.*;
 
 import java.io.*;
@@ -31,7 +32,10 @@ public class ConfigManager {
         Properties props = new Properties();
         for (Module mod : TTClientClient.modules.getModules()) {
             String prefix = mod.getName().replace(" ", "_") + ".";
-            props.setProperty(prefix + "enabled", String.valueOf(mod.isEnabled()));
+            // ClickGUI is a keybind opener — never persist enabled=true (causes auto-popup)
+            boolean en = mod.isEnabled();
+            if (mod instanceof ClickGUIModule) en = false;
+            props.setProperty(prefix + "enabled", String.valueOf(en));
             props.setProperty(prefix + "key", String.valueOf(mod.getKeyBind()));
             for (Setting<?> s : mod.getSettings()) {
                 props.setProperty(prefix + s.getName().replace(" ", "_"), String.valueOf(s.get()));
@@ -63,8 +67,13 @@ public class ConfigManager {
         }
         for (Module mod : TTClientClient.modules.getModules()) {
             String prefix = mod.getName().replace(" ", "_") + ".";
-            String enabled = props.getProperty(prefix + "enabled");
-            if (enabled != null) mod.setEnabled(Boolean.parseBoolean(enabled));
+            // Never restore ClickGUI as enabled — it opens the screen in onEnable
+            if (!(mod instanceof ClickGUIModule)) {
+                String enabled = props.getProperty(prefix + "enabled");
+                if (enabled != null) mod.setEnabled(Boolean.parseBoolean(enabled));
+            } else {
+                mod.setEnabled(false);
+            }
             String key = props.getProperty(prefix + "key");
             if (key != null) try { mod.setKeyBind(Integer.parseInt(key)); } catch (Exception ignored) {}
             for (Setting<?> s : mod.getSettings()) {
