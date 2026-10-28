@@ -13,7 +13,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -34,7 +34,7 @@ public class ESP extends Module {
     public final NumberSetting hitRange = addSetting(new NumberSetting("HitRange", "Range treated as attackable", 4.5, 2, 8, 0.1));
 
     public ESP() {
-        super("ESP", "Entity highlighting (aim colors)", Category.RENDER, Risk.GHOST);
+        super("ESP", "Entity highlighting (aim colors)", Category.RENDER, Module.Risk.GHOST);
     }
 
     @Override
@@ -48,7 +48,7 @@ public class ESP extends Module {
         boolean doBox = "Box".equalsIgnoreCase(m) || "Both".equalsIgnoreCase(m);
         boolean doFill = "Fill".equalsIgnoreCase(m) || "Both".equalsIgnoreCase(m);
 
-        for (Entity e : mc.level.entitiesForRendering()) {
+        for (Entity e : mc.level.getEntities(self, self.getBoundingBox().inflate(maxR))) {
             if (e == null || e == self || !(e instanceof LivingEntity living) || !living.isAlive()) continue;
             if (!passesFilter(living)) continue;
             double d2 = self.distanceToSqr(e);
@@ -78,7 +78,7 @@ public class ESP extends Module {
 
     private boolean passesFilter(LivingEntity e) {
         if (e instanceof Player) return Boolean.TRUE.equals(players.get());
-        if (e instanceof Enemy) return Boolean.TRUE.equals(hostiles.get());
+        if (e instanceof Monster) return Boolean.TRUE.equals(hostiles.get());
         return Boolean.TRUE.equals(animals.get());
     }
 
@@ -88,7 +88,7 @@ public class ESP extends Module {
             return aimed ? aimOn.get() : aimOff.get();
         }
         if (target instanceof Player) return playerColor.get();
-        if (target instanceof Enemy) return hostileColor.get();
+        if (target instanceof Monster) return hostileColor.get();
         return playerColor.get();
     }
 
