@@ -10,10 +10,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/**
- * Speeds up / slows attackAnim per held tool for personalized swing feel.
- * Soft targets — require=0.
- */
 @Mixin(LivingEntity.class)
 public abstract class MixinLivingEntitySwing {
 
@@ -31,7 +27,7 @@ public abstract class MixinLivingEntitySwing {
             if (mul == 1f) return;
             if (this.attackAnim > 0f) {
                 float residual = this.attackAnim;
-                float step = 0.1f * (mul - 1f);
+                float step = 0.16f * (mul - 1f);
                 this.attackAnim = Math.max(0f, residual - step);
             }
         } catch (Throwable ignored) {}
