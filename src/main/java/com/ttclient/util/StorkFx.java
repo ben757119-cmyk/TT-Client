@@ -50,6 +50,14 @@ public final class StorkFx {
     }
 
     private static void speak(String narratorLine, String notifyBody) {
+        // Always put the line in chat first (user request). Narrator / notify are extras.
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc != null && mc.player != null) {
+                mc.player.displayClientMessage(
+                        net.minecraft.network.chat.Component.literal("§c[Stork] §f" + notifyBody), false);
+            }
+        } catch (Throwable ignored) {}
         try {
             Minecraft mc = Minecraft.getInstance();
             try {
@@ -60,31 +68,19 @@ public final class StorkFx {
                         Class<?>[] p = m.getParameterTypes();
                         if (p.length == 2 && p[0] == String.class && p[1] == boolean.class) {
                             m.invoke(narrator, narratorLine, true);
-                            return;
+                            break;
                         }
                         if (p.length == 1 && p[0] == String.class) {
                             m.invoke(narrator, narratorLine);
-                            return;
+                            break;
                         }
                     }
                 }
             } catch (Throwable ignored) {}
             try {
-                Class<?> nCl = Class.forName("com.mojang.text2speech.Narrator");
-                Object n = nCl.getMethod("getNarrator").invoke(null);
-                nCl.getMethod("say", String.class, boolean.class).invoke(n, narratorLine, true);
-                return;
-            } catch (Throwable ignored) {}
-            try {
                 Class.forName("com.ttclient.client.NotificationManager")
                         .getMethod("push", String.class, String.class)
                         .invoke(null, "Im Storking It", notifyBody);
-            } catch (Throwable ignored) {}
-            try {
-                if (mc.player != null) {
-                    mc.player.displayClientMessage(
-                            net.minecraft.network.chat.Component.literal("§c" + notifyBody), false);
-                }
             } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
     }
@@ -95,7 +91,6 @@ public final class StorkFx {
         if (gunActive) renderGun(g, font, sw, sh, now);
     }
 
-    /** Giant animated crosshair — replaces the old stork image. */
     private static void renderCrosshairSplash(GuiGraphicsExtractor g, int sw, int sh, long now) {
         long left = splashUntil - now;
         float life = 1f - (left / 3200f);
@@ -105,14 +100,12 @@ public final class StorkFx {
         else alpha = 1f;
         int a = Math.max(0, Math.min(255, (int) (alpha * 230)));
 
-        // dark veil
         g.fill(0, 0, sw, sh, (Math.min(180, a) << 24));
 
         int cx = sw / 2;
         int cy = sh / 2;
         spinAngle += 6f;
 
-        // outer rotating ring ticks
         int ringR = Math.min(sw, sh) * 28 / 100;
         for (int i = 0; i < 24; i++) {
             double ang = Math.toRadians(spinAngle + i * 15.0);
@@ -124,41 +117,30 @@ public final class StorkFx {
             thickLine(g, x1, y1, x2, y2, 2, (a << 24) | 0xE8F0FF);
         }
 
-        // giant crosshair arms
         int arm = Math.min(sw, sh) * 22 / 100;
         int gap = 18;
         int t = 4;
         int col = (a << 24) | 0xFF3040;
         int colCore = (a << 24) | 0xFFFFFF;
 
-        // horizontal
         g.fill(cx - arm, cy - t, cx - gap, cy + t, col);
         g.fill(cx + gap, cy - t, cx + arm, cy + t, col);
-        // vertical
         g.fill(cx - t, cy - arm, cx + t, cy - gap, col);
         g.fill(cx - t, cy + gap, cx + t, cy + arm, col);
-
-        // inner bright core
         g.fill(cx - 2, cy - 2, cx + 2, cy + 2, colCore);
 
-        // corner brackets
         int br = arm + 12;
         int bl = 16;
         int bt = 3;
-        // top-left
         g.fill(cx - br, cy - br, cx - br + bl, cy - br + bt, col);
         g.fill(cx - br, cy - br, cx - br + bt, cy - br + bl, col);
-        // top-right
         g.fill(cx + br - bl, cy - br, cx + br, cy - br + bt, col);
         g.fill(cx + br - bt, cy - br, cx + br, cy - br + bl, col);
-        // bottom-left
         g.fill(cx - br, cy + br - bt, cx - br + bl, cy + br, col);
         g.fill(cx - br, cy + br - bl, cx - br + bt, cy + br, col);
-        // bottom-right
         g.fill(cx + br - bl, cy + br - bt, cx + br, cy + br, col);
         g.fill(cx + br - bt, cy + br - bl, cx + br, cy + br, col);
 
-        // pulsing diamond
         int pulse = 6 + (int) (4 * Math.sin(now / 80.0));
         g.fill(cx - pulse, cy - 1, cx + pulse, cy + 1, (a << 24) | 0xFF6680);
         g.fill(cx - 1, cy - pulse, cx + 1, cy + pulse, (a << 24) | 0xFF6680);
@@ -187,11 +169,9 @@ public final class StorkFx {
         if (flashAlpha > 0) {
             int a = Math.min(255, flashAlpha);
             int cx = sw / 2, cy = sh / 2;
-            // crosshair flash
             int s = 14 + RND.nextInt(28);
             g.fill(cx - s, cy - 2, cx + s, cy + 2, (a << 24) | 0xFFE8A0);
             g.fill(cx - 2, cy - s, cx + 2, cy + s, (a << 24) | 0xFFC040);
-            // lightning spokes
             for (int i = 0; i < 8; i++) {
                 double ang = RND.nextDouble() * Math.PI * 2;
                 int len = 30 + RND.nextInt(70);
