@@ -242,16 +242,14 @@ public class ImStorkingIt extends Module {
                     2.0f, 1.0f, false);
         } catch (Throwable ignored) {}
 
+        // 26.2: ParticleTypes.FLASH is ParticleType<ColorParticleOption>, not ParticleOptions.
+        // Use ELECTRIC_SPARK only (SimpleParticleType) to keep compile clean.
         try {
             var level = mc.level;
             for (int i = 0; i < 18; i++) {
                 double ox = (RANDOM.nextDouble() - 0.5) * 2.2;
                 double oy = RANDOM.nextDouble() * 2.4;
                 double oz = (RANDOM.nextDouble() - 0.5) * 2.2;
-                try {
-                    level.addParticle(net.minecraft.core.particles.ParticleTypes.FLASH,
-                            tx + ox, ty + oy, tz + oz, 0, 0, 0);
-                } catch (Throwable ignored) {}
                 try {
                     level.addParticle(net.minecraft.core.particles.ParticleTypes.ELECTRIC_SPARK,
                             tx + ox * 0.6, ty + oy, tz + oz * 0.6,

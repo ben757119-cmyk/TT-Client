@@ -75,7 +75,6 @@ public class ModuleManager {
         register(new Spider());
         register(new LongJump());
         register(new AirJump());
-        register(new EntitySpeed());
         register(new BoatFly());
 
         register(new AutoTool());
@@ -83,7 +82,8 @@ public class ModuleManager {
         register(new AutoFish());
         register(new AutoRespawn());
         register(new AutoArmor());
-        register(new AutoTotem());
+        // Prefer player.AutoTotem (real logic). combat.AutoTotem is a legacy stub.
+        register(new com.ttclient.modules.player.AutoTotem());
         register(new ChestStealer());
         register(new InventoryCleaner());
         register(new FastPlace());

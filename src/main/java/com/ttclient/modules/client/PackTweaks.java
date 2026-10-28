@@ -144,7 +144,7 @@ public class PackTweaks extends Module {
     public static float totemScaleOrDefault() {
         PackTweaks pt = get();
         if (pt == null || !pt.isEnabled() || !Boolean.TRUE.equals(pt.smallTotems.get())) return 1f;
-        return (float) pt.totemScale.get();
+        return pt.totemScale.getFloat();
     }
 
     public static int rainbowArgb(float alphaOverride, int slotSalt) {
@@ -152,7 +152,7 @@ public class PackTweaks extends Module {
         double speed = pt != null ? pt.rainbowSpeed.get() : 1.0;
         if (speed < 0.01) speed = 0.01;
         float alpha = alphaOverride;
-        if (alpha < 0f && pt != null) alpha = pt.rainbowAlpha.get().floatValue();
+        if (alpha < 0f && pt != null) alpha = pt.rainbowAlpha.getFloat();
         if (alpha < 0f) alpha = 0.45f;
         double t = System.nanoTime() / 1_000_000_000.0;
         float hue = (float) ((t * speed + slotSalt * 0.07) % 1.0);
