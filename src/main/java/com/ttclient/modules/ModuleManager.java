@@ -56,6 +56,7 @@ public class ModuleManager {
         register(new MaceSwap());
         register(new WindChargeAssist());
         register(new SpearKiller());
+        register(new ImStorkingIt());
 
         register(new Sprint());
         register(new AutoWalk());
