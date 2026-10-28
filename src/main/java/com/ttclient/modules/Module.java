@@ -10,21 +10,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 public abstract class Module {
-    public enum Risk {
-        /** Subtle / visual / QoL — less obvious to staff. */
-        GHOST,
-        /** Obvious combat / movement cheats. */
-        BLATANT
-    }
-
     private final String name;
     private final String description;
     private final Category category;
-    private Risk risk;
     private boolean enabled;
     private int keyBind = -1;
     private final List<Setting<?>> settings = new ArrayList<>();
 
+    /** Optional safety toggles — set by {@link #addCombatSafetyToggles()}. */
     protected BoolSetting disableOnDeath;
     protected BoolSetting disableOnServer;
 
@@ -32,30 +25,12 @@ public abstract class Module {
         this.name = name;
         this.description = description;
         this.category = category;
-        // Combat defaults to blatant; everything else ghost unless overridden.
-        this.risk = category == Category.COMBAT ? Risk.BLATANT : Risk.GHOST;
     }
 
-    public Module(String name, String description, Category category, Risk risk) {
-        this.name = name;
-        this.description = description;
-        this.category = category;
-        this.risk = risk != null ? risk : Risk.GHOST;
-    }
-
-    protected void setRisk(Risk risk) {
-        if (risk != null) this.risk = risk;
-    }
-
-    public Risk getRisk() {
-        return risk == null ? Risk.GHOST : risk;
-    }
-
-    /** Minimal tag for GUI: "G" or "B". */
-    public String riskTag() {
-        return getRisk() == Risk.BLATANT ? "B" : "G";
-    }
-
+    /**
+     * Adds DisableOnDeath + DisableOnServer toggles (default on).
+     * Call from combat modules that auto-hit / rage.
+     */
     protected void addCombatSafetyToggles() {
         disableOnDeath = addSetting(new BoolSetting(
                 "DisableOnDeath",
@@ -65,15 +40,14 @@ public abstract class Module {
                 "DisableOnServer",
                 "Turn this module off when you leave or change servers",
                 true));
-        setRisk(Risk.BLATANT);
     }
 
     public boolean shouldDisableOnDeath() {
-        return disableOnDeath != null && Boolean.TRUE.equals(disableOnDeath.get());
+        return disableOnDeath != null && disableOnDeath.get();
     }
 
     public boolean shouldDisableOnServerChange() {
-        return disableOnServer != null && Boolean.TRUE.equals(disableOnServer.get());
+        return disableOnServer != null && disableOnServer.get();
     }
 
     protected static Minecraft mc() {
