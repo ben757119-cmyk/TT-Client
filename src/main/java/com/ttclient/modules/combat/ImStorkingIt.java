@@ -79,6 +79,7 @@ public class ImStorkingIt extends Module {
     public void onDisable() {
         TimerHooks.reset();
         StorkFx.setGunActive(false);
+        StorkFx.endSplash();
         phase = IDLE;
         freezeLeft = introLeft = 0;
         nextHitAt = shakeUntil = 0L;
@@ -242,8 +243,6 @@ public class ImStorkingIt extends Module {
                     2.0f, 1.0f, false);
         } catch (Throwable ignored) {}
 
-        // 26.2: ParticleTypes.FLASH is ParticleType<ColorParticleOption>, not ParticleOptions.
-        // Use ELECTRIC_SPARK only (SimpleParticleType) to keep compile clean.
         try {
             var level = mc.level;
             for (int i = 0; i < 18; i++) {
